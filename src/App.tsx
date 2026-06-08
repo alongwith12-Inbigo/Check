@@ -142,12 +142,10 @@ export default function App() {
 
   // Sync activeEvaluationId in teacher's panel
   useEffect(() => {
-    if (myEvaluations.length > 0) {
+    if (activeEvaluationId !== '') {
       if (!myEvaluations.some(e => e.id === activeEvaluationId)) {
-        setActiveEvaluationId(myEvaluations[0].id || '');
+        setActiveEvaluationId(myEvaluations[0]?.id || '');
       }
-    } else {
-      setActiveEvaluationId('');
     }
   }, [myEvaluations, activeEvaluationId]);
 
@@ -279,6 +277,15 @@ export default function App() {
       const matchedTeacher = teachers.find(t => t.code === trimmedCode);
       if (matchedTeacher) {
         setLoggedTeacher(matchedTeacher);
+        
+        // Auto-select starting evaluation if one exists
+        const matchedEvals = allEvaluations.filter(e => e.teacherCode === matchedTeacher.code);
+        if (matchedEvals.length > 0) {
+          setActiveEvaluationId(matchedEvals[0].id || '');
+        } else {
+          setActiveEvaluationId('');
+        }
+
         setAuthError('');
         setInputTeacherCode('');
         setInputPassword('');

@@ -12,9 +12,12 @@ service cloud.firestore {
       allow read: if true;
       
       // Permit updates to evaluations with defensive bounds
-      allow write: if request.resource.data.title is string && request.resource.data.title.size() <= 500
+      allow create, update: if request.resource.data.title is string && request.resource.data.title.size() <= 500
         && request.resource.data.headers is list && request.resource.data.headers.size() <= 150
         && request.resource.data.rows is list && request.resource.data.rows.size() <= 1500;
+
+      // Allow deletion of evaluations
+      allow delete: if true;
     }
 
     // 3. Teachers roster document access rule
@@ -23,8 +26,11 @@ service cloud.firestore {
       allow read: if true;
       
       // Admin writes teachers roster
-      allow write: if request.resource.data.code is string && request.resource.data.code.size() <= 10
+      allow create, update: if request.resource.data.code is string && request.resource.data.code.size() <= 10
         && request.resource.data.name is string && request.resource.data.name.size() <= 100;
+
+      // Allow deletion of teachers
+      allow delete: if true;
     }
   }
 }
