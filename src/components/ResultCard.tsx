@@ -173,7 +173,7 @@ export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
                         합산 평가
                       </span>
                       <h4 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
-                        {subject} {String(round).endsWith('차') ? round : `${round}차`} 수행평가 {row[totalScoreKey] || '0'}/{maxScore || '100'}점
+                        {subject} {String(round).endsWith('차') ? round : `${round}차`} 수행평가
                       </h4>
                     </div>
                     
