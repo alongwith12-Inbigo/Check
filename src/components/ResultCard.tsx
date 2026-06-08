@@ -144,18 +144,18 @@ export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
                       영역별 세부 채점 점수
                     </span>
                     
-                    <div className="flex flex-row flex-wrap sm:flex-nowrap gap-2 justify-stretch items-center w-full">
+                    <div className="flex flex-row flex-nowrap gap-1.5 sm:gap-2 justify-stretch items-center w-full overflow-x-auto pb-1 scrollbar-none">
                       {subScoreKeys.map(key => {
                         const val = row[key];
                         return (
                           <div 
                             key={key} 
-                            className="flex-1 min-w-[80px] bg-slate-50 border border-slate-200 rounded-xl p-3 text-center transition-colors hover:border-slate-300 print:bg-white print:border-slate-200"
+                            className="flex-1 min-w-[65px] sm:min-w-[80px] bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl p-2 sm:p-3 text-center transition-colors hover:border-slate-300 print:bg-white print:border-slate-200"
                           >
-                            <span className="block text-[10.5px] font-black text-slate-500 truncate" title={key}>
+                            <span className="block text-[9.5px] sm:text-[10.5px] font-bold text-slate-500 truncate" title={key}>
                               {key}
                             </span>
-                            <span className="block text-sm sm:text-base font-black text-slate-800 mt-0.5 font-mono">
+                            <span className="block text-xs sm:text-base font-black text-slate-800 mt-0.5 font-mono">
                               {val !== undefined && val !== null ? String(val) : '-'}
                             </span>
                           </div>
@@ -172,8 +172,8 @@ export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
                       <span className="text-[10px] bg-white border border-indigo-150 rounded-md font-bold px-2 py-0.5 text-indigo-850 inline-block">
                         합산 평가
                       </span>
-                      <h4 className="text-xs sm:text-sm font-extrabold text-slate-900 mt-1">
-                        위 영역들을 최종 합산 및 검수한 취합 점수입니다.
+                      <h4 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
+                        {subject} {String(round).endsWith('차') ? round : `${round}차`} 수행평가 {row[totalScoreKey] || '0'}/{maxScore || '100'}점
                       </h4>
                     </div>
                     
