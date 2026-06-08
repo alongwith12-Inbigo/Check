@@ -12,14 +12,36 @@ export function findStudentIdKey(headers: string[]): string | undefined {
 export function findTeacherCodeKey(headers: string[]): string | undefined {
   return headers.find(h => {
     const normalized = String(h).replace(/\s+/g, '').toLowerCase();
-    return normalized.includes('교사코드') || normalized.includes('선생님코드') || normalized.includes('강사코드') || normalized.includes('코드') || normalized.includes('아이디') || normalized === 'id';
+    return normalized.includes('교사코드') || 
+           normalized.includes('선생님코드') || 
+           normalized.includes('강사코드') || 
+           normalized.includes('교원코드') || 
+           normalized === '코드' || 
+           normalized.includes('코드') || 
+           normalized.includes('아이디') || 
+           normalized === 'id' || 
+           normalized === 'code';
   });
 }
 
 export function findTeacherNameKey(headers: string[]): string | undefined {
   return headers.find(h => {
     const normalized = String(h).replace(/\s+/g, '').toLowerCase();
-    return normalized.includes('교사명') || normalized.includes('선생님이름') || normalized.includes('교사이름') || normalized.includes('이름') || normalized.includes('이름(성함)') || normalized.includes('성함') || normalized.includes('교사');
+    // Prioritize specific terms like '교사명', '선생님이름', '교사이름' to avoid generic '이름' mismatch if other columns exist
+    if (normalized.includes('교사명') || 
+        normalized.includes('선생님이름') || 
+        normalized.includes('교사이름') || 
+        normalized.includes('교원명') ||
+        normalized === '교사' || 
+        normalized === '선생님' ||
+        normalized === '강사') {
+      return true;
+    }
+    // Then search for generic name keywords
+    return normalized.includes('이름') || 
+           normalized.includes('성함') || 
+           normalized.includes('성명') || 
+           normalized === 'name';
   });
 }
 
