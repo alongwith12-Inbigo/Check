@@ -5,7 +5,14 @@
 export function findStudentIdKey(headers: string[]): string | undefined {
   return headers.find(h => {
     const normalized = String(h).replace(/\s+/g, '').toLowerCase();
-    return normalized.includes('학번') || normalized.includes('학생번호') || normalized.includes('학적번호') || normalized === 'id';
+    return normalized.includes('학번') || 
+           normalized.includes('학생번호') || 
+           normalized.includes('학적번호') || 
+           normalized.includes('번호') || 
+           normalized.includes('student') || 
+           normalized === 'id' ||
+           normalized === 'no' ||
+           normalized === 'num';
   });
 }
 
@@ -27,7 +34,6 @@ export function findTeacherCodeKey(headers: string[]): string | undefined {
 export function findTeacherNameKey(headers: string[]): string | undefined {
   return headers.find(h => {
     const normalized = String(h).replace(/\s+/g, '').toLowerCase();
-    // Prioritize specific terms like '교사명', '선생님이름', '교사이름' to avoid generic '이름' mismatch if other columns exist
     if (normalized.includes('교사명') || 
         normalized.includes('선생님이름') || 
         normalized.includes('교사이름') || 
@@ -37,7 +43,6 @@ export function findTeacherNameKey(headers: string[]): string | undefined {
         normalized === '강사') {
       return true;
     }
-    // Then search for generic name keywords
     return normalized.includes('이름') || 
            normalized.includes('성함') || 
            normalized.includes('성명') || 
@@ -48,8 +53,52 @@ export function findTeacherNameKey(headers: string[]): string | undefined {
 export function findBirthdateKey(headers: string[]): string | undefined {
   return headers.find(h => {
     const normalized = String(h).replace(/\s+/g, '').toLowerCase();
-    return normalized.includes('생년월일') || normalized.includes('생년') || normalized.includes('생일') || normalized.includes('생일날짜') || normalized.includes('생년월');
+    return normalized.includes('생년월일') || 
+           normalized.includes('생년') || 
+           normalized.includes('생일') || 
+           normalized.includes('생일날짜') || 
+           normalized.includes('생년월') || 
+           normalized.includes('년월일') ||
+           normalized.includes('birth');
   });
+}
+
+/**
+ * Robust matching for student IDs. Normalizes spaces/symbols/headers to digits.
+ */
+export function matchesStudentId(inputId: string, rowId: any): boolean {
+  if (rowId === undefined || rowId === null) return false;
+  const normInput = String(inputId).replace(/\D/g, '');
+  const normRow = String(rowId).replace(/\D/g, '');
+  
+  if (!normInput || !normRow) {
+    // Fallback to alphanumeric comparison if either has letters
+    const rawInput = String(inputId).replace(/\s+/g, '').toLowerCase();
+    const rawRow = String(rowId).replace(/\s+/g, '').toLowerCase();
+    return rawInput === rawRow;
+  }
+  return normInput === normRow;
+}
+
+/**
+ * Robust matching for birthdates (handles 6-digit vs 8-digit dates and symbols safely).
+ */
+export function matchesBirthdate(inputBirth: string, rowBirth: any): boolean {
+  if (rowBirth === undefined || rowBirth === null) return false;
+  const normInput = String(inputBirth).replace(/\D/g, '');
+  const normRow = String(rowBirth).replace(/\D/g, '');
+  
+  if (!normInput || !normRow) return false;
+  if (normInput === normRow) return true;
+  
+  // Handle 6-digit vs 8-digit comparison (e.g. 061215 vs 20061215)
+  if (normInput.length === 6 && normRow.length === 8) {
+    return normRow.endsWith(normInput) || normRow.substring(2) === normInput;
+  }
+  if (normInput.length === 8 && normRow.length === 6) {
+    return normInput.endsWith(normRow) || normInput.substring(2) === normRow;
+  }
+  return false;
 }
 
 export function findFeedbackKey(headers: string[]): string[] {

@@ -10,7 +10,7 @@ import LoginCard from './components/LoginCard';
 import ResultCard from './components/ResultCard';
 import AdminDashboard from './components/AdminDashboard';
 import AdminManager from './components/AdminManager';
-import { EvaluationState, Teacher } from './types';
+import { EvaluationState, Teacher, StudentSession } from './types';
 import { doc, onSnapshot, setDoc, collection, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { 
@@ -46,7 +46,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [loggedStudent, setLoggedStudent] = useState<Record<string, any> | null>(null);
+  const [loggedStudent, setLoggedStudent] = useState<StudentSession | null>(null);
 
   // Active evaluation ID for the logged in teacher's panel
   const [activeEvaluationId, setActiveEvaluationId] = useState<string>('');
@@ -238,8 +238,8 @@ export default function App() {
     setLoggedStudent(null);
   };
 
-  const handleStudentLogin = (studentData: Record<string, any>) => {
-    setLoggedStudent(studentData);
+  const handleStudentLogin = (sessionData: StudentSession) => {
+    setLoggedStudent(sessionData);
   };
 
   const handleStudentLogout = () => {
@@ -459,12 +459,6 @@ export default function App() {
                         >
                           조회 화면으로
                         </button>
-                        <button
-                          type="submit"
-                          className="flex-1 py-3 bg-indigo-900 hover:bg-indigo-950 text-white border border-indigo-900 font-bold rounded-xl text-xs transition cursor-pointer"
-                        >
-                          인증 및 승인
-                        </button>
                       </div>
                     </form>
                   </div>
@@ -481,8 +475,7 @@ export default function App() {
               transition={{ duration: 0.3 }}
             >
               <ResultCard 
-                evaluationState={currentStudentEvaluation as EvaluationState}
-                studentData={loggedStudent}
+                sessionData={loggedStudent}
                 onBack={handleStudentLogout}
               />
             </motion.div>
@@ -502,22 +495,19 @@ export default function App() {
                   🏫 수시 수행평가 성적 간편 조회 엔진
                 </span>
                 <p className="text-xs text-slate-500 font-semibold px-4 leading-relaxed font-sans">
-                  지정된 선생님의 평가 점수와 개별 성휘 환산 피드백을 타인 노출 없이 안전하게 1대1 즉시 확인해 보실 수 있습니다.
+                  지정된 선생님의 평가 점수와 개별 성취 환산 피드백을 타인 노출 없이 안전하게 1대1 즉시 확인해 보실 수 있습니다.
                 </p>
               </div>
 
               <LoginCard 
-                evaluationState={currentStudentEvaluation as EvaluationState} 
                 teacherEvaluations={studentTeacherEvaluations}
-                selectedEvaluationId={selectedEvaluationId}
-                onSelectEvaluationId={setSelectedEvaluationId}
                 onLoginSuccess={handleStudentLogin}
                 teachers={teachers}
                 selectedTeacherCode={selectedTeacherCode}
                 onSelectTeacher={setSelectedTeacherCode}
               />
             </motion.div>
-          )}
+          )}�해 보실 수 있습니다.
         </AnimatePresence>
       </main>
 

@@ -28,3 +28,22 @@ export interface StudentCredentials {
   studentId: string;
   birthdate: string;
 }
+
+export interface StudentResultItem {
+  evaluationId: string;
+  evaluationTitle: string;
+  subject: string;
+  round: string;
+  evaluationDetailName: string;
+  maxScore: string;
+  headers: string[];
+  row: ExcelRow;
+}
+
+export interface StudentSession {
+  studentId: string;
+  birthdate: string;
+  studentName: string;
+  teacherName: string;
+  results: StudentResultItem[];
+}
