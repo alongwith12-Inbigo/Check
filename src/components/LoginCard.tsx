@@ -21,6 +21,7 @@ export default function LoginCard({ evaluationState, onLoginSuccess }: LoginCard
   const [birthdate, setBirthdate] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [showInstructions, setShowInstructions] = useState(false);
+  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +29,11 @@ export default function LoginCard({ evaluationState, onLoginSuccess }: LoginCard
 
     if (!studentId.trim() || !birthdate.trim()) {
       setErrorMsg('학번과 생년월일을 모두 입력해 주세요.');
+      return;
+    }
+
+    if (!agreedToPrivacy) {
+      setErrorMsg('개인정보처리방침 내용을 확인하시고 동의 확인란에 체크해 주셔야 실시간 조회가 가능합니다.');
       return;
     }
 
@@ -135,6 +141,37 @@ export default function LoginCard({ evaluationState, onLoginSuccess }: LoginCard
             />
           </div>
 
+          {/* Simplified Privacy Policy Checklist Box */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+              <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                🔒 개인정보처리방침 (간단 버전)
+              </span>
+              <span className="text-[9px] bg-indigo-50 border border-indigo-200/60 text-indigo-700 font-extrabold px-1.5 py-0.5 rounded-md">
+                즉시 휘발 보증
+              </span>
+            </div>
+            
+            <div className="text-[10px] text-slate-600 leading-relaxed space-y-1 max-h-[85px] overflow-y-auto pr-1 select-text scrollbar-thin">
+              <p><strong>• 수집 및 이용 목적:</strong> 학번 및 생년월일 일치 여부 매칭을 통한 개인별 점수 지표 및 교사 맞춤형 성취 피드백의 안전한 1:1 휘발성 조회</p>
+              <p><strong>• 수집 개인정보 범위:</strong> 선생님이 업로드한 데이터셋 내 학번, 이름, 생년월일, 각 항목별 점수 및 종합 코멘트</p>
+              <p><strong>• 보관 및 완전 파기:</strong> 본 시스템은 클라우드 DB에 데이터를 영구 수집하지 않는 <strong>브라우저 온디맨드(on-demand) 도구</strong>입니다. 조회가 활성화되는 순간에만 임시 파싱하여 매칭하며, 웹 브라우저 탭을 끄는 순간 본인의 모든 입력값과 점수내역은 완벽하게 자동 완전 영구 소멸됩니다.</p>
+              <p><strong>• 동의 거부권:</strong> 학생은 본 동의에 거부할 권리가 있으며, 동의를 하지 않는 경우 본 웹 조회기를 통한 점수 확인이 불가능하므로 해당 과목 선생님께 직접 성적을 확인받으셔야 합니다.</p>
+            </div>
+
+            <label className="flex items-start gap-2 pt-1 pb-0.5 cursor-pointer select-none">
+              <input 
+                type="checkbox"
+                checked={agreedToPrivacy}
+                onChange={(e) => setAgreedToPrivacy(e.target.checked)}
+                className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-4 h-4 cursor-pointer"
+              />
+              <span className="text-[11px] font-bold text-slate-800 leading-tight">
+                위의 개인정보 수집 및 즉시 휘발 파기 방침을 읽었으며, 조회를 위해 이에 기꺼이 동의합니다. (필수)
+              </span>
+            </label>
+          </div>
+
           {errorMsg && (
             <div className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs">
               <AlertCircle size={15} className="shrink-0 mt-0.5" />
@@ -144,7 +181,11 @@ export default function LoginCard({ evaluationState, onLoginSuccess }: LoginCard
 
           <button 
             type="submit"
-            className="w-full py-3.5 bg-indigo-900 hover:bg-indigo-950 border border-indigo-900 text-white rounded-xl text-sm font-extrabold flex items-center justify-center gap-1 shadow-sm hover:shadow-md transition-all cursor-pointer"
+            className={`w-full py-3.5 border text-white rounded-xl text-sm font-extrabold flex items-center justify-center gap-1 shadow-sm hover:shadow-md transition-all cursor-pointer ${
+              agreedToPrivacy 
+                ? 'bg-indigo-900 border-indigo-900 hover:bg-indigo-950' 
+                : 'bg-slate-350 border-slate-300 hover:bg-slate-400 opacity-90'
+            }`}
           >
             <KeyRound size={15} /> 성적 결과 실시간 조회 <ChevronRight size={15} />
           </button>

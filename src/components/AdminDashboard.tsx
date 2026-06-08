@@ -32,11 +32,43 @@ export default function AdminDashboard({
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
-  const [titleInput, setTitleInput] = useState(evaluationState.title || '1차 정보 수행평가 결과');
+  
+  // Split title inputs
+  const [subjectInput, setSubjectInput] = useState(evaluationState.subject || '');
+  const [roundInput, setRoundInput] = useState(evaluationState.round || '');
+  const [detailNameInput, setDetailNameInput] = useState(evaluationState.evaluationDetailName || '');
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [passwordError, setPasswordError] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const propagateSplitTitle = (subject: string, round: string, detail: string) => {
+    let combinedTitle = '';
+    const cleanSub = subject.trim();
+    const cleanRnd = round.trim();
+    const cleanDet = detail.trim();
+
+    if (cleanSub && cleanRnd && cleanDet) {
+      combinedTitle = `${cleanSub} (${cleanRnd}차) 수행평가: ${cleanDet}`;
+    } else if (cleanSub || cleanRnd || cleanDet) {
+      const parts = [];
+      if (cleanSub) parts.push(cleanSub);
+      if (cleanRnd) parts.push(`(${cleanRnd}차)`);
+      if (cleanDet) parts.push(cleanDet);
+      combinedTitle = parts.join(' ');
+    } else {
+      combinedTitle = '수행평가 결과';
+    }
+
+    onUpdateState({
+      ...evaluationState,
+      subject: cleanSub,
+      round: cleanRnd,
+      evaluationDetailName: cleanDet,
+      title: combinedTitle
+    });
+  };
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,15 +109,23 @@ export default function AdminDashboard({
 
         if (!studentIdKey || !birthdateKey) {
           setErrorMsg(
-            `필수 열이 유락되어 업로드할 수 없습니다.\n학생 로그인을 위해 엑셀 내에 '학번'과 '생년월일'이 포함된 열이 반드시 필요합니다.\n\n` + 
+            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 로그인을 위해 엑셀 내에 '학번'과 '생년월일'이 포함된 열이 반드시 필요합니다.\n\n` + 
             `감지된 열: [${cleanHeaders.join(', ')}]`
           );
           return;
         }
 
-        // Success! Update evaluation dataset
+        // Success! Update evaluation dataset while preserving existing split title values
+        const currentTitle = subjectInput && roundInput && detailNameInput
+          ? `${subjectInput.trim()} (${roundInput.trim()}차) 수행평가: ${detailNameInput.trim()}`
+          : (evaluationState.title || '수행평가 결과');
+
         onUpdateState({
-          title: titleInput,
+          ...evaluationState,
+          title: currentTitle,
+          subject: subjectInput,
+          round: roundInput,
+          evaluationDetailName: detailNameInput,
           headers: cleanHeaders,
           rows: rawRows,
           uploadedAt: new Date().toLocaleString('ko-KR')
@@ -129,24 +169,20 @@ export default function AdminDashboard({
     fileInputRef.current?.click();
   };
 
-  const handleTitleBlur = () => {
-    if (titleInput.trim() !== "" && titleInput !== evaluationState.title) {
-      onUpdateState({
-        ...evaluationState,
-        title: titleInput.trim()
-      });
-    }
-  };
-
   const handleReset = () => {
-    if (window.confirm('기존 의 모든 평가 데이터가 삭제됩니다. 정말 초기화하시겠습니까?')) {
+    if (window.confirm('기존의 모든 평가 데이터가 삭제됩니다. 정말 초기화하시겠습니까?')) {
       onUpdateState({
         title: '신규 수행평가 결과',
+        subject: '',
+        round: '',
+        evaluationDetailName: '',
         headers: [],
         rows: [],
         uploadedAt: null
       });
-      setTitleInput('신규 수행평가 결과');
+      setSubjectInput('');
+      setRoundInput('');
+      setDetailNameInput('');
       setErrorMsg('');
     }
   };
@@ -250,18 +286,69 @@ export default function AdminDashboard({
               수행평가 대제목 조율
             </h3>
             
-            <div>
-              <label htmlFor="eval-title-input" className="block text-[11px] font-bold text-slate-500 mb-1.5">학생 메인보드 노출 타이틀</label>
-              <input 
-                id="eval-title-input"
-                type="text"
-                value={titleInput}
-                onChange={(e) => setTitleInput(e.target.value)}
-                onBlur={handleTitleBlur}
-                placeholder="예: 1차 정보 수행평가 결과"
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all font-semibold"
-              />
-              <p className="text-[10px] text-slate-400 mt-1">입력 완료 시 자동 실시간 저장 처리됩니다.</p>
+            <div className="space-y-3.5">
+              <div>
+                <label htmlFor="eval-subject-input" className="block text-[11px] font-bold text-slate-700 mb-1">
+                  1. 평가 과목명
+                </label>
+                <input 
+                  id="eval-subject-input"
+                  type="text"
+                  value={subjectInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSubjectInput(val);
+                    propagateSplitTitle(val, roundInput, detailNameInput);
+                  }}
+                  placeholder="예: 정보 과학, 소프트웨어, 영어"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="eval-round-input" className="block text-[11px] font-bold text-slate-700 mb-1">
+                  2. 평가 차시 (차)
+                </label>
+                <input 
+                  id="eval-round-input"
+                  type="text"
+                  value={roundInput}
+                  onChange={(e) => {
+                    const rawVal = e.target.value;
+                    // Auto strip trailing "차" if typed manually, to keep formatting clean
+                    const cleanVal = rawVal.replace(/차$/, '').trim();
+                    setRoundInput(cleanVal);
+                    propagateSplitTitle(subjectInput, cleanVal, detailNameInput);
+                  }}
+                  placeholder="예: 1 또는 2"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-center font-mono"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="eval-detail-input" className="block text-[11px] font-bold text-slate-700 mb-1">
+                  3. 수행평가 이름
+                </label>
+                <input 
+                  id="eval-detail-input"
+                  type="text"
+                  value={detailNameInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDetailNameInput(val);
+                    propagateSplitTitle(subjectInput, roundInput, val);
+                  }}
+                  placeholder="예: Python 알고리즘 분석 및 동료 평가"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold"
+                />
+              </div>
+
+              <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100/60 text-[11px] text-indigo-900 mt-2 space-y-1">
+                <span className="font-extrabold block text-indigo-950 text-[10px] uppercase tracking-wider">실시간 대제목 미리보기</span>
+                <p className="font-bold leading-normal break-all">
+                  {evaluationState.title || '수행평가 결과'}
+                </p>
+              </div>
             </div>
 
             <div className="pt-3 border-t border-slate-100 space-y-2 text-xs text-slate-600">

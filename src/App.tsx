@@ -24,7 +24,10 @@ import {
 
 // Premium high-craft pre-populated sample evaluation data 
 const DEFAULT_PRESET: EvaluationState = {
-  title: '정보 과학 1차 수행평가 결과',
+  subject: '정보 과학',
+  round: '1',
+  evaluationDetailName: '알고리즘 및 순서도 설계 평가',
+  title: '정보 과학 (1차) 수행평가: 알고리즘 및 순서도 설계 평가',
   headers: ['학번', '이름', '생년월일', '동료평가(10)', '실기보고서(40)', '코드수행(50)', '합계(100)', '개별 성취피드백'],
   rows: [
     {
@@ -75,6 +78,9 @@ export default function App() {
   const [evaluationState, setEvaluationState] = useState<EvaluationState>(() => {
     try {
       const savedTitle = localStorage.getItem('eval_title_v1');
+      const savedSubject = localStorage.getItem('eval_subject_v1');
+      const savedRound = localStorage.getItem('eval_round_v1');
+      const savedDetailName = localStorage.getItem('eval_detail_name_v1');
       const savedHeaders = localStorage.getItem('eval_headers_v1');
       const savedRows = localStorage.getItem('eval_rows_v1');
       const savedUploadedAt = localStorage.getItem('eval_uploaded_at_v1');
@@ -82,6 +88,9 @@ export default function App() {
       if (savedTitle && savedHeaders && savedRows) {
         return {
           title: savedTitle,
+          subject: savedSubject || '',
+          round: savedRound || '',
+          evaluationDetailName: savedDetailName || '',
           headers: JSON.parse(savedHeaders),
           rows: JSON.parse(savedRows),
           uploadedAt: savedUploadedAt
@@ -102,6 +111,9 @@ export default function App() {
     setEvaluationState(newState);
     try {
       localStorage.setItem('eval_title_v1', newState.title);
+      localStorage.setItem('eval_subject_v1', newState.subject || '');
+      localStorage.setItem('eval_round_v1', newState.round || '');
+      localStorage.setItem('eval_detail_name_v1', newState.evaluationDetailName || '');
       localStorage.setItem('eval_headers_v1', JSON.stringify(newState.headers));
       localStorage.setItem('eval_rows_v1', JSON.stringify(newState.rows));
       if (newState.uploadedAt) {

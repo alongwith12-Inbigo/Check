@@ -8,6 +8,9 @@ export interface ExcelRow {
 
 export interface EvaluationState {
   title: string;
+  subject?: string;
+  round?: string;
+  evaluationDetailName?: string;
   headers: string[];
   rows: ExcelRow[];
   uploadedAt: string | null;
