@@ -7,10 +7,13 @@ export interface ExcelRow {
 }
 
 export interface EvaluationState {
+  id?: string;
+  teacherCode?: string;
   title: string;
   subject?: string;
   round?: string;
   evaluationDetailName?: string;
+  maxScore?: string;
   headers: string[];
   rows: ExcelRow[];
   uploadedAt: string | null;

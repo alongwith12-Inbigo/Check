@@ -26,68 +26,20 @@ import {
   Key
 } from 'lucide-react';
 
-// Premium high-craft pre-populated sample evaluation data 
-const DEFAULT_PRESET: EvaluationState = {
-  subject: '정보 과학',
-  round: '1',
-  evaluationDetailName: '알고리즘 및 순서도 설계 평가',
-  title: '정보 과학 (1차) 수행평가: 알고리즘 및 순서도 설계 평가',
-  headers: ['학번', '이름', '생년월일', '동료평가(10)', '실기보고서(40)', '코드수행(50)', '합계(100)', '개별 성취피드백'],
-  rows: [
-    {
-      '학번': '10101',
-      '이름': '김하늘',
-      '생년월일': '060512',
-      '동료평가(10)': '10',
-      '실기보고서(40)': '38',
-      '코드수행(50)': '48',
-      '합계(100)': '96',
-      '개별 성취피드백': 'Python 정렬 알고리즘의 시간 복잡도를 올바르게 이해하고 이를 분할 정복 방식으로 우수하게 모듈화 설계한 점이 매우 탁월합니다. 팀원 기여도 또한 만점입니다.'
-    },
-    {
-      '학번': '10102',
-      '이름': '박민수',
-      '생년월일': '061125',
-      '동료평가(10)': '9',
-      '실기보고서(40)': '35',
-      '코드수행(50)': '42',
-      '합계(100)': '86',
-      '개별 성취피드백': '알고리즘 순서도 모델링 영역에서 우수한 논리 선형성을 보여줍니다. 다만 코드 구현 단계에서 변수 스코프를 전역 공간으로 전치시켜 선언한 부분이 아쉬우니 지역 변수로 축소 수정해 보길 권장합니다.'
-    },
-    {
-      '학번': '10103',
-      '이름': '이솔이',
-      '생년월일': '060707',
-      '동료평가(10)': '10',
-      '실기보고서(40)': '40',
-      '코드수행(50)': '50',
-      '합계(100)': '100',
-      '개별 성취피드백': '실습과 이론 모두 무결점에 수렴하는 뛰어난 마스터리를 발휘해 최고점을 기록하였습니다. 프로그램 종료 시점에 리소스 반환 처리를 추가한 디테일 또한 선생님으로서 깊은 인상을 받았습니다.'
-    },
-    {
-      '학번': '10204',
-      '이름': '최도현',
-      '생년월일': '060303',
-      '동료평가(10)': '8',
-      '실기보고서(40)': '28',
-      '코드수행(50)': '35',
-      '합계(100)': '71',
-      '개별 성취피드백': '인터페이스 흐름의 조형미가 아주 준수한 앱 데모를 구현하였습니다. 아쉽게도 제출 서한의 개요 기획문 중 기능 의성 상세 정의서 부분이 채워지지 않았으니 다음 평가 시 분량을 신경 써 주시기 바랍니다.'
-    }
-  ],
-  uploadedAt: '2026-06-08 (샘플 탑재)'
-};
-
 export default function App() {
-  const [evaluationState, setEvaluationState] = useState<EvaluationState>(DEFAULT_PRESET);
+  // All evaluations in the database
+  const [allEvaluations, setAllEvaluations] = useState<EvaluationState[]>([]);
 
-  // Separate logins states
+  // Selected state for student
+  const [selectedEvaluationId, setSelectedEvaluationId] = useState<string>('');
+
+  // Roster lists
   const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [selectedTeacherCode, setSelectedTeacherCode] = useState('101');
+  const [selectedTeacherCode, setSelectedTeacherCode] = useState('');
   const [loggedTeacher, setLoggedTeacher] = useState<Teacher | null>(null);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
 
-  // Admin login selection portal inputs
+  // Admin select portal inputs
   const [inputTeacherCode, setInputTeacherCode] = useState('');
   const [inputPassword, setInputPassword] = useState('');
   const [authRole, setAuthRole] = useState<'teacher' | 'admin'>('teacher');
@@ -95,6 +47,9 @@ export default function App() {
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [loggedStudent, setLoggedStudent] = useState<Record<string, any> | null>(null);
+
+  // Active evaluation ID for the logged in teacher's panel
+  const [activeEvaluationId, setActiveEvaluationId] = useState<string>('');
 
   // 1. Subscribe to Teachers directory in real-time from Firestore
   useEffect(() => {
@@ -109,20 +64,7 @@ export default function App() {
         });
       });
       list.sort((a, b) => a.code.localeCompare(b.code));
-
-      if (list.length === 0) {
-        // Database is brand new. Let us auto-seed it with a working example teacher 101 out of the box!
-        const defaultTeacher: Teacher = { code: '101', name: '김태평 (대표)' };
-        setTeachers([defaultTeacher]);
-        setDoc(doc(db, 'teachers', '101'), defaultTeacher).catch((err) => {
-          console.error("Auto-seeding default teacher failed: ", err);
-        });
-        setDoc(doc(db, 'evaluation', '101'), DEFAULT_PRESET).catch((err) => {
-          console.error("Auto-seeding default evaluation failed: ", err);
-        });
-      } else {
-        setTeachers(list);
-      }
+      setTeachers(list);
     }, (error) => {
       console.warn("Firestore teachers subscription failed: ", error);
     });
@@ -130,18 +72,128 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Sync selectedTeacherCode whenever teachers list updates to keep selection clean
+  // 2. Subscribe to All Evaluations in real-time from Firestore
+  useEffect(() => {
+    const collRef = collection(db, 'evaluation');
+    const unsubscribe = onSnapshot(collRef, (snap) => {
+      const list: EvaluationState[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        list.push({
+          id: d.id,
+          teacherCode: data.teacherCode || '',
+          title: data.title || '',
+          subject: data.subject || '',
+          round: data.round || '',
+          evaluationDetailName: data.evaluationDetailName || '',
+          maxScore: data.maxScore !== undefined ? String(data.maxScore) : '',
+          headers: data.headers || [],
+          rows: data.rows || [],
+          uploadedAt: data.uploadedAt || null,
+        });
+      });
+      setAllEvaluations(list);
+    }, (error) => {
+      console.warn("Firestore evaluations subscription failed: ", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Sync student's selectedTeacherCode to first teacher when list updates
   useEffect(() => {
     if (teachers.length > 0) {
       if (!teachers.some(t => t.code === selectedTeacherCode)) {
         setSelectedTeacherCode(teachers[0].code);
       }
+    } else {
+      setSelectedTeacherCode('');
     }
   }, [teachers, selectedTeacherCode]);
 
-  // Helper to bulk upload/sync teachers list to Firestore
+  // Filter evaluations for the selected teacher (Student view)
+  const studentTeacherEvaluations = allEvaluations.filter(e => e.teacherCode === selectedTeacherCode);
+
+  // Sync selectedEvaluationId when student selects a teacher or list updates
+  useEffect(() => {
+    if (studentTeacherEvaluations.length > 0) {
+      if (!studentTeacherEvaluations.some(e => e.id === selectedEvaluationId)) {
+        setSelectedEvaluationId(studentTeacherEvaluations[0].id || '');
+      }
+    } else {
+      setSelectedEvaluationId('');
+    }
+  }, [selectedTeacherCode, allEvaluations, selectedEvaluationId]);
+
+  // Current active evaluation state for student matching
+  const currentStudentEvaluation = studentTeacherEvaluations.find(e => e.id === selectedEvaluationId) || {
+    title: '수행평가 결과',
+    subject: '',
+    round: '',
+    evaluationDetailName: '',
+    headers: [],
+    rows: [],
+    uploadedAt: null,
+    teacherCode: ''
+  };
+
+  // Filter evaluations for current teacher (Teacher dashboard view)
+  const myEvaluations = allEvaluations.filter(e => e.teacherCode === loggedTeacher?.code);
+
+  // Sync activeEvaluationId in teacher's panel
+  useEffect(() => {
+    if (myEvaluations.length > 0) {
+      if (!myEvaluations.some(e => e.id === activeEvaluationId)) {
+        setActiveEvaluationId(myEvaluations[0].id || '');
+      }
+    } else {
+      setActiveEvaluationId('');
+    }
+  }, [myEvaluations, activeEvaluationId]);
+
+  // Core database modifiers passed down to teacher panels
+  const handleCreateEvaluation = async (newState: EvaluationState): Promise<string> => {
+    const newDocId = `${loggedTeacher?.code || 'temp'}_${Date.now()}`;
+    try {
+      const docRef = doc(db, 'evaluation', newDocId);
+      await setDoc(docRef, {
+        ...newState,
+        id: newDocId,
+        teacherCode: loggedTeacher?.code || '',
+      });
+      return newDocId;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `evaluation/${newDocId}`);
+      throw err;
+    }
+  };
+
+  const handleUpdateEvaluation = async (id: string, newState: EvaluationState) => {
+    try {
+      const docRef = doc(db, 'evaluation', id);
+      await setDoc(docRef, {
+        ...newState,
+        id: id,
+        teacherCode: loggedTeacher?.code || '',
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `evaluation/${id}`);
+    }
+  };
+
+  const handleDeleteEvaluation = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'evaluation', id));
+      if (activeEvaluationId === id) {
+        setActiveEvaluationId('');
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `evaluation/${id}`);
+    }
+  };
+
+  // Bulk update teachers roster (Admin view)
   const handleUpdateTeachers = async (newTeachers: Teacher[]) => {
-    // Optimistically update local state so UI updates instantly without latency
     setTeachers(newTeachers);
     try {
       for (const t of newTeachers) {
@@ -157,18 +209,23 @@ export default function App() {
   };
 
   const handleDeleteTeacher = async (code: string, name: string) => {
-    // Optimistic delete
     const updated = teachers.filter(t => t.code !== code);
     setTeachers(updated);
     
     try {
       await deleteDoc(doc(db, 'teachers', code));
-      await deleteDoc(doc(db, 'evaluation', code));
+      
+      // Delete all evaluations owned by this teacher
+      const evalsToDelete = allEvaluations.filter(e => e.teacherCode === code);
+      for (const ev of evalsToDelete) {
+        if (ev.id) {
+          await deleteDoc(doc(db, 'evaluation', ev.id));
+        }
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `teachers/${code}`);
     }
 
-    // Reset selected/logged code if corresponding teacher deleted
     if (selectedTeacherCode === code) {
       const fallbackCode = updated[0]?.code || '';
       setSelectedTeacherCode(fallbackCode);
@@ -178,70 +235,8 @@ export default function App() {
     }
   };
 
-  // 2. Dynamic evaluation state listener from Firestore
-  useEffect(() => {
-    const targetCode = loggedTeacher ? loggedTeacher.code : selectedTeacherCode;
-    if (!targetCode) return;
-
-    const docRef = doc(db, 'evaluation', targetCode);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setEvaluationState({
-          title: data.title || '',
-          subject: data.subject || '',
-          round: data.round || '',
-          evaluationDetailName: data.evaluationDetailName || '',
-          headers: data.headers || [],
-          rows: data.rows || [],
-          uploadedAt: data.uploadedAt || null,
-        });
-      } else {
-        // Fallback to presets or empty
-        if (targetCode === '101') {
-          setEvaluationState(DEFAULT_PRESET);
-        } else {
-          setEvaluationState({
-            title: '수행평가 결과',
-            subject: '',
-            round: '',
-            evaluationDetailName: '',
-            headers: [],
-            rows: [],
-            uploadedAt: null,
-          });
-        }
-      }
-    }, (error) => {
-      console.warn("Firestore evaluation loader check failed: ", error);
-    });
-
-    return () => unsubscribe();
-  }, [loggedTeacher?.code, selectedTeacherCode]);
-
-  // Sync state changes with Cloud Firestore (real-time broadcast to all client screens)
-  const handleUpdateEvaluationState = async (newState: EvaluationState) => {
-    const targetCode = loggedTeacher ? loggedTeacher.code : '101';
-    setEvaluationState(newState);
-    try {
-      const docRef = doc(db, 'evaluation', targetCode);
-      await setDoc(docRef, {
-        title: newState.title || '',
-        subject: newState.subject || '',
-        round: newState.round || '',
-        evaluationDetailName: newState.evaluationDetailName || '',
-        headers: newState.headers || [],
-        rows: newState.rows || [],
-        uploadedAt: newState.uploadedAt || null,
-      });
-    } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, `evaluation/${targetCode}`);
-    }
-  };
-
   const handleToggleAdmin = () => {
     setIsAdminOpen(!isAdminOpen);
-    // Logout student if entering admin mode to keep security boundaries clean
     setLoggedStudent(null);
   };
 
@@ -253,7 +248,7 @@ export default function App() {
     setLoggedStudent(null);
   };
 
-  // Auth form submissions
+  // Staff/Teacher and Admin Login Auth Check
   const handlePortalLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -264,29 +259,31 @@ export default function App() {
         setAuthError('');
         setInputPassword('');
       } else {
-        setAuthError('관리자 비밀번호가 정확하지 않습니다. (비번: 1004)');
+        setAuthError('관리자 비밀번호가 일치하지 않습니다. 검증 암호를 재확인해 주세요.');
       }
     } else {
       const trimmedCode = inputTeacherCode.trim();
-      if (!trimmedCode || !inputPassword.trim()) {
-        setAuthError('교사 코드와 비밀번호를 모두 가입해 주십시오.');
+      if (!trimmedCode) {
+        setAuthError('로그인할 선생님을 선택해 주세요.');
+        return;
+      }
+      if (!inputPassword.trim()) {
+        setAuthError('교직원 암호를 기입해 주세요.');
         return;
       }
       if (inputPassword !== '1004') {
-        setAuthError('비밀번호가 일치하지 않습니다. (비밀번호: 1004)');
+        setAuthError('인증 비밀번호가 정확하지 않습니다.');
         return;
       }
 
-      // Check if code matches any registered teacher strictly. No hardcoded or unauthorized bypass of the roster database.
       const matchedTeacher = teachers.find(t => t.code === trimmedCode);
-
       if (matchedTeacher) {
         setLoggedTeacher(matchedTeacher);
         setAuthError('');
         setInputTeacherCode('');
         setInputPassword('');
       } else {
-        setAuthError(`등록되지 않은 선생님 코드(${trimmedCode})입니다. 학교 총괄 관리자가 교원 목록에 등록했는지 다시 점검하고 시도해 보십시오.`);
+        setAuthError('등록되지 않은 선생님 정보입니다.');
       }
     }
   };
@@ -306,13 +303,16 @@ export default function App() {
       <Navbar 
         isAdminOpen={isAdminOpen} 
         onToggleAdmin={handleToggleAdmin} 
-        evaluationTitle={evaluationState.title || (loggedTeacher ? `${loggedTeacher.name} 선생님의 과목` : '성적 조회')} 
+        evaluationTitle={
+          loggedTeacher 
+            ? `${loggedTeacher.name} 선생님의 과목` 
+            : currentStudentEvaluation?.title || '성적 조회'
+        } 
       />
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-8">
         <AnimatePresence mode="wait">
           {isAdminOpen ? (
-            // Admin portal route selection
             isAdminLoggedIn ? (
               // Mode 1A: Admin Roster Panel
               <motion.div
@@ -330,7 +330,7 @@ export default function App() {
                 />
               </motion.div>
             ) : loggedTeacher ? (
-              // Mode 1B: Teacher evaluation scores publisher dashboard
+              // Mode 1B: Teacher evaluations publisher dashboard
               <motion.div
                 key="teacher-dashboard-screen"
                 initial={{ opacity: 0, y: 15 }}
@@ -339,8 +339,12 @@ export default function App() {
                 transition={{ duration: 0.25 }}
               >
                 <AdminDashboard 
-                  evaluationState={evaluationState}
-                  onUpdateState={handleUpdateEvaluationState}
+                  myEvaluations={myEvaluations}
+                  activeEvaluationId={activeEvaluationId}
+                  onSelectEvaluationId={setActiveEvaluationId}
+                  onCreateEvaluation={handleCreateEvaluation}
+                  onUpdateEvaluation={handleUpdateEvaluation}
+                  onDeleteEvaluation={handleDeleteEvaluation}
                   onClose={() => setIsAdminOpen(false)}
                   loggedTeacher={loggedTeacher}
                   onLogout={handleTeacherLogout}
@@ -365,7 +369,7 @@ export default function App() {
                       <Key size={24} className="stroke-[2.5]" />
                     </div>
                     <h2 className="text-xl font-extrabold font-sans tracking-tight">교원 검증 포털 로그인</h2>
-                    <p className="text-xs text-indigo-200 mt-1">담당 클래스의 배점을 관리하거나 교직원 목록을 증대하십시오.</p>
+                    <p className="text-xs text-indigo-200 mt-1">담당 클래스의 배점을 등록하거나 교직원 명부를 관리하십시오.</p>
                   </div>
 
                   <div className="p-6 sm:p-8 space-y-5">
@@ -395,34 +399,38 @@ export default function App() {
                       {authRole === 'teacher' ? (
                         <div>
                           <label className="block text-xs font-bold text-slate-700 mb-1.5" htmlFor="p-teacher-code">
-                            선생님 코드 (3자리 숫자)
+                            선생님 선택 (등록된 교직원 목록)
                           </label>
-                          <input
+                          <select
                             id="p-teacher-code"
-                            type="text"
-                            maxLength={3}
-                            placeholder="예: 101"
                             value={inputTeacherCode}
-                            onChange={(e) => setInputTeacherCode(e.target.value.replace(/\D/g, ''))}
-                            className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-black text-slate-800 text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-650"
+                            onChange={(e) => setInputTeacherCode(e.target.value)}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold text-slate-800 cursor-pointer"
                             autoFocus
-                          />
+                          >
+                            <option value="">로그인할 선생님 선택</option>
+                            {teachers.map((tea) => (
+                              <option key={tea.code} value={tea.code}>
+                                [{tea.code}] {tea.name} 선생님
+                              </option>
+                            ))}
+                          </select>
                         </div>
                       ) : (
                         <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-500 leading-normal flex items-start gap-1.5">
                           <Info size={14} className="shrink-0 text-indigo-600 mt-0.5" />
-                          <span>학교 총괄 관리자는 본교 배정된 통합 교직원 대장을 일괄 제치하고 신규 교사 코드를 개설하는 권고 장치입니다.</span>
+                          <span>학교 총괄 관리자는 본교에 배정된 통합 교직원 대장을 등록하고 신규 배점을 제치하는 검토 장치입니다.</span>
                         </div>
                       )}
 
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1.5" htmlFor="p-password">
-                          인증 비밀번호 (1004)
+                          인증 비밀번호
                         </label>
                         <input
                           id="p-password"
                           type="password"
-                          placeholder="비밀번호(1004)를 기입하세요"
+                          placeholder="보안 인증 코드를 입력하세요"
                           value={inputPassword}
                           onChange={(e) => setInputPassword(e.target.value)}
                           className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-black text-slate-800 text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-650"
@@ -448,7 +456,7 @@ export default function App() {
                           type="submit"
                           className="flex-1 py-3 bg-indigo-900 hover:bg-indigo-950 text-white border border-indigo-900 font-bold rounded-xl text-xs transition cursor-pointer"
                         >
-                          검증 및 승인
+                          인증 및 승인
                         </button>
                       </div>
                     </form>
@@ -466,7 +474,7 @@ export default function App() {
               transition={{ duration: 0.3 }}
             >
               <ResultCard 
-                evaluationState={evaluationState}
+                evaluationState={currentStudentEvaluation as EvaluationState}
                 studentData={loggedStudent}
                 onBack={handleStudentLogout}
               />
@@ -486,45 +494,21 @@ export default function App() {
                 <span className="text-[10px] sm:text-xs font-extrabold text-indigo-900 bg-indigo-50 border border-indigo-100 px-3.5 py-1.5 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5 shadow-sm">
                   🏫 수시 수행평가 성적 간편 조회 엔진
                 </span>
-                <p className="text-xs text-slate-500 font-semibold px-4 leading-relaxed">
-                  본 서비스는 교육 정보 보호 지침에 맞춰 지정된 선생님의 평가 점수와 개별 성취 환산 피드백을 타인 노출 없이 안전하게 1대1 즉시 대조합니다.
+                <p className="text-xs text-slate-500 font-semibold px-4 leading-relaxed font-sans">
+                  지정된 선생님의 평가 점수와 개별 성휘 환산 피드백을 타인 노출 없이 안전하게 1대1 즉시 확인해 보실 수 있습니다.
                 </p>
               </div>
 
               <LoginCard 
-                evaluationState={evaluationState} 
+                evaluationState={currentStudentEvaluation as EvaluationState} 
+                teacherEvaluations={studentTeacherEvaluations}
+                selectedEvaluationId={selectedEvaluationId}
+                onSelectEvaluationId={setSelectedEvaluationId}
                 onLoginSuccess={handleStudentLogin}
                 teachers={teachers}
                 selectedTeacherCode={selectedTeacherCode}
                 onSelectTeacher={setSelectedTeacherCode}
               />
-              
-              {/* Default Mock Login Tutorial box for first timers */}
-              {teachers.length > 0 && selectedTeacherCode === '101' && evaluationState.rows.length > 0 && evaluationState.uploadedAt?.includes('샘플') && (
-                <div className="max-w-md mx-auto bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 text-xs space-y-2 text-indigo-900/80 shadow-xs">
-                  <span className="font-bold block text-indigo-950 flex items-center gap-1">
-                     💻 즉시 체험용 샘플 계정 안내 (선생님 테스트용)
-                  </span>
-                  <p className="leading-relaxed text-[11px]">
-                    아직 교사 엑셀 파일을 업로드하지 않으셨다면, 아래의 샘플 계정으로 로그인 동작을 미리 체험해 보실 수 있습니다 (선생님 선택 목록에서 101 김태평 선생님 선택):
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 bg-white/70 p-2.5 rounded-lg border border-indigo-100/50 font-mono text-[11px]">
-                    <div>
-                      <span className="text-slate-500 block">김하늘 학생</span>
-                      <span className="block text-indigo-950">학번: <strong className="font-bold text-indigo-600">10101</strong></span>
-                      <span className="block text-indigo-950">생일: <strong className="font-bold text-indigo-600">060512</strong></span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">이솔이 학생</span>
-                      <span className="block text-indigo-950">학번: <strong className="font-bold text-indigo-600">10103</strong></span>
-                      <span className="block text-indigo-950">생일: <strong className="font-bold text-indigo-600">060707</strong></span>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-slate-400">
-                    ※ 화면 우상단의 [교사 / 관리자 로그인] 에서 패스워드 <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-700">1004</code>를 입력하시면 실제 엑셀 업로드 및 전체 조율을 하실 수 있습니다.
-                  </p>
-                </div>
-              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -533,7 +517,7 @@ export default function App() {
       {/* Trustfooter */}
       <footer className="py-6 border-t border-slate-200/60 text-center text-xs text-slate-400 print:hidden mt-12 bg-white flex flex-col items-center justify-center gap-1">
         <span className="font-semibold text-slate-500 flex items-center gap-1 text-[11px]">
-           수행평가 결과 조회 시스템 v2.0
+          수행평가 결과 조회 시스템 v2.5
         </span>
         <span className="text-[10px]">Copyright © 2026 Educational Grade Web Engine. All Rights Reserved.</span>
       </footer>

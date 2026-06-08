@@ -6,55 +6,79 @@ import {
   AlertCircle, 
   CheckCircle2, 
   Trash2, 
-  Eye, 
-  EyeOff, 
-  Key, 
-  RefreshCw,
   Search,
   BookOpen,
-  Info
+  Info,
+  Plus,
+  Layers,
+  Sparkles,
+  CalendarDays
 } from 'lucide-react';
 import { EvaluationState, Teacher } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey } from '../utils';
 
 interface AdminDashboardProps {
-  evaluationState: EvaluationState;
-  onUpdateState: (newState: EvaluationState) => void;
+  myEvaluations: EvaluationState[];
+  activeEvaluationId: string;
+  onSelectEvaluationId: (id: string) => void;
+  onCreateEvaluation: (newState: EvaluationState) => Promise<string>;
+  onUpdateEvaluation: (id: string, newState: EvaluationState) => Promise<void>;
+  onDeleteEvaluation: (id: string) => Promise<void>;
   onClose: () => void;
   loggedTeacher: Teacher;
   onLogout: () => void;
 }
 
 export default function AdminDashboard({ 
-  evaluationState, 
-  onUpdateState, 
+  myEvaluations,
+  activeEvaluationId,
+  onSelectEvaluationId,
+  onCreateEvaluation,
+  onUpdateEvaluation,
+  onDeleteEvaluation,
   onClose,
   loggedTeacher,
   onLogout
 }: AdminDashboardProps) {
   const [errorMsg, setErrorMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
-  
-  // Split title inputs
-  const [subjectInput, setSubjectInput] = useState(evaluationState.subject || '');
-  const [roundInput, setRoundInput] = useState(evaluationState.round || '');
-  const [detailNameInput, setDetailNameInput] = useState(evaluationState.evaluationDetailName || '');
-  
-  const [searchTerm, setSearchTerm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync text inputs in real-time if evaluationState is fetched successfully via onSnapshot
-  useEffect(() => {
-    setSubjectInput(evaluationState.subject || '');
-    setRoundInput(evaluationState.round || '');
-    setDetailNameInput(evaluationState.evaluationDetailName || '');
-  }, [evaluationState.subject, evaluationState.round, evaluationState.evaluationDetailName]);
+  // Active evaluation being edited
+  const activeEval = myEvaluations.find(e => e.id === activeEvaluationId);
 
-  const propagateSplitTitle = (subject: string, round: string, detail: string) => {
+  // Text inputs
+  const [subjectInput, setSubjectInput] = useState('');
+  const [roundInput, setRoundInput] = useState('');
+  const [detailNameInput, setDetailNameInput] = useState('');
+  const [maxScoreInput, setMaxScoreInput] = useState('');
+  
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Sync inputs when active evaluation changes
+  useEffect(() => {
+    if (activeEval) {
+      setSubjectInput(activeEval.subject || '');
+      setRoundInput(activeEval.round || '');
+      setDetailNameInput(activeEval.evaluationDetailName || '');
+      setMaxScoreInput(activeEval.maxScore || '');
+    } else {
+      setSubjectInput('');
+      setRoundInput('');
+      setDetailNameInput('');
+      setMaxScoreInput('');
+    }
+    setErrorMsg('');
+  }, [activeEvaluationId, activeEval]);
+
+  const propagateSplitChanges = (subject: string, round: string, detail: string, maxS: string) => {
+    if (!activeEval || !activeEvaluationId) return;
+
     let combinedTitle = '';
     const cleanSub = subject.trim();
     const cleanRnd = round.trim();
     const cleanDet = detail.trim();
+    const cleanMax = maxS.trim();
 
     if (cleanSub && cleanRnd && cleanDet) {
       combinedTitle = `${cleanSub} (${cleanRnd}차) 수행평가: ${cleanDet}`;
@@ -68,30 +92,27 @@ export default function AdminDashboard({
       combinedTitle = '수행평가 결과';
     }
 
-    onUpdateState({
-      ...evaluationState,
+    onUpdateEvaluation(activeEvaluationId, {
+      ...activeEval,
       subject: cleanSub,
       round: cleanRnd,
       evaluationDetailName: cleanDet,
+      maxScore: cleanMax,
       title: combinedTitle
     });
   };
 
-  // Password checking removed as Auth is managed upstream
-
-  const processExcelFile = (file: File) => {
+  const processExcelFile = async (file: File) => {
+    setErrorMsg('');
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        // Convert sheet to json rows (array of objects)
         const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' }) as Record<string, any>[];
-        
-        // Extract headers from first row
         const headersJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as string[];
         const cleanHeaders = (headersJson || []).filter(h => h && String(h).trim() !== "");
 
@@ -100,37 +121,41 @@ export default function AdminDashboard({
           return;
         }
 
-        // Validate required columns
         const studentIdKey = findStudentIdKey(cleanHeaders);
         const birthdateKey = findBirthdateKey(cleanHeaders);
 
         if (!studentIdKey || !birthdateKey) {
           setErrorMsg(
-            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 로그인을 위해 엑셀 내에 '학번'과 '생년월일'이 포함된 열이 반드시 필요합니다.\n\n` + 
-            `감지된 열: [${cleanHeaders.join(', ')}]`
+            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번'과 '생년월일' 문항이 들어간 열이 반드시 필요합니다.\n\n` + 
+            `감지된 열 목록: [${cleanHeaders.join(', ')}]`
           );
           return;
         }
 
-        // Success! Update evaluation dataset while preserving existing split title values
-        const currentTitle = subjectInput && roundInput && detailNameInput
-          ? `${subjectInput.trim()} (${roundInput.trim()}차) 수행평가: ${detailNameInput.trim()}`
-          : (evaluationState.title || '수행평가 결과');
+        // Initialize state for new evaluation
+        const defaultSubject = subjectInput.trim() || '정보';
+        const defaultRound = roundInput.trim() || '1';
+        const defaultDetail = detailNameInput.trim() || '수행평가';
+        const defaultMax = maxScoreInput.trim() || '20';
+        const initialTitle = `${defaultSubject} (${defaultRound}차) 수행평가: ${defaultDetail}`;
 
-        onUpdateState({
-          ...evaluationState,
-          title: currentTitle,
-          subject: subjectInput,
-          round: roundInput,
-          evaluationDetailName: detailNameInput,
+        const newEvalMetadata: EvaluationState = {
+          title: initialTitle,
+          subject: defaultSubject,
+          round: defaultRound,
+          evaluationDetailName: defaultDetail,
+          maxScore: defaultMax,
           headers: cleanHeaders,
           rows: rawRows,
           uploadedAt: new Date().toLocaleString('ko-KR')
-        });
+        };
+
+        const newId = await onCreateEvaluation(newEvalMetadata);
+        onSelectEvaluationId(newId);
         setErrorMsg('');
       } catch (err) {
         console.error(err);
-        setErrorMsg('엑셀 파일을 읽는 도중 오류가 발생했습니다. 올바른 Excel 형식 파일(.xlsx, .xls)을 업로드해 주세요.');
+        setErrorMsg('엑셀 파일을 파싱하는 과정에서 에러가 발생했습니다. 파일 형식을 다시 점검해 주십시오.');
       }
     };
     reader.readAsArrayBuffer(file);
@@ -166,49 +191,39 @@ export default function AdminDashboard({
     fileInputRef.current?.click();
   };
 
-  const handleReset = () => {
-    if (window.confirm('기존의 모든 평가 데이터가 삭제됩니다. 정말 초기화하시겠습니까?')) {
-      onUpdateState({
-        title: '신규 수행평가 결과',
-        subject: '',
-        round: '',
-        evaluationDetailName: '',
-        headers: [],
-        rows: [],
-        uploadedAt: null
-      });
-      setSubjectInput('');
-      setRoundInput('');
-      setDetailNameInput('');
-      setErrorMsg('');
+  const handleDeleteActive = async (idToDelete: string) => {
+    if (window.confirm('이 성적 파일을 정말 삭제합니까? 삭제 후 동기화된 모든 학생은 이 파일을 조회할 수 없게 됩니다.')) {
+      await onDeleteEvaluation(idToDelete);
     }
   };
 
-  // Filter preview list
-  const previewRows = evaluationState.rows.filter(row => {
+  // Preview filtration
+  const previewRows = activeEval ? activeEval.rows.filter(row => {
     if (!searchTerm) return true;
     return Object.values(row).some(val => 
       String(val).toLowerCase().includes(searchTerm.toLowerCase())
     );
-  });
+  }) : [];
 
-  const studentIdKey = findStudentIdKey(evaluationState.headers);
-  const birthdateKey = findBirthdateKey(evaluationState.headers);
-  const feedbackKeys = findFeedbackKey(evaluationState.headers);
+  const studentIdKey = activeEval ? findStudentIdKey(activeEval.headers) : undefined;
+  const birthdateKey = activeEval ? findBirthdateKey(activeEval.headers) : undefined;
+  const feedbackKeys = activeEval ? findFeedbackKey(activeEval.headers) : [];
 
   return (
-    <div id="admin-dashboard-layout" className="space-y-6 max-w-5xl mx-auto px-1 sm:px-4 pb-12">
+    <div id="admin-dashboard-layout" className="space-y-6 max-w-6xl mx-auto px-1 sm:px-4 pb-12">
+      
+      {/* Visual Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-4 gap-4">
         <div>
-          <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs px-3 py-1 rounded-full font-extrabold inline-flex items-center gap-1 mb-1.5 shadow-sm">
-            <CheckCircle2 size={12} className="text-emerald-600" /> [교사 코드: {loggedTeacher.code}] {loggedTeacher.name} 선생님 권한 로그인됨
+          <span className="bg-emerald-55 text-emerald-850 border border-emerald-250 text-xs px-3 py-1 rounded-full font-bold inline-flex items-center gap-1 mb-1.5 shadow-sm">
+            <CheckCircle2 size={12} className="text-emerald-700" /> [교사 ID: {loggedTeacher.code}] {loggedTeacher.name} 선생님
           </span>
-          <h1 className="text-2xl font-extrabold font-sans tracking-tight text-slate-900">담당 수행평가 기입 및 설정</h1>
+          <h1 className="text-xl sm:text-2xl font-black font-sans tracking-tight text-slate-900">다중 수행평가 파일 관리 시스템</h1>
         </div>
         <div className="flex items-center gap-2">
           <button 
             onClick={onLogout}
-            className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-red-600 bg-white hover:bg-red-50 transition cursor-pointer"
+            className="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-bold text-red-600 bg-white hover:bg-red-50 transition cursor-pointer"
           >
             로그아웃
           </button>
@@ -221,278 +236,404 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* Settings Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Main Grid: Sidebar (List of Files) + Active Config (Excel Actions / Metadata Settings) */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         
-        {/* Title Setting & Stats */}
-        <div className="md:col-span-1 space-y-4">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
-              <BookOpen size={16} className="text-slate-500" />
-              수행평가 대제목 조율
+        {/* Column 1: Teacher's Uploaded Files Catalog */}
+        <div className="lg:col-span-1 space-y-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+            <h3 className="text-xs font-black text-slate-800 flex items-center gap-1 pb-1.5 border-b border-slate-100 uppercase tracking-tight">
+              <Layers size={14} className="text-slate-500" />
+              업로드 성적표 목록 ({myEvaluations.length}개)
             </h3>
-            
-            <div className="space-y-3.5">
-              <div>
-                <label htmlFor="eval-subject-input" className="block text-[11px] font-bold text-slate-700 mb-1">
-                  1. 평가 과목명
-                </label>
-                <input 
-                  id="eval-subject-input"
-                  type="text"
-                  value={subjectInput}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSubjectInput(val);
-                    propagateSplitTitle(val, roundInput, detailNameInput);
-                  }}
-                  placeholder="예: 정보 과학, 소프트웨어, 영어"
-                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold"
-                />
-              </div>
 
-              <div>
-                <label htmlFor="eval-round-input" className="block text-[11px] font-bold text-slate-700 mb-1">
-                  2. 평가 차시 (차)
-                </label>
-                <input 
-                  id="eval-round-input"
-                  type="text"
-                  value={roundInput}
-                  onChange={(e) => {
-                    const rawVal = e.target.value;
-                    // Auto strip trailing "차" if typed manually, to keep formatting clean
-                    const cleanVal = rawVal.replace(/차$/, '').trim();
-                    setRoundInput(cleanVal);
-                    propagateSplitTitle(subjectInput, cleanVal, detailNameInput);
-                  }}
-                  placeholder="예: 1 또는 2"
-                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-center font-mono"
-                />
+            {myEvaluations.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs italic">
+                등록된 성적 파일이 없습니다.<br/>새로운 엑셀을 업로드 하세요.
               </div>
+            ) : (
+              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                {myEvaluations.map((item) => {
+                  const isActive = item.id === activeEvaluationId;
+                  return (
+                    <div 
+                      key={item.id} 
+                      className={`group p-3 rounded-xl border text-left cursor-pointer transition-all flex justify-between items-start gap-1 ${
+                        isActive 
+                          ? 'bg-indigo-50 border-indigo-300 shadow-xs' 
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                      onClick={() => onSelectEvaluationId(item.id || '')}
+                    >
+                      <div className="space-y-1 overflow-hidden">
+                        <span className="block text-xs font-black text-slate-800 truncate" title={item.title}>
+                          {item.title}
+                        </span>
+                        <span className="block text-[10px] text-slate-400 font-mono">
+                          {item.uploadedAt || '시각 없음'}
+                        </span>
+                      </div>
 
-              <div>
-                <label htmlFor="eval-detail-input" className="block text-[11px] font-bold text-slate-700 mb-1">
-                  3. 수행평가 이름
-                </label>
-                <input 
-                  id="eval-detail-input"
-                  type="text"
-                  value={detailNameInput}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setDetailNameInput(val);
-                    propagateSplitTitle(subjectInput, roundInput, val);
-                  }}
-                  placeholder="예: Python 알고리즘 분석 및 동료 평가"
-                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold"
-                />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteActive(item.id || '');
+                        }}
+                        className="p-1 bg-white border border-slate-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition"
+                        title="파일 삭제"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-
-              <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100/60 text-[11px] text-indigo-900 mt-2 space-y-1">
-                <span className="font-extrabold block text-indigo-950 text-[10px] uppercase tracking-wider">실시간 대제목 미리보기</span>
-                <p className="font-bold leading-normal break-all">
-                  {evaluationState.title || '수행평가 결과'}
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 space-y-2 text-xs text-slate-600">
-              <div className="flex justify-between">
-                <span className="font-medium text-slate-500">총 인원 집계:</span>
-                <span className="font-bold text-slate-800">{evaluationState.rows.length}명</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium text-slate-500">컬럼 정보 개수:</span>
-                <span className="font-bold text-slate-800">{evaluationState.headers.length}개</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium text-slate-500">최근 패치 시각:</span>
-                <span className="font-mono text-slate-650">{evaluationState.uploadedAt || '없음'}</span>
-              </div>
-            </div>
-            
-            {evaluationState.rows.length > 0 && (
-              <button 
-                onClick={handleReset}
-                className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-red-200 text-red-600 hover:bg-red-50 rounded-xl text-xs font-bold transition cursor-pointer"
-              >
-                <Trash2 size={14} /> 전체 데이터 폐기
-              </button>
             )}
-          </div>
-
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2.5 text-xs text-slate-600">
-            <div className="flex gap-2.5">
-              <Info size={16} className="text-slate-700 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <span className="font-bold text-slate-900 block">안내: 업로드 템플릿 제약조건</span>
-                <span className="block text-[11px] text-slate-500 leading-relaxed">성공적인 학생 조회를 위해 첫 행 헤더 컬럼명에 아래 키워드가 있어야 합니다:</span>
-                <ul className="list-disc pl-4 space-y-0.5 mt-0.5 text-[11px] text-slate-600 font-medium">
-                  <li><strong>학번</strong> (예: 학번, ID, 학생고유 ID)</li>
-                  <li><strong>생년월일</strong> (예: 생일, 생년월일, 주민번호앞자리)</li>
-                  <li><strong>피드백/사유</strong> (개별 맞춤 코멘트 컬럼)</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Excel Upload Area */}
-        <div id="file-upload-section" className="md:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="space-y-3">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 pb-2 border-b border-slate-100">
-              <FileSpreadsheet size={16} className="text-slate-500" />
-              신규 마스터 엑셀 시트 등록
-            </h3>
-
-            {/* Drop Zone */}
-            <div 
-              onDragEnter={handleDrag}
-              onDragOver={handleDrag}
-              onDragLeave={handleDrag}
-              onDrop={handleDrop}
-              onClick={triggerFileInput}
-              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[180px] ${
-                dragActive 
-                  ? 'border-indigo-600 bg-indigo-50/40 scale-[0.99]' 
-                  : 'border-slate-350 hover:border-indigo-500 hover:bg-slate-50/50'
+            
+            <button
+              onClick={() => onSelectEvaluationId('')}
+              className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                activeEvaluationId === '' 
+                  ? 'bg-indigo-900 text-white' 
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
-              <input 
-                ref={fileInputRef}
-                type="file" 
-                accept=".xlsx, .xls"
-                onChange={handleFileChange}
-                className="hidden" 
-              />
-              <div className="p-3 bg-indigo-50 rounded-full mb-3 text-indigo-900 group-hover:scale-105 transition duration-150">
-                <Upload size={22} className="stroke-[2.5]" />
-              </div>
-              <p className="text-xs font-bold text-slate-700">여기에 엑셀 파일을 드래그하여 드롭하거나 마우스 클릭하세요</p>
-              <p className="text-[10px] text-slate-400 mt-1">.xlsx, .xls 파일 형식만 처리 가능합니다.</p>
-            </div>
-            
-            {errorMsg && (
-              <div className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-medium">
-                <AlertCircle size={15} className="shrink-0 mt-0.5" />
-                <span className="whitespace-pre-line">{errorMsg}</span>
-              </div>
-            )}
-
-            {evaluationState.rows.length > 0 && !errorMsg && (
-              <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl flex items-start gap-2 text-xs">
-                <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-600" />
-                <div className="space-y-0.5 text-slate-700">
-                  <span className="font-bold block text-slate-900">엑셀 데이터 파싱이 성공했습니다.</span>
-                  <span className="text-[11px] block leading-relaxed">
-                    총 <strong className="text-slate-900 font-extrabold">{evaluationState.rows.length}명</strong>의 데이터셋 탑재 완료!
-                    로그인 키 {' '}
-                    (<span className="text-indigo-900 font-bold">학번 감지: {studentIdKey || '미감지'}</span>, {' '}
-                    <span className="text-indigo-900 font-bold">생일 감지: {birthdateKey || '미감지'}</span>)가 정상 확보되었습니다.
-                  </span>
-                </div>
-              </div>
-            )}
+              <Plus size={14} /> 새 성적표 신규 등록
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Data Table Preview */}
-      {evaluationState.rows.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">업로드 완료된 원본 데이터 일람표 (학생 확인용)</h3>
-              <p className="text-[11px] text-slate-400">학번, 생년월일과 세부 피드백을 실시간 검색으로 점검하세요.</p>
-            </div>
-            
-            <div className="relative max-w-xs w-full">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                <Search size={16} />
-              </span>
-              <input 
-                type="text" 
-                placeholder="전체 항목 검색..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full text-xs pl-9 pr-4 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-100 focus:border-indigo-400"
-              />
-            </div>
-          </div>
+        {/* Column 2 & 3: File Upload Area & Config controls */}
+        <div className="lg:col-span-3 space-y-5">
+          
+          {/* New uploads or selected settings block */}
+          {activeEvaluationId === '' || !activeEval ? (
+            /* Upload layout state for entering new sheet */
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <div className="border-b border-slate-100 pb-2">
+                <span className="bg-indigo-50 text-indigo-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">Step 1</span>
+                <h3 className="text-sm font-black text-slate-900 mt-2">새로운 성적표 Excel 업로드</h3>
+                <p className="text-[11px] text-slate-450 leading-normal mt-0.5">
+                  학교 과목의 수행평가 기입 대장 엑셀 파일(.xlsx, .xls)을 아래의 드롭존에 업로드해 주십시오.
+                </p>
+              </div>
 
-          <div className="overflow-x-auto border border-slate-200 rounded-xl max-h-[350px]">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0">
-                  <th className="py-2.5 px-3 font-semibold text-center w-12 border-r border-slate-200">No.</th>
-                  {evaluationState.headers.map((header) => {
-                    const isId = header === studentIdKey;
-                    const isBirth = header === birthdateKey;
-                    const isFeedback = feedbackKeys.includes(header);
-                    
-                    return (
-                      <th 
-                        key={header} 
-                        className={`py-2.5 px-3 font-semibold whitespace-nowrap min-w-[80px] ${
-                          isId || isBirth 
-                            ? 'bg-slate-100 border-x border-slate-200 text-slate-900 font-bold' 
-                            : isFeedback 
-                              ? 'bg-indigo-50 text-indigo-900 font-bold' 
-                              : ''
-                        }`}
-                      >
-                        <div className="flex items-center gap-1">
-                          {header}
-                          {isId && <span className="text-[9px] bg-indigo-200 text-indigo-700 px-1 rounded">학번</span>}
-                          {isBirth && <span className="text-[9px] bg-emerald-200 text-emerald-800 px-1 rounded">생일</span>}
-                          {isFeedback && <span className="text-[9px] bg-slate-200 text-slate-700 px-1 rounded">피드백</span>}
-                        </div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {previewRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={evaluationState.headers.length + 1} className="text-center py-6 text-slate-400 italic">
-                      검색 조건과 일치하는 데이터가 없습니다.
-                    </td>
-                  </tr>
-                ) : (
-                  previewRows.map((row, index) => (
-                    <tr key={index} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-2 px-3 text-center text-slate-400 font-mono border-r border-slate-200">{index + 1}</td>
-                      {evaluationState.headers.map((header) => {
-                        const val = row[header];
+              {/* Setting default metadata details BEFORE files uploads to speed metadata configuration */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">평가 과목명</label>
+                  <input 
+                    type="text"
+                    value={subjectInput}
+                    onChange={(e) => setSubjectInput(e.target.value)}
+                    placeholder="예: 정보"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">평가 차시 (차)</label>
+                  <input 
+                    type="text"
+                    value={roundInput}
+                    onChange={(e) => setRoundInput(e.target.value)}
+                    placeholder="예: 1"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 상세 이름</label>
+                  <input 
+                    type="text"
+                    value={detailNameInput}
+                    onChange={(e) => setDetailNameInput(e.target.value)}
+                    placeholder="예: 빅데이터 분석 프로젝트"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 총 만점</label>
+                  <input 
+                    type="text"
+                    value={maxScoreInput}
+                    onChange={(e) => setMaxScoreInput(e.target.value.replace(/\D/g, ''))}
+                    placeholder="예: 20"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
+                  />
+                </div>
+                <div className="sm:col-span-3 bg-slate-50 border border-slate-150 p-2 text-[10px] text-slate-500 rounded-lg flex items-start gap-1 mt-1 leading-normal">
+                  <Info size={13} className="text-slate-600 shrink-0 mt-0.5" />
+                  <span>설정하고 아래 드래그 공간에 엑셀을 업로드하면 위 메타정보를 자동 취합하여 수행평가 세션이 저장 개설됩니다!</span>
+                </div>
+              </div>
+
+              {/* Upload Drop area */}
+              <div 
+                onDragEnter={handleDrag}
+                onDragOver={handleDrag}
+                onDragLeave={handleDrag}
+                onDrop={handleDrop}
+                onClick={triggerFileInput}
+                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[160px] ${
+                  dragActive 
+                    ? 'border-indigo-600 bg-indigo-50/40' 
+                    : 'border-slate-300 hover:border-indigo-500 hover:bg-slate-50/50'
+                }`}
+              >
+                <input 
+                  ref={fileInputRef}
+                  type="file" 
+                  accept=".xlsx, .xls"
+                  onChange={handleFileChange}
+                  className="hidden" 
+                />
+                <div className="p-2.5 bg-indigo-50 rounded-full mb-2.5 text-indigo-900">
+                  <Upload size={20} className="stroke-[2.5]" />
+                </div>
+                <p className="text-xs font-black text-slate-700">여기에 엑셀 파일을 드래그하여 드롭하거나 마우스 클릭하세요</p>
+                <p className="text-[10px] text-slate-400 mt-1">.xlsx, .xls 파일 형식만 처리 가능합니다.</p>
+              </div>
+
+              {errorMsg && (
+                <div className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold">
+                  <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                  <span className="whitespace-pre-line">{errorMsg}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Selected evaluation active configurations panel */
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              
+              {/* Box A: Details & Metadata settings */}
+              <div className="md:col-span-1 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
+                  <BookOpen size={14} className="text-slate-500" />
+                  성적표 상세 메타정보 설정
+                </h3>
+
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="eval-subject-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
+                      1. 평가 과목명
+                    </label>
+                    <input 
+                      id="eval-subject-txt"
+                      type="text"
+                      value={subjectInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSubjectInput(val);
+                        propagateSplitChanges(val, roundInput, detailNameInput, maxScoreInput);
+                      }}
+                      placeholder="예: 정보 과학"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-slate-800 bg-slate-50"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="eval-round-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
+                      2. 평가 차시 (차)
+                    </label>
+                    <input 
+                      id="eval-round-txt"
+                      type="text"
+                      value={roundInput}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const val = raw.replace(/차$/, '').trim();
+                        setRoundInput(val);
+                        propagateSplitChanges(subjectInput, val, detailNameInput, maxScoreInput);
+                      }}
+                      placeholder="예: 1"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-center font-mono text-slate-800 bg-slate-50"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="eval-detail-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
+                      3. 수행평가 이름
+                    </label>
+                    <input 
+                      id="eval-detail-txt"
+                      type="text"
+                      value={detailNameInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setDetailNameInput(val);
+                        propagateSplitChanges(subjectInput, roundInput, val, maxScoreInput);
+                      }}
+                      placeholder="예: 알고리즘 설계"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-slate-800 bg-slate-50"
+                    />
+                  </div>
+
+                  {/* Max Score entry requested */}
+                  <div>
+                    <label htmlFor="eval-maxscore-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
+                      4. 수행평가 만점 (최대점)
+                    </label>
+                    <input 
+                      id="eval-maxscore-txt"
+                      type="text"
+                      value={maxScoreInput}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '');
+                        setMaxScoreInput(val);
+                        propagateSplitChanges(subjectInput, roundInput, detailNameInput, val);
+                      }}
+                      placeholder="예: 20"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-center font-mono text-indigo-950 bg-indigo-50/40 border-indigo-200"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 text-[10px] text-slate-450 space-y-1">
+                  <div className="flex justify-between">
+                    <span>학생 인원수:</span>
+                    <strong className="text-slate-800 font-bold">{activeEval.rows.length}명</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>칼럼 정보:</span>
+                    <strong className="text-slate-800 font-bold">{activeEval.headers.length}개</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>최종 업로드:</span>
+                    <span className="font-mono text-slate-800 text-[9px] truncate max-w-[125px]">{activeEval.uploadedAt || '없음'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Box B: Table Data Selector Preview details */}
+              <div className="md:col-span-2 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
+                <div className="justify-between flex items-center border-b border-slate-100 pb-1.5">
+                  <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-indigo-600" />
+                    실시간 동기화 상태 원격 점검
+                  </h3>
+                  <span className="text-[9px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.5 rounded-md">
+                    클라우드 보존 방식
+                  </span>
+                </div>
+
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-650 leading-relaxed font-semibold">
+                  <p className="text-slate-800 font-bold flex items-center gap-1 text-xs mb-1">
+                    <Info size={14} className="text-indigo-600" />
+                    안내: 다중 데이터 운영원칙
+                  </p>
+                  <span>
+                    엑셀을 업로드할 때 지정하신 교과 메타정보는 즉시 클라우드 Firestore에 별도의 고유 성적표 셋으로 기록 보존됩니다. 학생은 본인의 학과 선생님 아래로 개설된 모든 수행평가 결과 목록들을 1:1 드롭다운으로 실시간 조회할 권한을 가집니다.
+                  </span>
+                </div>
+
+                <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-250 rounded-xl flex items-start gap-1.5 text-[11px] leading-relaxed">
+                  <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-700" />
+                  <div className="text-emerald-950 font-semibold">
+                    <span className="font-bold block text-emerald-900">클라우드 파싱 완료</span>
+                    성공적으로 학생 식별자{' '}
+                    (<span className="font-bold underline text-indigo-950">학번: {studentIdKey || '없음'}</span>,{' '}
+                    <span className="font-bold underline text-indigo-950">생년월일: {birthdateKey || '없음'}</span>)가 활성화되어 있습니다.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Core spreadsheet preview rows table container */}
+          {activeEval && activeEval.rows.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                <div>
+                  <h3 className="text-xs font-black text-slate-800">선택된 성적 원본 대조 일람표 ({previewRows.length}행)</h3>
+                  <p className="text-[10px] text-slate-400">데이터를 실시간 검색으로 간편 점검하십시오.</p>
+                </div>
+                
+                <div className="relative max-w-xs w-full">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                    <Search size={14} />
+                  </span>
+                  <input 
+                    type="text" 
+                    placeholder="검색어 입력..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full text-xs pl-8 pr-3 py-1.5 border border-slate-300 rounded-xl focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="overflow-x-auto border border-slate-200 rounded-xl max-h-[300px]">
+                <table className="w-full text-left text-[11px] border-collapse font-sans">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-600 border-b border-slate-200 sticky top-0 font-bold">
+                      <th className="py-2 px-2.5 text-center w-10 border-r border-slate-200">No.</th>
+                      {activeEval.headers.map((header) => {
                         const isId = header === studentIdKey;
                         const isBirth = header === birthdateKey;
                         const isFeedback = feedbackKeys.includes(header);
                         
                         return (
-                          <td 
+                          <th 
                             key={header} 
-                            className={`py-2 px-3 whitespace-nowrap overflow-hidden max-w-sm text-ellipsis ${
+                            className={`py-2 px-2.5 whitespace-nowrap ${
                               isId || isBirth 
-                                ? 'bg-slate-50/50 text-slate-900 font-mono font-medium border-x border-slate-200' 
+                                ? 'bg-slate-200/80 text-slate-900 font-extrabold border-x border-slate-250' 
                                 : isFeedback 
-                                  ? 'text-indigo-800 font-medium' 
-                                  : 'text-slate-600'
+                                  ? 'bg-indigo-50 text-indigo-950 font-extrabold' 
+                                  : ''
                             }`}
                           >
-                            {val !== undefined && val !== null ? String(val) : '-'}
-                          </td>
+                            <span className="inline-flex items-center gap-0.5">
+                              {header}
+                              {isId && <span className="text-[9px] bg-indigo-200 text-indigo-850 px-1 rounded-sm">학번</span>}
+                              {isBirth && <span className="text-[9px] bg-emerald-200 text-emerald-850 px-1 rounded-sm">생일</span>}
+                              {isFeedback && <span className="text-[9px] bg-slate-200 text-slate-700 px-1 rounded-sm">피드백</span>}
+                            </span>
+                          </th>
                         );
                       })}
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {previewRows.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50 transition-colors font-semibold">
+                        <td className="py-1.5 px-2.5 text-center text-slate-400 font-mono border-r border-slate-200">{idx + 1}</td>
+                        {activeEval.headers.map((header) => {
+                          const val = row[header];
+                          const isId = header === studentIdKey;
+                          const isBirth = header === birthdateKey;
+                          const isFeedback = feedbackKeys.includes(header);
+                          
+                          return (
+                            <td 
+                              key={header} 
+                              className={`py-1.5 px-2.5 whitespace-nowrap overflow-hidden max-w-xs text-ellipsis font-medium ${
+                                isId || isBirth 
+                                  ? 'bg-slate-100/50 text-slate-900 border-x border-slate-200 font-mono' 
+                                  : isFeedback 
+                                    ? 'text-indigo-855' 
+                                    : 'text-slate-600'
+                              }`}
+                            >
+                              {val !== undefined && val !== null ? String(val) : '-'}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
         </div>
-      )}
+
+      </div>
+
     </div>
   );
 }
