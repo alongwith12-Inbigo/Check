@@ -11,7 +11,7 @@ import ResultCard from './components/ResultCard';
 import AdminDashboard from './components/AdminDashboard';
 import AdminManager from './components/AdminManager';
 import { EvaluationState, Teacher } from './types';
-import { doc, onSnapshot, setDoc, collection } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, collection, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { 
   Smile, 
@@ -96,7 +96,7 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [loggedStudent, setLoggedStudent] = useState<Record<string, any> | null>(null);
 
-  // 1. Subscribe to Teachers directory
+  // 1. Subscribe to Teachers directory in real-time from Firestore
   useEffect(() => {
     const collRef = collection(db, 'teachers');
     const unsubscribe = onSnapshot(collRef, (snap) => {
@@ -112,7 +112,7 @@ export default function App() {
 
       if (list.length === 0) {
         // Database is brand new. Let us auto-seed it with a working example teacher 101 out of the box!
-        const defaultTeacher: Teacher = { code: '101', name: '김태평 (수학)' };
+        const defaultTeacher: Teacher = { code: '101', name: '김태평 (대표)' };
         setDoc(doc(db, 'teachers', '101'), defaultTeacher).catch((err) => {
           console.error("Auto-seeding default teacher failed: ", err);
         });
@@ -127,13 +127,47 @@ export default function App() {
         }
       }
     }, (error) => {
-      console.warn("Firestore teachers onSnapshot warning: ", error);
+      console.warn("Firestore teachers subscription failed: ", error);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [selectedTeacherCode]);
 
-  // 2. Dynamic evaluation state listener based on selectedTeacherCode or loggedTeacher.code
+  // Helper to bulk upload/sync teachers list to Firestore
+  const handleUpdateTeachers = async (newTeachers: Teacher[]) => {
+    try {
+      for (const t of newTeachers) {
+        const docRef = doc(db, 'teachers', t.code);
+        await setDoc(docRef, {
+          code: t.code,
+          name: t.name
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'teachers');
+    }
+  };
+
+  const handleDeleteTeacher = async (code: string, name: string) => {
+    try {
+      await deleteDoc(doc(db, 'teachers', code));
+      await deleteDoc(doc(db, 'evaluation', code));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `teachers/${code}`);
+    }
+
+    const updated = teachers.filter(t => t.code !== code);
+    // Reset selected/logged code if corresponding teacher deleted
+    if (selectedTeacherCode === code) {
+      const fallbackCode = updated[0]?.code || '101';
+      setSelectedTeacherCode(fallbackCode);
+    }
+    if (loggedTeacher?.code === code) {
+      setLoggedTeacher(null);
+    }
+  };
+
+  // 2. Dynamic evaluation state listener from Firestore
   useEffect(() => {
     const targetCode = loggedTeacher ? loggedTeacher.code : selectedTeacherCode;
     if (!targetCode) return;
@@ -152,7 +186,7 @@ export default function App() {
           uploadedAt: data.uploadedAt || null,
         });
       } else {
-        // Fallback or seed default preset to teacher 101
+        // Fallback to presets or empty
         if (targetCode === '101') {
           setEvaluationState(DEFAULT_PRESET);
         } else {
@@ -280,6 +314,8 @@ export default function App() {
               >
                 <AdminManager 
                   teachers={teachers}
+                  onUpdateTeachers={handleUpdateTeachers}
+                  onDeleteTeacher={handleDeleteTeacher}
                   onLogout={handleAdminLogout}
                 />
               </motion.div>

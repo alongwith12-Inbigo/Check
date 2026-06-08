@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { 
   Users, 
-  UserPlus, 
   Trash2, 
   Upload, 
   FileSpreadsheet, 
@@ -9,24 +8,25 @@ import {
   CheckCircle2, 
   AlertCircle, 
   LogOut, 
-  Info,
-  ShieldAlert,
-  ArrowLeft
+  Info
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Teacher } from '../types';
-import { doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
 import { findTeacherCodeKey, findTeacherNameKey } from '../utils';
 
 interface AdminManagerProps {
   teachers: Teacher[];
+  onUpdateTeachers: (newTeachers: Teacher[]) => void;
+  onDeleteTeacher: (code: string, name: string) => void;
   onLogout: () => void;
 }
 
-export default function AdminManager({ teachers, onLogout }: AdminManagerProps) {
-  const [newCode, setNewCode] = useState('');
-  const [newName, setNewName] = useState('');
+export default function AdminManager({ 
+  teachers, 
+  onUpdateTeachers, 
+  onDeleteTeacher, 
+  onLogout 
+}: AdminManagerProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -34,53 +34,13 @@ export default function AdminManager({ teachers, onLogout }: AdminManagerProps) 
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Manual creation submission
-  const handleManualAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg('');
-    setSuccessMsg('');
-
-    const trimmedCode = newCode.trim();
-    const trimmedName = newName.trim();
-
-    if (!trimmedCode || !trimmedName) {
-      setErrorMsg('교사 코드(세자리 숫자)와 교사 명칭을 모두 입력해 주세요.');
-      return;
-    }
-
-    if (!/^\d{3}$/.test(trimmedCode)) {
-      setErrorMsg('교사 코드는 반드시 세 자리 숫자로 구성되어야 합니다 (예시: 101, 201).');
-      return;
-    }
-
-    // Verify if duplicate code is submitted
-    if (teachers.some(t => t.code === trimmedCode)) {
-      setErrorMsg(`코드 "${trimmedCode}"를 가진 교사가 이미 데이터에 등록되어 있습니다.`);
-      return;
-    }
-
-    try {
-      const docRef = doc(db, 'teachers', trimmedCode);
-      await setDoc(docRef, {
-        code: trimmedCode,
-        name: trimmedName
-      });
-      setSuccessMsg(`"${trimmedName}" 선생님(코드: ${trimmedCode})이 성공적으로 추가되었습니다.`);
-      setNewCode('');
-      setNewName('');
-    } catch (err) {
-      setErrorMsg('서버 저장소에 교사를 저장하는 단계에서 실패가 감지되었습니다.');
-      console.error(err);
-    }
-  };
-
   // Bulk xlsx parsing
   const processTeachersExcel = (file: File) => {
     setErrorMsg('');
     setSuccessMsg('');
     const reader = new FileReader();
 
-    reader.onload = async (e) => {
+    reader.onload = (e) => {
       try {
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: 'array' });
@@ -110,6 +70,7 @@ export default function AdminManager({ teachers, onLogout }: AdminManagerProps) 
         // Add records to teachers collection
         let successCount = 0;
         let skippedCount = 0;
+        const updatedTeachers = [...teachers];
 
         for (const row of rawRows) {
           const rawCode = String(row[codeKey]).trim();
@@ -131,16 +92,21 @@ export default function AdminManager({ teachers, onLogout }: AdminManagerProps) 
             continue;
           }
 
-          const teacherRef = doc(db, 'teachers', formattedCode);
-          await setDoc(teacherRef, {
-            code: formattedCode,
-            name: rawName
-          });
+          // Merge or update existing item
+          const idx = updatedTeachers.findIndex(t => t.code === formattedCode);
+          if (idx >= 0) {
+            updatedTeachers[idx] = { code: formattedCode, name: rawName };
+          } else {
+            updatedTeachers.push({ code: formattedCode, name: rawName });
+          }
           successCount++;
         }
 
+        updatedTeachers.sort((a, b) => a.code.localeCompare(b.code));
+        onUpdateTeachers(updatedTeachers);
+
         setSuccessMsg(
-          `엑셀 일괄 등록 완료: 교사 ${successCount}명을 추가하였습니다.` +
+          `엑셀 일괄 등록 완료: 교사 ${successCount}명을 추가/동기화하였습니다.` +
           (skippedCount > 0 ? ` (부적절한 형식 혹은 공백 행 ${skippedCount}개는 제외됨)` : '')
         );
       } catch (err) {
@@ -177,17 +143,10 @@ export default function AdminManager({ teachers, onLogout }: AdminManagerProps) 
     }
   };
 
-  const handleDelete = async (code: string, name: string) => {
+  const handleDelete = (code: string, name: string) => {
     if (window.confirm(`"${name}" 선생님(코드: ${code}) 계정을 목록에서 정말 삭제하시겠습니까?\n삭제하시면 해당 교사가 업로드한 평가 성적표 데이터 조회도 불가능해집니다.`)) {
-      try {
-        await deleteDoc(doc(db, 'teachers', code));
-        // Optional: delete evaluation/code as well
-        await deleteDoc(doc(db, 'evaluation', code));
-        setSuccessMsg(`"${name}" 선생님 계정이 정상 삭제 및 연동 파기 완료되었습니다.`);
-      } catch (err) {
-        setErrorMsg('교사를 삭제하는 전송 동작에 실패가 보고되었습니다.');
-        console.error(err);
-      }
+      onDeleteTeacher(code, name);
+      setSuccessMsg(`"${name}" 선생님 계정이 정상 삭제 및 연동 파기 완료되었습니다.`);
     }
   };
 
@@ -219,55 +178,9 @@ export default function AdminManager({ teachers, onLogout }: AdminManagerProps) 
       {/* Grid: Left - Setup Form / Right - List */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        {/* Left column: Manual register + Excel bulk uploader */}
+        {/* Left column: Excel bulk uploader */}
         <div className="md:col-span-1 space-y-4">
           
-          {/* Manual Register */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
-              <UserPlus size={16} className="text-indigo-600" />
-              수동 교사 단독 등록
-            </h3>
-            
-            <form onSubmit={handleManualAdd} className="space-y-3">
-              <div>
-                <label htmlFor="ins-code" className="block text-[11px] font-bold text-slate-700 mb-1">
-                  교사코드 (세자리 숫자)
-                </label>
-                <input 
-                  id="ins-code"
-                  type="text"
-                  maxLength={3}
-                  value={newCode}
-                  onChange={(e) => setNewCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="예: 101, 204"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-bold tracking-widest text-center"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="ins-name" className="block text-[11px] font-bold text-slate-700 mb-1 font-sans">
-                  선생님 이름
-                </label>
-                <input 
-                  id="ins-name"
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="예: 김태평, 박미남"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold"
-                />
-              </div>
-
-              <button 
-                type="submit"
-                className="w-full py-2.5 bg-indigo-900 hover:bg-indigo-950 text-white border border-indigo-900 font-bold rounded-xl text-xs transition cursor-pointer"
-              >
-                교사 생성하여 원장 기입
-              </button>
-            </form>
-          </div>
-
           {/* Bulk Excel Upload */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
@@ -307,10 +220,10 @@ export default function AdminManager({ teachers, onLogout }: AdminManagerProps) 
           <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl text-[11px] text-slate-600 space-y-1.5">
             <span className="font-bold text-slate-900 flex items-center gap-1">
               <Info size={14} className="text-indigo-600" />
-              관리 프로세서 연동 및 구조
+              브라우저 안전 보관 방식
             </span>
             <p className="leading-relaxed">
-              등록된 교사는 고유의 3자리 코드 검증을 거쳐 개별 교육과정 성적을 비공개 배정받습니다. 관할 삭제 처리 시에는 업로드한 성적도 함께 조회되지 않으니 주의 바랍니다.
+              본 시스템은 별도의 클라우드 DB 없이, 브라우저 로컬 저장소(localStorage)에 자료를 안전하게 영구 저장합니다. 서버 연결 오류가 없어 속도가 매우 빠르고 안정적입니다.
             </p>
           </div>
 
@@ -343,7 +256,7 @@ export default function AdminManager({ teachers, onLogout }: AdminManagerProps) 
                   <Users size={16} className="text-slate-500" />
                   교직원 등재 현황 총부 ({teachers.length}명)
                 </h3>
-                <p className="text-[11px] text-slate-400">교사 계정 목록을 통합 제어 및 정밀 검색으로 검점하십시오.</p>
+                <p className="text-[11px] text-slate-400">교사 계정 목록을 삭제 및 검색으로 기입하고 점검하십시오.</p>
               </div>
 
               <div className="relative max-w-xs w-full">
@@ -375,7 +288,7 @@ export default function AdminManager({ teachers, onLogout }: AdminManagerProps) 
                     <tr>
                       <td colSpan={4} className="text-center py-10 text-slate-400 italic">
                         {teachers.length === 0 
-                          ? '현재 등록된 교사가 한 명도 없습니다. 수동이나 엑셀을 이용해 먼저 교직원을 등록해 주십시오.'
+                          ? '현재 등록된 교사가 없습니다. 교사 목록 엑셀 파일(.xlsx)을 업로드해주십시오.'
                           : '검색어와 일치하는 선생님을 찾을 수 없습니다.'}
                       </td>
                     </tr>
@@ -391,6 +304,7 @@ export default function AdminManager({ teachers, onLogout }: AdminManagerProps) 
                         <td className="py-3 px-4 font-semibold text-slate-800 text-[12px]">{tea.name} 선생님</td>
                         <td className="py-3 px-4 text-center">
                           <button 
+                            type="button"
                             onClick={() => handleDelete(tea.code, tea.name)}
                             className="p-1 px-2 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-200 rounded transition cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
                           >
