@@ -16,6 +16,11 @@ export interface EvaluationState {
   uploadedAt: string | null;
 }
 
+export interface Teacher {
+  code: string;
+  name: string;
+}
+
 export interface StudentCredentials {
   studentId: string;
   birthdate: string;

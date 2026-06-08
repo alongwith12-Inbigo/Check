@@ -8,15 +8,24 @@ import {
   ChevronRight,
   Info
 } from 'lucide-react';
-import { EvaluationState, StudentCredentials } from '../types';
+import { EvaluationState, StudentCredentials, Teacher } from '../types';
 import { findStudentIdKey, findBirthdateKey } from '../utils';
 
 interface LoginCardProps {
   evaluationState: EvaluationState;
   onLoginSuccess: (studentData: any) => void;
+  teachers: Teacher[];
+  selectedTeacherCode: string;
+  onSelectTeacher: (code: string) => void;
 }
 
-export default function LoginCard({ evaluationState, onLoginSuccess }: LoginCardProps) {
+export default function LoginCard({ 
+  evaluationState, 
+  onLoginSuccess,
+  teachers,
+  selectedTeacherCode,
+  onSelectTeacher
+}: LoginCardProps) {
   const [studentId, setStudentId] = useState('');
   const [birthdate, setBirthdate] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -113,6 +122,27 @@ export default function LoginCard({ evaluationState, onLoginSuccess }: LoginCard
 
         {/* Real Form Input */}
         <form onSubmit={handleLoginSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-indigo-950 mb-1.5 tracking-tight">
+              👨‍🏫 담당 선생님 선택
+            </label>
+            <select
+              value={selectedTeacherCode}
+              onChange={(e) => onSelectTeacher(e.target.value)}
+              className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-bold text-slate-800 cursor-pointer"
+            >
+              {teachers.length === 0 ? (
+                <option value="101">[101] 김태평 선생님 (기본 샘플)</option>
+              ) : (
+                teachers.map((tea) => (
+                  <option key={tea.code} value={tea.code}>
+                    [{tea.code}] {tea.name} 선생님
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 tracking-tight" htmlFor="student-id">
               {studentIdLabel}

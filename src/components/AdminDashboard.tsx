@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { 
   FileSpreadsheet, 
@@ -14,22 +14,24 @@ import {
   BookOpen,
   Info
 } from 'lucide-react';
-import { EvaluationState } from '../types';
+import { EvaluationState, Teacher } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey } from '../utils';
 
 interface AdminDashboardProps {
   evaluationState: EvaluationState;
   onUpdateState: (newState: EvaluationState) => void;
   onClose: () => void;
+  loggedTeacher: Teacher;
+  onLogout: () => void;
 }
 
 export default function AdminDashboard({ 
   evaluationState, 
   onUpdateState, 
-  onClose 
+  onClose,
+  loggedTeacher,
+  onLogout
 }: AdminDashboardProps) {
-  const [password, setPassword] = useState('');
-  const [isUnlocked, setIsUnlocked] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
   
@@ -39,9 +41,14 @@ export default function AdminDashboard({
   const [detailNameInput, setDetailNameInput] = useState(evaluationState.evaluationDetailName || '');
   
   const [searchTerm, setSearchTerm] = useState('');
-  const [passwordError, setPasswordError] = useState(false);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync text inputs in real-time if evaluationState is fetched successfully via onSnapshot
+  useEffect(() => {
+    setSubjectInput(evaluationState.subject || '');
+    setRoundInput(evaluationState.round || '');
+    setDetailNameInput(evaluationState.evaluationDetailName || '');
+  }, [evaluationState.subject, evaluationState.round, evaluationState.evaluationDetailName]);
 
   const propagateSplitTitle = (subject: string, round: string, detail: string) => {
     let combinedTitle = '';
@@ -70,17 +77,7 @@ export default function AdminDashboard({
     });
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password === '1004') {
-      setIsUnlocked(true);
-      setPasswordError(false);
-      setErrorMsg('');
-    } else {
-      setPasswordError(true);
-      setIsUnlocked(false);
-    }
-  };
+  // Password checking removed as Auth is managed upstream
 
   const processExcelFile = (file: File) => {
     const reader = new FileReader();
@@ -199,80 +196,29 @@ export default function AdminDashboard({
   const birthdateKey = findBirthdateKey(evaluationState.headers);
   const feedbackKeys = findFeedbackKey(evaluationState.headers);
 
-  if (!isUnlocked) {
-    return (
-      <div className="flex items-center justify-center min-h-[85vh] px-4">
-        <div id="admin-pass-lock" className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-md overflow-hidden">
-          <div className="bg-indigo-900 px-6 py-8 text-center text-white relative">
-            <div className="absolute top-0 right-0 p-3 opacity-5">
-              <Key size={80} />
-            </div>
-            <div className="inline-flex p-3 bg-white/10 rounded-full mb-3 text-amber-400 border border-white/10">
-              <Key size={26} className="stroke-[2.5]" />
-            </div>
-            <h2 className="text-xl font-extrabold font-sans tracking-tight">관리자 보안 잠금 해제</h2>
-            <p className="text-xs text-indigo-200 mt-1.5 font-medium">교사 인증 패스워드를 기입하여 안전하게 진입해 주세요.</p>
-          </div>
-          
-          <form onSubmit={handlePasswordSubmit} className="p-6 space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider" htmlFor="admin-pwd">교사 관리 패스워드</label>
-              <input 
-                id="admin-pwd"
-                type="password"
-                placeholder="비밀번호(1004)를 입력하세요"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={`w-full px-4 py-3 border rounded-xl text-center font-black tracking-widest text-lg focus:outline-none focus:ring-2 ${
-                  passwordError 
-                    ? 'border-red-500 bg-red-50/55 focus:ring-red-200' 
-                    : 'border-slate-300 focus:border-indigo-600 focus:ring-indigo-100'
-                }`}
-                autoFocus
-              />
-              {passwordError && (
-                <p className="text-xs text-red-600 mt-2.5 flex items-center gap-1 font-medium">
-                  <AlertCircle size={14} className="shrink-0" /> 비밀번호가 매칭되지 않습니다. (팁: 1004)
-                </p>
-              )}
-            </div>
-            
-            <div className="flex gap-2 pt-2">
-              <button 
-                type="button" 
-                onClick={onClose}
-                className="flex-1 py-3 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 transition cursor-pointer"
-              >
-                조회 화면으로
-              </button>
-              <button 
-                type="submit" 
-                className="flex-1 py-3 bg-indigo-900 border border-indigo-900 hover:bg-indigo-950 text-white rounded-xl text-xs font-bold transition cursor-pointer"
-              >
-                보안인증 검증하기
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div id="admin-dashboard-layout" className="space-y-6 max-w-5xl mx-auto px-1 sm:px-4 pb-12">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-4 gap-4">
         <div>
-          <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs px-3 py-1 rounded-full font-extrabold inline-flex items-center gap-1 mb-1.5">
-            <CheckCircle2 size={12} className="text-emerald-600" /> 관리자 보안 승인 완료
+          <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs px-3 py-1 rounded-full font-extrabold inline-flex items-center gap-1 mb-1.5 shadow-sm">
+            <CheckCircle2 size={12} className="text-emerald-600" /> [교사 코드: {loggedTeacher.code}] {loggedTeacher.name} 선생님 권한 로그인됨
           </span>
-          <h1 className="text-2xl font-extrabold font-sans tracking-tight text-slate-900">수행평가 엑셀 데이터 매뉴얼</h1>
+          <h1 className="text-2xl font-extrabold font-sans tracking-tight text-slate-900">담당 수행평가 기입 및 설정</h1>
         </div>
-        <button 
-          onClick={onClose}
-          className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 hover:shadow-xs transition cursor-pointer"
-        >
-          마스터 뷰로 가기
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={onLogout}
+            className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-red-600 bg-white hover:bg-red-50 transition cursor-pointer"
+          >
+            로그아웃
+          </button>
+          <button 
+            onClick={onClose}
+            className="px-4 py-2 bg-indigo-900 hover:bg-indigo-950 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
+          >
+            학생 조회용 화면보기
+          </button>
+        </div>
       </div>
 
       {/* Settings Grid */}

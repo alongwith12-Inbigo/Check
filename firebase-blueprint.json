@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "Evaluation": {
+      "title": "Evaluation",
+      "description": "Evaluation scores uploaded by teacher",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Evaluation Title"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Subject Name"
+        },
+        "round": {
+          "type": "string",
+          "description": "Evaluation Round"
+        },
+        "evaluationDetailName": {
+          "type": "string",
+          "description": "Detail evaluation name"
+        },
+        "headers": {
+          "type": "array",
+          "description": "Array of headers"
+        },
+        "rows": {
+          "type": "array",
+          "description": "Array of student data rows"
+        },
+        "uploadedAt": {
+          "type": "string",
+          "description": "Upload timestamp string"
+        }
+      },
+      "required": ["title", "headers", "rows"]
+    },
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Differentiated teachers info",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "3-digit teacher code"
+        },
+        "name": {
+          "type": "string",
+          "description": "Teacher name"
+        }
+      },
+      "required": ["code", "name"]
+    }
+  },
+  "firestore": {
+    "/evaluation/{evalId}": {
+      "schema": "Evaluation",
+      "description": "General evaluation table containing student lists and settings for each teacher or active default"
+    },
+    "/teachers/{teacherCode}": {
+      "schema": "Teacher",
+      "description": "Array/Collection of differentiated teachers managed by general school administrator"
+    }
+  }
+}

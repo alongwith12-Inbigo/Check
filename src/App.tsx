@@ -9,7 +9,10 @@ import Navbar from './components/Navbar';
 import LoginCard from './components/LoginCard';
 import ResultCard from './components/ResultCard';
 import AdminDashboard from './components/AdminDashboard';
-import { EvaluationState } from './types';
+import AdminManager from './components/AdminManager';
+import { EvaluationState, Teacher } from './types';
+import { doc, onSnapshot, setDoc, collection } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from './firebase';
 import { 
   Smile, 
   HelpCircle, 
@@ -19,7 +22,8 @@ import {
   ArrowLeft,
   ChevronRight,
   Info,
-  InfoIcon
+  AlertCircle,
+  Key
 } from 'lucide-react';
 
 // Premium high-craft pre-populated sample evaluation data 
@@ -75,54 +79,118 @@ const DEFAULT_PRESET: EvaluationState = {
 };
 
 export default function App() {
-  const [evaluationState, setEvaluationState] = useState<EvaluationState>(() => {
-    try {
-      const savedTitle = localStorage.getItem('eval_title_v1');
-      const savedSubject = localStorage.getItem('eval_subject_v1');
-      const savedRound = localStorage.getItem('eval_round_v1');
-      const savedDetailName = localStorage.getItem('eval_detail_name_v1');
-      const savedHeaders = localStorage.getItem('eval_headers_v1');
-      const savedRows = localStorage.getItem('eval_rows_v1');
-      const savedUploadedAt = localStorage.getItem('eval_uploaded_at_v1');
+  const [evaluationState, setEvaluationState] = useState<EvaluationState>(DEFAULT_PRESET);
 
-      if (savedTitle && savedHeaders && savedRows) {
-        return {
-          title: savedTitle,
-          subject: savedSubject || '',
-          round: savedRound || '',
-          evaluationDetailName: savedDetailName || '',
-          headers: JSON.parse(savedHeaders),
-          rows: JSON.parse(savedRows),
-          uploadedAt: savedUploadedAt
-        };
-      }
-    } catch (e) {
-      console.error('Failed to load initial storage state:', e);
-    }
-    // Return sample preset so users immediately see a functioning application
-    return DEFAULT_PRESET;
-  });
+  // Separate logins states
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [selectedTeacherCode, setSelectedTeacherCode] = useState('101');
+  const [loggedTeacher, setLoggedTeacher] = useState<Teacher | null>(null);
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+
+  // Admin login selection portal inputs
+  const [inputTeacherCode, setInputTeacherCode] = useState('');
+  const [inputPassword, setInputPassword] = useState('');
+  const [authRole, setAuthRole] = useState<'teacher' | 'admin'>('teacher');
+  const [authError, setAuthError] = useState('');
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [loggedStudent, setLoggedStudent] = useState<Record<string, any> | null>(null);
 
-  // Sync state changes with localStorage
-  const handleUpdateEvaluationState = (newState: EvaluationState) => {
+  // 1. Subscribe to Teachers directory
+  useEffect(() => {
+    const collRef = collection(db, 'teachers');
+    const unsubscribe = onSnapshot(collRef, (snap) => {
+      const list: Teacher[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        list.push({
+          code: d.id,
+          name: data.name || '',
+        });
+      });
+      list.sort((a, b) => a.code.localeCompare(b.code));
+
+      if (list.length === 0) {
+        // Database is brand new. Let us auto-seed it with a working example teacher 101 out of the box!
+        const defaultTeacher: Teacher = { code: '101', name: '김태평 (수학)' };
+        setDoc(doc(db, 'teachers', '101'), defaultTeacher).catch((err) => {
+          console.error("Auto-seeding default teacher failed: ", err);
+        });
+        setDoc(doc(db, 'evaluation', '101'), DEFAULT_PRESET).catch((err) => {
+          console.error("Auto-seeding default evaluation failed: ", err);
+        });
+      } else {
+        setTeachers(list);
+        // Make sure selectedTeacherCode points to a valid code
+        if (!list.some(t => t.code === selectedTeacherCode)) {
+          setSelectedTeacherCode(list[0].code);
+        }
+      }
+    }, (error) => {
+      console.warn("Firestore teachers onSnapshot warning: ", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Dynamic evaluation state listener based on selectedTeacherCode or loggedTeacher.code
+  useEffect(() => {
+    const targetCode = loggedTeacher ? loggedTeacher.code : selectedTeacherCode;
+    if (!targetCode) return;
+
+    const docRef = doc(db, 'evaluation', targetCode);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setEvaluationState({
+          title: data.title || '',
+          subject: data.subject || '',
+          round: data.round || '',
+          evaluationDetailName: data.evaluationDetailName || '',
+          headers: data.headers || [],
+          rows: data.rows || [],
+          uploadedAt: data.uploadedAt || null,
+        });
+      } else {
+        // Fallback or seed default preset to teacher 101
+        if (targetCode === '101') {
+          setEvaluationState(DEFAULT_PRESET);
+        } else {
+          setEvaluationState({
+            title: '수행평가 결과',
+            subject: '',
+            round: '',
+            evaluationDetailName: '',
+            headers: [],
+            rows: [],
+            uploadedAt: null,
+          });
+        }
+      }
+    }, (error) => {
+      console.warn("Firestore evaluation loader check failed: ", error);
+    });
+
+    return () => unsubscribe();
+  }, [loggedTeacher?.code, selectedTeacherCode]);
+
+  // Sync state changes with Cloud Firestore (real-time broadcast to all client screens)
+  const handleUpdateEvaluationState = async (newState: EvaluationState) => {
+    const targetCode = loggedTeacher ? loggedTeacher.code : '101';
     setEvaluationState(newState);
     try {
-      localStorage.setItem('eval_title_v1', newState.title);
-      localStorage.setItem('eval_subject_v1', newState.subject || '');
-      localStorage.setItem('eval_round_v1', newState.round || '');
-      localStorage.setItem('eval_detail_name_v1', newState.evaluationDetailName || '');
-      localStorage.setItem('eval_headers_v1', JSON.stringify(newState.headers));
-      localStorage.setItem('eval_rows_v1', JSON.stringify(newState.rows));
-      if (newState.uploadedAt) {
-        localStorage.setItem('eval_uploaded_at_v1', newState.uploadedAt);
-      } else {
-        localStorage.removeItem('eval_uploaded_at_v1');
-      }
+      const docRef = doc(db, 'evaluation', targetCode);
+      await setDoc(docRef, {
+        title: newState.title || '',
+        subject: newState.subject || '',
+        round: newState.round || '',
+        evaluationDetailName: newState.evaluationDetailName || '',
+        headers: newState.headers || [],
+        rows: newState.rows || [],
+        uploadedAt: newState.uploadedAt || null,
+      });
     } catch (e) {
-      console.error('Failed to save state to localStorage:', e);
+      handleFirestoreError(e, OperationType.WRITE, `evaluation/${targetCode}`);
     }
   };
 
@@ -140,6 +208,53 @@ export default function App() {
     setLoggedStudent(null);
   };
 
+  // Auth form submissions
+  const handlePortalLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (authRole === 'admin') {
+      if (inputPassword === '1004') {
+        setIsAdminLoggedIn(true);
+        setAuthError('');
+        setInputPassword('');
+      } else {
+        setAuthError('관리자 비밀번호가 정확하지 않습니다. (비번: 1004)');
+      }
+    } else {
+      const trimmedCode = inputTeacherCode.trim();
+      if (!trimmedCode || !inputPassword.trim()) {
+        setAuthError('교사 코드와 비밀번호를 모두 가입해 주십시오.');
+        return;
+      }
+      if (inputPassword !== '1004') {
+        setAuthError('비밀번호가 일치하지 않습니다. (비밀번호: 1004)');
+        return;
+      }
+
+      // Check if code matches any registered teacher, or fallback test
+      const matchedTeacher = teachers.find(t => t.code === trimmedCode) || 
+        (trimmedCode === '101' ? { code: '101', name: '김태평 (대표)' } : null);
+
+      if (matchedTeacher) {
+        setLoggedTeacher(matchedTeacher);
+        setAuthError('');
+        setInputTeacherCode('');
+        setInputPassword('');
+      } else {
+        setAuthError(`등록되지 않은 선생님 코드(${trimmedCode})입니다. 관리자가 가입 등록했는지 점검해 보십시오.`);
+      }
+    }
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdminLoggedIn(false);
+  };
+
+  const handleTeacherLogout = () => {
+    setLoggedTeacher(null);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans select-none print:bg-white text-slate-800">
       
@@ -147,28 +262,156 @@ export default function App() {
       <Navbar 
         isAdminOpen={isAdminOpen} 
         onToggleAdmin={handleToggleAdmin} 
-        evaluationTitle={evaluationState.title} 
+        evaluationTitle={evaluationState.title || (loggedTeacher ? `${loggedTeacher.name} 선생님의 과목` : '성적 조회')} 
       />
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-8">
         <AnimatePresence mode="wait">
           {isAdminOpen ? (
-            // Mode 1: Teacher/Admin Settings view
-            <motion.div
-              key="admin-screen"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-            >
-              <AdminDashboard 
-                evaluationState={evaluationState}
-                onUpdateState={handleUpdateEvaluationState}
-                onClose={() => setIsAdminOpen(false)}
-              />
-            </motion.div>
+            // Admin portal route selection
+            isAdminLoggedIn ? (
+              // Mode 1A: Admin Roster Panel
+              <motion.div
+                key="admin-manager-screen"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+              >
+                <AdminManager 
+                  teachers={teachers}
+                  onLogout={handleAdminLogout}
+                />
+              </motion.div>
+            ) : loggedTeacher ? (
+              // Mode 1B: Teacher evaluation scores publisher dashboard
+              <motion.div
+                key="teacher-dashboard-screen"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+              >
+                <AdminDashboard 
+                  evaluationState={evaluationState}
+                  onUpdateState={handleUpdateEvaluationState}
+                  onClose={() => setIsAdminOpen(false)}
+                  loggedTeacher={loggedTeacher}
+                  onLogout={handleTeacherLogout}
+                />
+              </motion.div>
+            ) : (
+              // Mode 1C: Auth lock select screen for Staffs
+              <motion.div
+                key="portal-auth-card"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center justify-center min-h-[70vh] px-2"
+              >
+                <div id="general-portal-auth" className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-lg overflow-hidden">
+                  <div className="bg-indigo-900 border-b border-indigo-850 text-white p-6 sm:p-7 text-center relative">
+                    <div className="absolute top-0 right-0 p-3 opacity-5">
+                      <Key size={80} />
+                    </div>
+                    <div className="inline-flex p-3 bg-white/10 rounded-full mb-2.5 text-amber-400 border border-white/10">
+                      <Key size={24} className="stroke-[2.5]" />
+                    </div>
+                    <h2 className="text-xl font-extrabold font-sans tracking-tight">교원 검증 포털 로그인</h2>
+                    <p className="text-xs text-indigo-200 mt-1">담당 클래스의 배점을 관리하거나 교직원 목록을 증대하십시오.</p>
+                  </div>
+
+                  <div className="p-6 sm:p-8 space-y-5">
+                    {/* Role selector tabs */}
+                    <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => { setAuthRole('teacher'); setAuthError(''); }}
+                        className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                          authRole === 'teacher' ? 'bg-white text-indigo-950 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        👨‍🏫 선생님 로그인
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAuthRole('admin'); setAuthError(''); }}
+                        className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                          authRole === 'admin' ? 'bg-white text-indigo-950 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        🛡️ 학교 관리자 로그인
+                      </button>
+                    </div>
+
+                    <form onSubmit={handlePortalLogin} className="space-y-4">
+                      {authRole === 'teacher' ? (
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5" htmlFor="p-teacher-code">
+                            선생님 코드 (3자리 숫자)
+                          </label>
+                          <input
+                            id="p-teacher-code"
+                            type="text"
+                            maxLength={3}
+                            placeholder="예: 101"
+                            value={inputTeacherCode}
+                            onChange={(e) => setInputTeacherCode(e.target.value.replace(/\D/g, ''))}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-black text-slate-800 text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-650"
+                            autoFocus
+                          />
+                        </div>
+                      ) : (
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-500 leading-normal flex items-start gap-1.5">
+                          <Info size={14} className="shrink-0 text-indigo-600 mt-0.5" />
+                          <span>학교 총괄 관리자는 본교 배정된 통합 교직원 대장을 일괄 제치하고 신규 교사 코드를 개설하는 권고 장치입니다.</span>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5" htmlFor="p-password">
+                          인증 비밀번호 (1004)
+                        </label>
+                        <input
+                          id="p-password"
+                          type="password"
+                          placeholder="비밀번호(1004)를 기입하세요"
+                          value={inputPassword}
+                          onChange={(e) => setInputPassword(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-black text-slate-800 text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-650"
+                        />
+                      </div>
+
+                      {authError && (
+                        <div className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-medium">
+                          <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                          <span>{authError}</span>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsAdminOpen(false)}
+                          className="flex-1 py-3 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 transition cursor-pointer"
+                        >
+                          조회 화면으로
+                        </button>
+                        <button
+                          type="submit"
+                          className="flex-1 py-3 bg-indigo-900 hover:bg-indigo-950 text-white border border-indigo-900 font-bold rounded-xl text-xs transition cursor-pointer"
+                        >
+                          검증 및 승인
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </motion.div>
+            )
           ) : loggedStudent ? (
-            // Mode 2: Student Individual Result view
+            // Mode 2: Student Individual Result View
             <motion.div
               key="result-screen"
               initial={{ opacity: 0, scale: 0.98 }}
@@ -193,28 +436,31 @@ export default function App() {
               className="space-y-6"
             >
               {/* Educational Platform Welcome Sub-Banner */}
-              <div className="text-center space-y-2 max-w-lg mx-auto mt-4">
+              <div className="text-center space-y-2 max-w-lg mx-auto mt-4 animate-fadeIn">
                 <span className="text-[10px] sm:text-xs font-extrabold text-indigo-900 bg-indigo-50 border border-indigo-100 px-3.5 py-1.5 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5 shadow-sm">
-                  🏫 범용 수행평가 성적조회 서비스
+                  🏫 수시 수행평가 성적 간편 조회 엔진
                 </span>
                 <p className="text-xs text-slate-500 font-semibold px-4 leading-relaxed">
-                  본 서비스는 교육 정보 보호 지침에 맞추어 학생별 개별 점수와 맞춤 종합 코멘트를 타인 노출 없이 비공개 매칭 조회합니다.
+                  본 서비스는 교육 정보 보호 지침에 맞춰 지정된 선생님의 평가 점수와 개별 성취 환산 피드백을 타인 노출 없이 안전하게 1대1 즉시 대조합니다.
                 </p>
               </div>
 
               <LoginCard 
                 evaluationState={evaluationState} 
                 onLoginSuccess={handleStudentLogin}
+                teachers={teachers}
+                selectedTeacherCode={selectedTeacherCode}
+                onSelectTeacher={setSelectedTeacherCode}
               />
               
               {/* Default Mock Login Tutorial box for first timers */}
-              {evaluationState.rows.length > 0 && evaluationState.uploadedAt?.includes('샘플') && (
+              {teachers.length > 0 && selectedTeacherCode === '101' && evaluationState.rows.length > 0 && evaluationState.uploadedAt?.includes('샘플') && (
                 <div className="max-w-md mx-auto bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 text-xs space-y-2 text-indigo-900/80 shadow-xs">
                   <span className="font-bold block text-indigo-950 flex items-center gap-1">
                      💻 즉시 체험용 샘플 계정 안내 (선생님 테스트용)
                   </span>
                   <p className="leading-relaxed text-[11px]">
-                    아직 교사 엑셀 파일을 업로드하지 않으셨다면, 아래의 샘플 계정으로 로그인 동작을 미리 체험해 보실 수 있습니다:
+                    아직 교사 엑셀 파일을 업로드하지 않으셨다면, 아래의 샘플 계정으로 로그인 동작을 미리 체험해 보실 수 있습니다 (선생님 선택 목록에서 101 김태평 선생님 선택):
                   </p>
                   <div className="grid grid-cols-2 gap-2 bg-white/70 p-2.5 rounded-lg border border-indigo-100/50 font-mono text-[11px]">
                     <div>
@@ -229,7 +475,7 @@ export default function App() {
                     </div>
                   </div>
                   <p className="text-[10px] text-slate-400">
-                    ※ 화면 우상단의 [관리자 모드 (교사)] 에서 패스워드 <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-700">1004</code>를 입력하시면 실제 엑셀 업로드 및 전체 조율을 하실 수 있습니다.
+                    ※ 화면 우상단의 [교사 / 관리자 로그인] 에서 패스워드 <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-700">1004</code>를 입력하시면 실제 엑셀 업로드 및 전체 조율을 하실 수 있습니다.
                   </p>
                 </div>
               )}
@@ -241,9 +487,9 @@ export default function App() {
       {/* Trustfooter */}
       <footer className="py-6 border-t border-slate-200/60 text-center text-xs text-slate-400 print:hidden mt-12 bg-white flex flex-col items-center justify-center gap-1">
         <span className="font-semibold text-slate-500 flex items-center gap-1 text-[11px]">
-           범용 수행평가 성적 간편 조회 엔진 v1.2
+           수행평가 결과 조회 시스템 v2.0
         </span>
-        <span className="text-[10px]">Copyright © 2026 Educational Web Tools Developer. All Rights Reserved.</span>
+        <span className="text-[10px]">Copyright © 2026 Educational Grade Web Engine. All Rights Reserved.</span>
       </footer>
     </div>
   );

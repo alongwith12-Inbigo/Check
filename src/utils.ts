@@ -9,6 +9,20 @@ export function findStudentIdKey(headers: string[]): string | undefined {
   });
 }
 
+export function findTeacherCodeKey(headers: string[]): string | undefined {
+  return headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized.includes('교사코드') || normalized.includes('선생님코드') || normalized.includes('강사코드') || normalized.includes('코드') || normalized.includes('아이디') || normalized === 'id';
+  });
+}
+
+export function findTeacherNameKey(headers: string[]): string | undefined {
+  return headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized.includes('교사명') || normalized.includes('선생님이름') || normalized.includes('교사이름') || normalized.includes('이름') || normalized.includes('이름(성함)') || normalized.includes('성함') || normalized.includes('교사');
+  });
+}
+
 export function findBirthdateKey(headers: string[]): string | undefined {
   return headers.find(h => {
     const normalized = String(h).replace(/\s+/g, '').toLowerCase();

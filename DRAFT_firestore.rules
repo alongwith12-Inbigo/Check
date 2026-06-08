@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net: default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Evaluation active and teacher-specific document access rules
+    match /evaluation/{evalId} {
+      // Anyone can query/read any teacher's evaluations for student search and individual logins
+      allow read: if true;
+      
+      // Permit updates to evaluations with defensive bounds
+      allow write: if request.resource.data.title is string && request.resource.data.title.size() <= 500
+        && request.resource.data.headers is list && request.resource.data.headers.size() <= 150
+        && request.resource.data.rows is list && request.resource.data.rows.size() <= 1500;
+    }
+
+    // 3. Teachers roster document access rule
+    match /teachers/{teacherCode} {
+      // Anyone can query/read the list of registered teachers to render dropdown list in student login
+      allow read: if true;
+      
+      // Admin writes teachers roster
+      allow write: if request.resource.data.code is string && request.resource.data.code.size() <= 10
+        && request.resource.data.name is string && request.resource.data.name.size() <= 100;
+    }
+  }
+}

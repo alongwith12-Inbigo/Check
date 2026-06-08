@@ -25,9 +25,9 @@ export default function Navbar({ isAdminOpen, onToggleAdmin, evaluationTitle }: 
           {isAdminOpen ? (
             <button 
               onClick={onToggleAdmin}
-              className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 border border-white/20 rounded-full bg-white/10 hover:bg-white/20 text-white tracking-tight transition-colors shadow-sm cursor-pointer"
+              className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 border border-white/20 rounded-full bg-white/10 hover:bg-white/25 text-white tracking-tight transition-colors shadow-sm cursor-pointer animate-fadeIn"
             >
-              <ArrowLeft size={14} /> 학생 화면으로 가기
+              <ArrowLeft size={14} /> 학생 조회로 돌아가기
             </button>
           ) : (
             <button 
@@ -36,7 +36,7 @@ export default function Navbar({ isAdminOpen, onToggleAdmin, evaluationTitle }: 
               id="admin-mode-toggle"
             >
               <Shield size={14} className="text-indigo-900 fill-indigo-900/35 animate-pulse" />
-              관리자 모드 (교사)
+              교사 / 관리자 로그인
             </button>
           )}
         </div>
