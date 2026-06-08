@@ -113,6 +113,7 @@ export default function App() {
       if (list.length === 0) {
         // Database is brand new. Let us auto-seed it with a working example teacher 101 out of the box!
         const defaultTeacher: Teacher = { code: '101', name: '김태평 (대표)' };
+        setTeachers([defaultTeacher]);
         setDoc(doc(db, 'teachers', '101'), defaultTeacher).catch((err) => {
           console.error("Auto-seeding default teacher failed: ", err);
         });
@@ -121,20 +122,27 @@ export default function App() {
         });
       } else {
         setTeachers(list);
-        // Make sure selectedTeacherCode points to a valid code
-        if (!list.some(t => t.code === selectedTeacherCode)) {
-          setSelectedTeacherCode(list[0].code);
-        }
       }
     }, (error) => {
       console.warn("Firestore teachers subscription failed: ", error);
     });
 
     return () => unsubscribe();
-  }, [selectedTeacherCode]);
+  }, []);
+
+  // Sync selectedTeacherCode whenever teachers list updates to keep selection clean
+  useEffect(() => {
+    if (teachers.length > 0) {
+      if (!teachers.some(t => t.code === selectedTeacherCode)) {
+        setSelectedTeacherCode(teachers[0].code);
+      }
+    }
+  }, [teachers, selectedTeacherCode]);
 
   // Helper to bulk upload/sync teachers list to Firestore
   const handleUpdateTeachers = async (newTeachers: Teacher[]) => {
+    // Optimistically update local state so UI updates instantly without latency
+    setTeachers(newTeachers);
     try {
       for (const t of newTeachers) {
         const docRef = doc(db, 'teachers', t.code);
@@ -149,6 +157,10 @@ export default function App() {
   };
 
   const handleDeleteTeacher = async (code: string, name: string) => {
+    // Optimistic delete
+    const updated = teachers.filter(t => t.code !== code);
+    setTeachers(updated);
+    
     try {
       await deleteDoc(doc(db, 'teachers', code));
       await deleteDoc(doc(db, 'evaluation', code));
@@ -156,10 +168,9 @@ export default function App() {
       handleFirestoreError(error, OperationType.DELETE, `teachers/${code}`);
     }
 
-    const updated = teachers.filter(t => t.code !== code);
     // Reset selected/logged code if corresponding teacher deleted
     if (selectedTeacherCode === code) {
-      const fallbackCode = updated[0]?.code || '101';
+      const fallbackCode = updated[0]?.code || '';
       setSelectedTeacherCode(fallbackCode);
     }
     if (loggedTeacher?.code === code) {
@@ -266,9 +277,8 @@ export default function App() {
         return;
       }
 
-      // Check if code matches any registered teacher, or fallback test
-      const matchedTeacher = teachers.find(t => t.code === trimmedCode) || 
-        (trimmedCode === '101' ? { code: '101', name: '김태평 (대표)' } : null);
+      // Check if code matches any registered teacher strictly. No hardcoded or unauthorized bypass of the roster database.
+      const matchedTeacher = teachers.find(t => t.code === trimmedCode);
 
       if (matchedTeacher) {
         setLoggedTeacher(matchedTeacher);
@@ -276,7 +286,7 @@ export default function App() {
         setInputTeacherCode('');
         setInputPassword('');
       } else {
-        setAuthError(`등록되지 않은 선생님 코드(${trimmedCode})입니다. 관리자가 가입 등록했는지 점검해 보십시오.`);
+        setAuthError(`등록되지 않은 선생님 코드(${trimmedCode})입니다. 학교 총괄 관리자가 교원 목록에 등록했는지 다시 점검하고 시도해 보십시오.`);
       }
     }
   };

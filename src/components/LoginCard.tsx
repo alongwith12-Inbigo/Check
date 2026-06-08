@@ -132,7 +132,7 @@ export default function LoginCard({
               className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-bold text-slate-800 cursor-pointer"
             >
               {teachers.length === 0 ? (
-                <option value="101">[101] 김태평 선생님 (기본 샘플)</option>
+                <option value="">⚠️ 등록된 선생님이 존재하지 않습니다 (관리자 구역에서 먼저 일괄 등록)</option>
               ) : (
                 teachers.map((tea) => (
                   <option key={tea.code} value={tea.code}>

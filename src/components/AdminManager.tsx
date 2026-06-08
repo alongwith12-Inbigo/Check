@@ -217,13 +217,13 @@ export default function AdminManager({
             </div>
           </div>
 
-          <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl text-[11px] text-slate-600 space-y-1.5">
-            <span className="font-bold text-slate-900 flex items-center gap-1">
+          <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl text-[11px] text-indigo-950 space-y-1.5 shadow-xs">
+            <span className="font-bold text-indigo-900 flex items-center gap-1">
               <Info size={14} className="text-indigo-600" />
-              브라우저 안전 보관 방식
+              구글 실시간 클라우드 DB 연동 방식
             </span>
-            <p className="leading-relaxed">
-              본 시스템은 별도의 클라우드 DB 없이, 브라우저 로컬 저장소(localStorage)에 자료를 안전하게 영구 저장합니다. 서버 연결 오류가 없어 속도가 매우 빠르고 안정적입니다.
+            <p className="leading-relaxed text-indigo-900/80">
+              본 시스템은 구글 파이어스토어(Cloud Firestore) 클라우드 데이터베이스에 실시간으로 안전하게 자료를 동기화하고 연동 보존합니다. 입력 및 삭제된 내역은 즉각 클라우드에 반영되어 모든 접속자 단말에 동시 자동 동기화됩니다.
             </p>
           </div>
 
