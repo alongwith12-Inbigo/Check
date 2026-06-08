@@ -459,6 +459,12 @@ export default function App() {
                         >
                           조회 화면으로
                         </button>
+                        <button
+                          type="submit"
+                          className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-sm hover:shadow"
+                        >
+                          인증 및 로그인
+                        </button>
                       </div>
                     </form>
                   </div>
@@ -507,7 +513,7 @@ export default function App() {
                 onSelectTeacher={setSelectedTeacherCode}
               />
             </motion.div>
-          )}�해 보실 수 있습니다.
+          )}
         </AnimatePresence>
       </main>
 
