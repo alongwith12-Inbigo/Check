@@ -199,7 +199,7 @@ export default function LoginCard({
                   <input 
                     id="birth-date"
                     type="password" 
-                    placeholder="예: 20081231
+                    placeholder="예: 20081231"
                     value={birthdate}
                     onChange={(e) => setBirthdate(e.target.value)}
                     className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800 tracking-widest"
