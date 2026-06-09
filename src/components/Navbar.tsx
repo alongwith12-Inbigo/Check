@@ -16,7 +16,7 @@ export default function Navbar({ isAdminOpen, onToggleAdmin, evaluationTitle }: 
             <GraduationCap size={20} className="stroke-[2.5]" />
           </div>
           <div>
-            <span className="text-sm font-extrabold text-white block tracking-tight">EDU-Grade Viewer</span>
+            <span className="text-sm font-extrabold text-white block tracking-tight">Check My Score</span>
             <span className="text-[10px] text-indigo-200 font-bold block leading-none">수행평가 결과 조회 시스템</span>
           </div>
         </div>
@@ -36,7 +36,7 @@ export default function Navbar({ isAdminOpen, onToggleAdmin, evaluationTitle }: 
               id="admin-mode-toggle"
             >
               <Shield size={14} className="text-indigo-900 fill-indigo-900/35 animate-pulse" />
-              교사 / 관리자 로그인
+              선생님 / 관리자 로그인
             </button>
           )}
         </div>

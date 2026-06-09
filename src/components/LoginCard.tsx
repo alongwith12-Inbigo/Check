@@ -40,12 +40,12 @@ export default function LoginCard({
     setErrorMsg('');
 
     if (!selectedTeacherCode) {
-      setErrorMsg('담당 선생님을 먼저 선택해 주세요.');
+      setErrorMsg('담당 선생님을 선택해 주세요.');
       return;
     }
 
     if (!studentId.trim() || !birthdate.trim()) {
-      setErrorMsg('학번과 생년월일을 모두 입력해 주세요.');
+      setErrorMsg('학번(5자리)과 생년월일(8자리)을 입력해 주세요.');
       return;
     }
 
@@ -55,7 +55,7 @@ export default function LoginCard({
     }
 
     if (teacherEvaluations.length === 0) {
-      setErrorMsg('선택하신 선생님에게 등록된 수행평가 데이터가 아직 존재하지 않습니다.');
+      setErrorMsg('선택한 선생님이 등록하신 수행평가 데이터가 아직 존재하지 않습니다.');
       return;
     }
 
@@ -111,7 +111,7 @@ export default function LoginCard({
     } else {
       setErrorMsg(
         '입력하신 학번 또는 생년월일과 정확히 일치하는 성적 기록을 찾을 수 없습니다.\n' +
-        '올바른 담당 선생님을 설정하였는지, 그리고 입력 규격(8자리 생일 등)이 맞는지 반드시 다시 확인해 보십시오.'
+        '교과 선생님 그리고 학번(5자리)과 생년월일(8자리)이 맞는지 다시 확인해주세요.'
       );
     }
   };
@@ -132,7 +132,7 @@ export default function LoginCard({
         </h2>
         
         <p className="text-xs text-indigo-200 font-medium mt-1.5 leading-relaxed max-w-sm mx-auto">
-          선생님이 업로드한 모든 차시의 수행평가 점수와 개별 성취 환산 피드백을 단 한 번의 원격 조회로 통합 일람할 수 있습니다.
+          선생님이 업로드한 모든 차시의 수행평가 점수와 개별 성취 피드백을 원격 조회로 통합 일람할 수 있습니다.
         </p>
       </div>
 
@@ -179,12 +179,12 @@ export default function LoginCard({
                 {/* Student ID Inputs */}
                 <div>
                   <label className="block text-xs font-bold text-slate-705 mb-1.5 tracking-tight" htmlFor="student-id">
-                    본인의 정확한 학번(번호) 입력
+                    학번(5자리) 입력
                   </label>
                   <input 
                     id="student-id"
                     type="text" 
-                    placeholder="예: 1학년 1반 1번 이면 10101"
+                    placeholder="예: 10101"
                     value={studentId}
                     onChange={(e) => setStudentId(e.target.value)}
                     className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800"
@@ -194,12 +194,12 @@ export default function LoginCard({
                 {/* Birthdate Inputs (8 digits requested) */}
                 <div>
                   <label className="block text-xs font-bold text-slate-705 mb-1.5 tracking-tight" htmlFor="birth-date">
-                    개인 검증 생년월일 입력
+                    생년월일(8자리) 입력
                   </label>
                   <input 
                     id="birth-date"
                     type="password" 
-                    placeholder="예: YYYYMMDD 형태의 생년월일 8자리"
+                    placeholder="예: 20081231
                     value={birthdate}
                     onChange={(e) => setBirthdate(e.target.value)}
                     className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800 tracking-widest"
@@ -210,7 +210,7 @@ export default function LoginCard({
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs font-sans">
                   <div className="border-b border-slate-200 pb-2">
                     <span className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                      🔒 개인정보 처리 설명 및 동의
+                      🔒 개인정보 활용 동의 안내
                     </span>
                   </div>
                   
@@ -273,7 +273,7 @@ export default function LoginCard({
             <div className="mt-3 bg-slate-50 p-4 border border-slate-200 rounded-xl text-left text-xs text-slate-600 space-y-2 leading-relaxed animate-fadeIn">
               <p className="font-bold text-slate-900">📌 성적 확인 관련 자주 묻는 질문 (FAQ)</p>
               <ul className="list-disc pl-4 space-y-1 text-slate-600">
-                <li><strong>학번 입력 규격:</strong> 엑셀 파일 내 등록된 형태와 완전히 동일해야 합니다. (예: 다섯 자릿수 학번인 <code className="bg-slate-200 px-1 rounded text-red-650">10101</code> 등)</li>
+                <li><strong>학번 입력 형식:</strong> 엑셀 파일 내 등록된 형태와 완전히 동일해야 합니다. (예: 다섯 자릿수 학번인 <code className="bg-slate-200 px-1 rounded text-red-650">10101</code> 등)</li>
                 <li><strong>생년월일 형식:</strong> 일반적으로 <strong className="text-slate-900 text-[11.5px]">8자리</strong>(예: <code className="bg-slate-200 px-1 rounded">20061215</code>) 형태나 엑셀 셀 시트에 담긴 생일 형식으로 입력해주십시오.</li>
                 <li><strong>다중 성적 조회 보장:</strong> 로그인에 성공하시면, 해당 선생님께서 업로드 완료하신 모든 회차의 성적 점수 대장이 슬라이드 카드로 하나로 요약되어 모여 집계 조회됩니다.</li>
               </ul>

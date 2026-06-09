@@ -111,7 +111,7 @@ export default function AdminManager({
         );
       } catch (err) {
         console.error(err);
-        setErrorMsg('엑셀 파일을 파싱하여 교사 정보를 마이그레이션하지 못했습니다. 적절한 .xlsx 통합 문서를 열어주세요.');
+        setErrorMsg('엑셀 파일을 파싱하여 교사 정보를 등록하지 못했습니다. 적절한 .xlsx 통합 문서를 열어주세요.');
       }
     };
     reader.readAsArrayBuffer(file);
@@ -144,9 +144,9 @@ export default function AdminManager({
   };
 
   const handleDelete = (code: string, name: string) => {
-    if (window.confirm(`"${name}" 선생님(코드: ${code}) 계정을 목록에서 정말 삭제하시겠습니까?\n삭제하시면 해당 교사가 업로드한 평가 성적표 데이터 조회도 불가능해집니다.`)) {
+    if (window.confirm(`"${name}" 선생님(코드: ${code}) 계정을 목록에서 정말 삭제하시겠습니까?\n삭제할 경우 해당 교사가 업로드한 평가 성적도 자동 삭제됩니다.`)) {
       onDeleteTeacher(code, name);
-      setSuccessMsg(`"${name}" 선생님 계정이 정상 삭제 및 연동 파기 완료되었습니다.`);
+      setSuccessMsg(`"${name}" 선생님 계정 및 등록한 학생 성적이 삭제되었습니다.`);
     }
   };
 
@@ -163,15 +163,15 @@ export default function AdminManager({
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-4 gap-4">
         <div>
           <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 text-xs px-3 py-1 rounded-full font-extrabold inline-flex items-center gap-1 mb-1.5 shadow-sm">
-            🛡️ 최상위 통합 교육기관 관리 권한
+            🛡️ 인비고 관리자 권한
           </span>
-          <h1 className="text-2.5xl font-extrabold font-sans tracking-tight text-slate-900">학교 총업무 관리자 대시보드</h1>
+          <h1 className="text-2.5xl font-extrabold font-sans tracking-tight text-slate-900">학교 관리자 대시보드</h1>
         </div>
         <button 
           onClick={onLogout}
           className="flex items-center gap-1.5 px-4 py-2 border border-slate-350 rounded-xl text-xs font-bold text-red-650 bg-white hover:bg-red-50 hover:border-red-200 hover:shadow-xs transition cursor-pointer"
         >
-          <LogOut size={13} /> 관리 관할구 탈퇴 (로그아웃)
+          <LogOut size={13} /> 관리자 로그아웃
         </button>
       </div>
 
@@ -254,9 +254,9 @@ export default function AdminManager({
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <Users size={16} className="text-slate-500" />
-                  교직원 등재 현황 총부 ({teachers.length}명)
+                  등록 교사 현황 ({teachers.length}명)
                 </h3>
-                <p className="text-[11px] text-slate-400">교사 계정 목록을 삭제 및 검색으로 기입하고 점검하십시오.</p>
+                <p className="text-[11px] text-slate-400">교사 데이터 검색</p>
               </div>
 
               <div className="relative max-w-xs w-full">
@@ -265,7 +265,7 @@ export default function AdminManager({
                 </span>
                 <input 
                   type="text" 
-                  placeholder="교사명 또는 코드 검색..."
+                  placeholder="교사명 또는 코드(3자리) 검색"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full text-xs pl-8 pr-4 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-100 focus:border-indigo-400"
@@ -308,7 +308,7 @@ export default function AdminManager({
                             onClick={() => handleDelete(tea.code, tea.name)}
                             className="p-1 px-2 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-200 rounded transition cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
                           >
-                            <Trash2 size={11} /> 파기
+                            <Trash2 size={11} /> 삭제
                           </button>
                         </td>
                       </tr>

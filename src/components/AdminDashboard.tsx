@@ -192,7 +192,7 @@ export default function AdminDashboard({
   };
 
   const handleDeleteActive = async (idToDelete: string) => {
-    if (window.confirm('이 성적 파일을 정말 삭제합니까? 삭제 후 동기화된 모든 학생은 이 파일을 조회할 수 없게 됩니다.')) {
+    if (window.confirm('이 성적 파일을 정말 삭제합니까? 파일 삭제 시 점수 조회는 불가합니다.')) {
       await onDeleteEvaluation(idToDelete);
     }
   };
@@ -218,7 +218,7 @@ export default function AdminDashboard({
           <span className="bg-emerald-55 text-emerald-850 border border-emerald-250 text-xs px-3 py-1 rounded-full font-bold inline-flex items-center gap-1 mb-1.5 shadow-sm">
             <CheckCircle2 size={12} className="text-emerald-700" /> [교사 ID: {loggedTeacher.code}] {loggedTeacher.name} 선생님
           </span>
-          <h1 className="text-xl sm:text-2xl font-black font-sans tracking-tight text-slate-900">다중 수행평가 파일 관리 시스템</h1>
+          <h1 className="text-xl sm:text-2xl font-black font-sans tracking-tight text-slate-900">수행평가 다중 파일 관리 시스템</h1>
         </div>
         <div className="flex items-center gap-2">
           <button 
@@ -244,12 +244,12 @@ export default function AdminDashboard({
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
             <h3 className="text-xs font-black text-slate-800 flex items-center gap-1 pb-1.5 border-b border-slate-100 uppercase tracking-tight">
               <Layers size={14} className="text-slate-500" />
-              업로드 성적표 목록 ({myEvaluations.length}개)
+              등록된 수행평가 목록 ({myEvaluations.length}개)
             </h3>
 
             {myEvaluations.length === 0 ? (
               <div className="py-8 text-center text-slate-400 text-xs italic">
-                등록된 성적 파일이 없습니다.<br/>새로운 엑셀을 업로드 하세요.
+                등록된 성적 파일이 없습니다.<br/>새로운 엑셀 파일을 업로드 하세요.
               </div>
             ) : (
               <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
@@ -299,7 +299,7 @@ export default function AdminDashboard({
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
-              <Plus size={14} /> 새 성적표 신규 등록
+              <Plus size={14} /> 다른 수행평가 파일 등록
             </button>
           </div>
         </div>
@@ -313,9 +313,9 @@ export default function AdminDashboard({
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
               <div className="border-b border-slate-100 pb-2">
                 <span className="bg-indigo-50 text-indigo-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">Step 1</span>
-                <h3 className="text-sm font-black text-slate-900 mt-2">새로운 성적표 Excel 업로드</h3>
+                <h3 className="text-sm font-black text-slate-900 mt-2">새로운 엑셀 파일 업로드</h3>
                 <p className="text-[11px] text-slate-450 leading-normal mt-0.5">
-                  학교 과목의 수행평가 기입 대장 엑셀 파일(.xlsx, .xls)을 아래의 드롭존에 업로드해 주십시오.
+                  수행평가 점수가 입력된 엑셀 파일을 아래에 업로드하세요.
                 </p>
               </div>
 
@@ -412,7 +412,7 @@ export default function AdminDashboard({
               <div className="md:col-span-1 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-4">
                 <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
                   <BookOpen size={14} className="text-slate-500" />
-                  성적표 상세 메타정보 설정
+                  수행평가 등록
                 </h3>
 
                 <div className="space-y-3">
@@ -436,7 +436,7 @@ export default function AdminDashboard({
 
                   <div>
                     <label htmlFor="eval-round-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
-                      2. 평가 차시 (차)
+                      2. 평가 차시 (n차)
                     </label>
                     <input 
                       id="eval-round-txt"
@@ -474,7 +474,7 @@ export default function AdminDashboard({
                   {/* Max Score entry requested */}
                   <div>
                     <label htmlFor="eval-maxscore-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
-                      4. 수행평가 만점 (최대점)
+                      4. 수행평가 만점
                     </label>
                     <input 
                       id="eval-maxscore-txt"
@@ -547,8 +547,8 @@ export default function AdminDashboard({
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden p-4 space-y-3">
               <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                 <div>
-                  <h3 className="text-xs font-black text-slate-800">선택된 성적 원본 대조 일람표 ({previewRows.length}행)</h3>
-                  <p className="text-[10px] text-slate-400">데이터를 실시간 검색으로 간편 점검하십시오.</p>
+                  <h3 className="text-xs font-black text-slate-800">수행평가 성적 원본 대조 일람표 ({previewRows.length}행)</h3>
+                  <p className="text-[10px] text-slate-400">학생 데이터 검색</p>
                 </div>
                 
                 <div className="relative max-w-xs w-full">

@@ -257,7 +257,7 @@ export default function App() {
         setAuthError('');
         setInputPassword('');
       } else {
-        setAuthError('관리자 비밀번호가 일치하지 않습니다. 검증 암호를 재확인해 주세요.');
+        setAuthError('관리자 비밀번호가 일치하지 않습니다. 암호를 확인해 주세요.');
       }
     } else {
       const trimmedCode = inputTeacherCode.trim();
@@ -266,11 +266,11 @@ export default function App() {
         return;
       }
       if (!inputPassword.trim()) {
-        setAuthError('교직원 암호를 기입해 주세요.');
+        setAuthError('선생님 암호를 기입해 주세요.');
         return;
       }
       if (inputPassword !== '1004') {
-        setAuthError('인증 비밀번호가 정확하지 않습니다.');
+        setAuthError('선생님 비밀번호가 일치하지 않습니다.');
         return;
       }
 
@@ -375,8 +375,8 @@ export default function App() {
                     <div className="inline-flex p-3 bg-white/10 rounded-full mb-2.5 text-amber-400 border border-white/10">
                       <Key size={24} className="stroke-[2.5]" />
                     </div>
-                    <h2 className="text-xl font-extrabold font-sans tracking-tight">교원 검증 포털 로그인</h2>
-                    <p className="text-xs text-indigo-200 mt-1">담당 클래스의 배점을 등록하거나 교직원 명부를 관리하십시오.</p>
+                    <h2 className="text-xl font-extrabold font-sans tracking-tight">선생님/관리자 로그인</h2>
+                    <p className="text-xs text-indigo-200 mt-1">선생님 또는 관리자를 선택해서 로그인해주세요.</p>
                   </div>
 
                   <div className="p-6 sm:p-8 space-y-5">
@@ -406,7 +406,7 @@ export default function App() {
                       {authRole === 'teacher' ? (
                         <div>
                           <label className="block text-xs font-bold text-slate-700 mb-1.5" htmlFor="p-teacher-code">
-                            선생님 선택 (등록된 교직원 목록)
+                            선생님 선택
                           </label>
                           <select
                             id="p-teacher-code"
@@ -415,7 +415,7 @@ export default function App() {
                             className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold text-slate-800 cursor-pointer"
                             autoFocus
                           >
-                            <option value="">로그인할 선생님 선택</option>
+                            <option value="">선생님 선택</option>
                             {teachers.map((tea) => (
                               <option key={tea.code} value={tea.code}>
                                 [{tea.code}] {tea.name} 선생님
@@ -426,7 +426,7 @@ export default function App() {
                       ) : (
                         <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-500 leading-normal flex items-start gap-1.5">
                           <Info size={14} className="shrink-0 text-indigo-600 mt-0.5" />
-                          <span>학교 총괄 관리자는 본교에 배정된 통합 교직원 대장을 등록하고 신규 배점을 제치하는 검토 장치입니다.</span>
+                          <span>학교 관리자는 교사 목록을 등록·관리할 수 있습니다.</span>
                         </div>
                       )}
 
@@ -498,10 +498,10 @@ export default function App() {
               {/* Educational Platform Welcome Sub-Banner */}
               <div className="text-center space-y-2 max-w-lg mx-auto mt-4 animate-fadeIn">
                 <span className="text-[10px] sm:text-xs font-extrabold text-indigo-900 bg-indigo-50 border border-indigo-100 px-3.5 py-1.5 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5 shadow-sm">
-                  🏫 수시 수행평가 성적 간편 조회 엔진
+                  🏫 수행평가 결과 간편 조회
                 </span>
                 <p className="text-xs text-slate-500 font-semibold px-4 leading-relaxed font-sans">
-                  지정된 선생님의 평가 점수와 개별 성취 환산 피드백을 타인 노출 없이 안전하게 1대1 즉시 확인해 보실 수 있습니다.
+                  수행평가 결과를 학생 개인이 조회할 수 있습니다.
                 </p>
               </div>
 
