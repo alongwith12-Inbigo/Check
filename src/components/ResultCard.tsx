@@ -20,7 +20,7 @@ interface ResultCardProps {
 }
 
 export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} }: ResultCardProps) {
-  const { studentName, studentId, teacherName, results } = sessionData;
+  const { studentName, studentId, teacherName, results, teacherCode } = sessionData;
 
   const handlePrint = () => {
     window.print();
@@ -79,7 +79,7 @@ export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} 
 
   // Find overall subject's performance max score
   const sampleResult = sortedResults[0];
-  const tCode = sampleResult?.teacherCode || '';
+  const tCode = teacherCode || sampleResult?.teacherCode || '';
   const subjName = sampleResult?.subject || '';
   const settingKey = `${tCode}_${subjName}`;
   const customMaxScoreStr = subjectMaxScores[settingKey] || '';

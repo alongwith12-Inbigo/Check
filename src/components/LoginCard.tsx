@@ -120,7 +120,8 @@ export default function LoginCard({
         birthdate: birthdate.trim(),
         studentName: finalName,
         teacherName: activeTeacher ? activeTeacher.name : '교과',
-        results: matchedResults
+        results: matchedResults,
+        teacherCode: activeTeacher ? activeTeacher.code : ''
       });
     } else {
       setErrorMsg(

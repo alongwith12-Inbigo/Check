@@ -49,4 +49,5 @@ export interface StudentSession {
   studentName: string;
   teacherName: string;
   results: StudentResultItem[];
+  teacherCode?: string;
 }
