@@ -69,12 +69,8 @@ export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} 
       aggregateRawObtained += computedTotalScore;
       aggregateRawMax += maxScoreNum;
 
-      if (maxScoreNum > 0) {
-        aggregateReflectedObtained += (computedTotalScore / maxScoreNum) * rateNum;
-      } else {
-        aggregateReflectedObtained += computedTotalScore * (rateNum / 100);
-      }
-      aggregateReflectedMax += rateNum;
+      aggregateReflectedObtained += computedTotalScore * (rateNum / 100);
+      aggregateReflectedMax += maxScoreNum * (rateNum / 100);
     }
   });
 
@@ -252,18 +248,12 @@ export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} 
                   const maxScoreNum = parseFloat(maxScore || '100') || 100;
                   const rateNum = parseFloat(item.reflectRate || '100') || 100;
 
-                  let reflectedValue = 0;
-                  let calculationFormula = "";
-
-                  if (maxScoreNum > 0) {
-                    reflectedValue = (computedTotalScore / maxScoreNum) * rateNum;
-                    calculationFormula = `(${computedTotalScore}점 / 만점 ${maxScoreNum}점) × 반영비율 ${rateNum}%`;
-                  } else {
-                    reflectedValue = computedTotalScore * (rateNum / 100);
-                    calculationFormula = `${computedTotalScore}점 × 반영비율 ${rateNum}%`;
-                  }
+                  const reflectedValue = computedTotalScore * (rateNum / 100);
+                  const reflectedMaxScore = maxScoreNum * (rateNum / 100);
+                  const calculationFormula = `원점수 ${computedTotalScore}점 × ${rateNum}%`;
 
                   const formattedReflectedValue = Number(reflectedValue.toFixed(2)).toString();
+                  const formattedReflectedMaxScore = Number(reflectedMaxScore.toFixed(2)).toString();
 
                   return (
                     <div className="space-y-3">
@@ -293,7 +283,7 @@ export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} 
                       <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex justify-between items-center print:bg-white print:border-slate-300">
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] bg-indigo-100 border border-indigo-200 rounded font-black px-2 py-0.5 text-indigo-805">
+                            <span className="text-[10px] bg-indigo-100 border border-indigo-200 rounded font-black px-2 py-0.5 text-indigo-850">
                               실제 성적 반영 점수
                             </span>
                             <span className="text-[10px] font-bold text-slate-500">
@@ -301,7 +291,7 @@ export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} 
                             </span>
                           </div>
                           <p className="text-[10px] text-slate-500 font-medium font-mono">
-                            성적 반영 공식 : <span className="font-bold text-indigo-900">{calculationFormula}</span>
+                            성적 반영 공식 : <span className="font-bold text-indigo-900">{calculationFormula} = {formattedReflectedValue}점 (영역 만점: {maxScoreNum}점 × {rateNum}% = {formattedReflectedMaxScore}점 만점)</span>
                           </p>
                         </div>
                         <div className="text-right">
@@ -309,7 +299,7 @@ export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} 
                             {formattedReflectedValue}
                           </span>
                           <span className="text-xs text-slate-400 font-bold ml-1">
-                            / {rateNum} 점 만점
+                            / {formattedReflectedMaxScore} 점 만점
                           </span>
                         </div>
                       </div>
