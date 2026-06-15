@@ -30,6 +30,9 @@ export default function App() {
   // All evaluations in the database
   const [allEvaluations, setAllEvaluations] = useState<EvaluationState[]>([]);
 
+  // Subject-level final max score configurations
+  const [subjectMaxScores, setSubjectMaxScores] = useState<Record<string, string>>({});
+
   // Selected state for student
   const [selectedEvaluationId, setSelectedEvaluationId] = useState<string>('');
 
@@ -50,6 +53,23 @@ export default function App() {
 
   // Active evaluation ID for the logged in teacher's panel
   const [activeEvaluationId, setActiveEvaluationId] = useState<string>('');
+
+  // Subscribe to Subject Settings in real-time from Firestore
+  useEffect(() => {
+    const collRef = collection(db, 'subjectSettings');
+    const unsubscribe = onSnapshot(collRef, (snap) => {
+      const scores: Record<string, string> = {};
+      snap.forEach((d) => {
+        const data = d.data();
+        scores[d.id] = data.maxScore !== undefined ? String(data.maxScore) : '';
+      });
+      setSubjectMaxScores(scores);
+    }, (error) => {
+      console.warn("Firestore subjectSettings subscription failed: ", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // 1. Subscribe to Teachers directory in real-time from Firestore
   useEffect(() => {
@@ -177,6 +197,21 @@ export default function App() {
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `evaluation/${id}`);
+    }
+  };
+
+  const handleUpdateSubjectMaxScore = async (subject: string, maxScore: string) => {
+    if (!loggedTeacher) return;
+    const settingId = `${loggedTeacher.code}_${subject}`;
+    try {
+      const docRef = doc(db, 'subjectSettings', settingId);
+      await setDoc(docRef, {
+        teacherCode: loggedTeacher.code,
+        subject: subject,
+        maxScore: maxScore
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `subjectSettings/${settingId}`);
     }
   };
 
@@ -356,6 +391,8 @@ export default function App() {
                   onClose={() => setIsAdminOpen(false)}
                   loggedTeacher={loggedTeacher}
                   onLogout={handleTeacherLogout}
+                  subjectMaxScores={subjectMaxScores}
+                  onUpdateSubjectMaxScore={handleUpdateSubjectMaxScore}
                 />
               </motion.div>
             ) : (
@@ -484,6 +521,7 @@ export default function App() {
               <ResultCard 
                 sessionData={loggedStudent}
                 onBack={handleStudentLogout}
+                subjectMaxScores={subjectMaxScores}
               />
             </motion.div>
           ) : (

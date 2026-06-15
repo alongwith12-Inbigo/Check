@@ -32,5 +32,18 @@ service cloud.firestore {
       // Allow deletion of teachers
       allow delete: if true;
     }
+
+    // 4. Subject Settings document access rule
+    match /subjectSettings/{settingId} {
+      // Anyone can read subject settings to see overall grade max scores
+      allow read: if true;
+
+      // Allow create and update for teachers
+      allow create, update: if request.resource.data.teacherCode is string && request.resource.data.teacherCode.size() <= 20
+        && request.resource.data.subject is string && request.resource.data.subject.size() <= 100
+        && request.resource.data.maxScore is string && request.resource.data.maxScore.size() <= 10;
+
+      allow delete: if true;
+    }
   }
 }

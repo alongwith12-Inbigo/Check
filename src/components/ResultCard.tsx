@@ -16,9 +16,10 @@ import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn } fr
 interface ResultCardProps {
   sessionData: StudentSession;
   onBack: () => void;
+  subjectMaxScores?: Record<string, string>;
 }
 
-export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
+export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} }: ResultCardProps) {
   const { studentName, studentId, teacherName, results } = sessionData;
 
   const handlePrint = () => {
@@ -79,6 +80,14 @@ export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
 
   const formattedAggregateReflectedObtained = Number(aggregateReflectedObtained.toFixed(2)).toString();
   const formattedAggregateRawObtained = Number(aggregateRawObtained.toFixed(2)).toString();
+
+  // Find overall subject's performance max score
+  const sampleResult = sortedResults[0];
+  const tCode = sampleResult?.teacherCode || '';
+  const subjName = sampleResult?.subject || '';
+  const settingKey = `${tCode}_${subjName}`;
+  const customMaxScoreStr = subjectMaxScores[settingKey] || '';
+  const courseMaxScore = customMaxScoreStr ? parseFloat(customMaxScoreStr) : aggregateReflectedMax;
 
   // Compute stats across all evaluations
   const totalEvalsCount = sortedResults.length;
@@ -257,41 +266,53 @@ export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
                   const formattedReflectedValue = Number(reflectedValue.toFixed(2)).toString();
 
                   return (
-                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-5 print:bg-white print:border-slate-300">
-                      
-                      {/* Left: Metadata info & raw total score */}
-                      <div className="space-y-2 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] bg-slate-200 border border-slate-300 rounded-md font-bold px-2 py-0.5 text-slate-700">
-                            영역 합산 점수: {computedTotalScore} 점 / {maxScoreNum} 점
+                    <div className="space-y-3">
+                      {/* Box 1: 영역 합산 점수 */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex justify-between items-center print:bg-white print:border-slate-300">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] bg-slate-200 border border-slate-350 rounded font-black px-2 py-0.5 text-slate-700">
+                              영역 합산 점수
+                            </span>
+                          </div>
+                          <h4 className="text-xs font-black text-slate-800 mt-1">
+                            {subject} {String(round).endsWith('차') ? round : `${round}차`} 취득 원점수
+                          </h4>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
+                            {computedTotalScore}
                           </span>
-                          <span className="text-[10px] bg-indigo-100 border border-indigo-200 rounded-md font-bold px-2 py-0.5 text-indigo-800">
-                            반영 비율: {rateNum}%
+                          <span className="text-xs text-slate-400 font-bold ml-1">
+                            / {maxScoreNum} 점 만점
                           </span>
                         </div>
-                        
-                        <h4 className="text-sm font-extrabold text-slate-800">
-                          {subject} {String(round).endsWith('차') ? round : `${round}차`} 수행평가 실제 반영 점수
-                        </h4>
-                        
-                        <p className="text-[10.5px] text-slate-500 font-medium font-mono">
-                          성적 반영 공식 : <span className="font-bold text-indigo-900">{calculationFormula}</span>
-                        </p>
                       </div>
 
-                      {/* Right: Larger reflected score highlight */}
-                      <div className="flex flex-col justify-center items-center md:items-end bg-indigo-50/50 border border-indigo-100/60 rounded-xl p-4 min-w-[170px] text-center md:text-right">
-                        <span className="text-[10.5px] text-indigo-800 font-extrabold uppercase tracking-wide">실제 성적 반영 점수</span>
-                        <div className="mt-1 flex items-baseline gap-1.5">
-                          <span className="text-3xl sm:text-4.5xl font-black text-indigo-950 font-sans tracking-tight">
+                      {/* Box 2: 실제 성적 반영 점수 */}
+                      <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex justify-between items-center print:bg-white print:border-slate-300">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] bg-indigo-100 border border-indigo-200 rounded font-black px-2 py-0.5 text-indigo-805">
+                              실제 성적 반영 점수
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500">
+                              (반영 비율: {rateNum}%)
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 font-medium font-mono">
+                            성적 반영 공식 : <span className="font-bold text-indigo-900">{calculationFormula}</span>
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-2xl sm:text-3xl font-black text-indigo-950 font-sans tracking-tight">
                             {formattedReflectedValue}
                           </span>
-                          <span className="text-xs text-slate-400 font-bold">
+                          <span className="text-xs text-slate-400 font-bold ml-1">
                             / {rateNum} 점 만점
                           </span>
                         </div>
                       </div>
-
                     </div>
                   );
                 })()}
@@ -338,60 +359,43 @@ export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
       </div>
 
       {/* Cumulative Final Report Section */}
-      <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl p-6 sm:p-8 relative overflow-hidden shadow-lg print:bg-white print:text-black print:border-2 print:border-slate-800 space-y-6">
+      <div className="bg-indigo-50/50 border border-indigo-150 rounded-2xl p-6 sm:p-8 relative overflow-hidden shadow-xs print:bg-white print:text-black print:border-2 print:border-slate-800 space-y-5">
         <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none print:hidden">
-          <Award size={160} className="stroke-[1.5] text-amber-500" />
+          <Award size={140} className="stroke-[1.5] text-indigo-500" />
         </div>
 
         <div className="flex items-center gap-2.5 relative z-10">
-          <div className="p-2.5 bg-amber-400 text-slate-950 rounded-2xl print:bg-slate-200 print:text-black">
-            <Award size={22} className="stroke-[2.5]" />
+          <div className="p-2 bg-indigo-100 text-indigo-950 rounded-xl print:bg-slate-200 print:text-black">
+            <Award size={20} className="stroke-[2.5]" />
           </div>
           <div>
-            <span className="text-[10px] sm:text-xs font-black text-amber-300 uppercase tracking-widest block print:text-slate-500 leading-none">
-              Cumulative Final Grade Report
-            </span>
-            <h2 className="text-base sm:text-xl font-black tracking-tight text-white print:text-black mt-1">
-              전체 수행평가 누적 결과 종합
+            <h2 className="text-base sm:text-lg font-black tracking-tight text-indigo-950 print:text-black leading-tight">
+              {subjName ? `${subjName} 수행평가 총점` : '수행평가 최종 총점'}
             </h2>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
-          {/* Raw Scores Sum Box */}
-          <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-5 print:bg-slate-50 print:border-slate-300">
-            <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              영역별 점수(원점수) 합산 총점
-            </span>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl sm:text-4xl font-extrabold text-slate-100 font-mono print:text-black">
-                {formattedAggregateRawObtained}
-              </span>
-              <span className="text-xs sm:text-sm font-semibold text-slate-400 print:text-slate-500">
-                / {aggregateRawMax} 점 만점
-              </span>
-            </div>
-            <p className="text-[10px] text-slate-450 mt-2 leading-relaxed">
-              ※ 단순 영역 점수 총합 기준이며, 실제 성적에 반영되는 비율은 적용되지 않은 총 원점수입니다.
-            </p>
-          </div>
-
+        <div className="relative z-10">
           {/* Reflected Real Score Sum Box */}
-          <div className="bg-linear-to-br from-indigo-950/90 to-indigo-900/60 border-2 border-indigo-500/30 rounded-2xl p-5 print:bg-slate-100 print:from-slate-100 print:to-slate-100 print:border-2 print:border-slate-800">
-            <span className="text-[10.5px] sm:text-[11.5px] font-bold text-amber-305 uppercase tracking-widest block print:text-slate-700">
-              👑 실제 최종 성적 반영 총점
-            </span>
-            <div className="mt-2.5 flex items-baseline gap-2">
-              <span className="text-4xl sm:text-5xl font-black text-amber-400 font-sans tracking-tight print:text-indigo-950">
-                {formattedAggregateReflectedObtained}
-              </span>
-              <span className="text-sm font-bold text-indigo-200 print:text-slate-650">
-                / {aggregateReflectedMax} 점 만점
-              </span>
+          <div className="bg-white border border-indigo-100/70 rounded-2xl p-5 sm:p-6 print:bg-slate-50 print:border-slate-200">
+            <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-4">
+              <div className="text-center sm:text-left space-y-1">
+                <span className="text-[10.5px] font-extrabold text-indigo-850 uppercase tracking-widest block">
+                  👑 실제 최종 성적 반영 총점
+                </span>
+                <p className="text-[11px] text-slate-500 leading-normal font-semibold">
+                  각 영역별 만점과 실제 성적 반영 비율(%)을 가중 계산하여 종합한 최종 수행평가 성적 누적 점수입니다.
+                </p>
+              </div>
+              <div className="text-center sm:text-right shrink-0">
+                <span className="text-4xl sm:text-5xl font-black text-indigo-950 font-sans tracking-tight">
+                  {formattedAggregateReflectedObtained}
+                </span>
+                <span className="text-sm font-bold text-slate-400 ml-1">
+                  / {courseMaxScore} 점 만점
+                </span>
+              </div>
             </div>
-            <p className="text-[10.8px] text-indigo-150 mt-2 leading-relaxed font-semibold">
-              ※ 각 영역별 만점과 실제 성적 반영 비율(%)을 가중 계산하여 종합한 최종 수행평가 성적 비율 기준 점수입니다.
-            </p>
           </div>
         </div>
       </div>

@@ -40,6 +40,7 @@ export interface StudentResultItem {
   reflectRate?: string;
   headers: string[];
   row: ExcelRow;
+  teacherCode?: string;
 }
 
 export interface StudentSession {

@@ -93,7 +93,8 @@ export default function LoginCard({
           maxScore: evalItem.maxScore || '',
           reflectRate: evalItem.reflectRate || '100',
           headers: evalItem.headers,
-          row: foundRow
+          row: foundRow,
+          teacherCode: evalItem.teacherCode || ''
         });
       }
     }

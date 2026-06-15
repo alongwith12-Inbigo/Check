@@ -51,6 +51,26 @@
         }
       },
       "required": ["code", "name"]
+    },
+    "SubjectSettings": {
+      "title": "SubjectSettings",
+      "description": "Subject overall max score settings managed by teacher",
+      "type": "object",
+      "properties": {
+        "teacherCode": {
+          "type": "string",
+          "description": "3-digit teacher code"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Subject name"
+        },
+        "maxScore": {
+          "type": "string",
+          "description": "Overall evaluation max score for the subject"
+        }
+      },
+      "required": ["teacherCode", "subject", "maxScore"]
     }
   },
   "firestore": {
@@ -61,6 +81,10 @@
     "/teachers/{teacherCode}": {
       "schema": "Teacher",
       "description": "Array/Collection of differentiated teachers managed by general school administrator"
+    },
+    "/subjectSettings/{settingId}": {
+      "schema": "SubjectSettings",
+      "description": "Contains subject-level overall evaluation max score settings"
     }
   }
 }

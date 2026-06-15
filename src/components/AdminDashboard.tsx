@@ -27,6 +27,8 @@ interface AdminDashboardProps {
   onClose: () => void;
   loggedTeacher: Teacher;
   onLogout: () => void;
+  subjectMaxScores?: Record<string, string>;
+  onUpdateSubjectMaxScore?: (subject: string, maxScore: string) => void;
 }
 
 export default function AdminDashboard({ 
@@ -38,7 +40,9 @@ export default function AdminDashboard({
   onDeleteEvaluation,
   onClose,
   loggedTeacher,
-  onLogout
+  onLogout,
+  subjectMaxScores = {},
+  onUpdateSubjectMaxScore = () => {}
 }: AdminDashboardProps) {
   const [errorMsg, setErrorMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
@@ -309,6 +313,48 @@ export default function AdminDashboard({
               <Plus size={14} /> 다른 수행평가 파일 등록
             </button>
           </div>
+
+          {/* Subject Max Score Settings Card */}
+          {(() => {
+            const uniqueSubjects = Array.from(new Set(myEvaluations.map(e => e.subject).filter(Boolean))) as string[];
+            if (uniqueSubjects.length === 0) return null;
+            return (
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                <h3 className="text-xs font-black text-slate-850 flex items-center gap-1.5 pb-2 border-b border-indigo-100 uppercase tracking-tight">
+                  🎯 과목별 수행평가 최종 만점 설정
+                </h3>
+                <p className="text-[10px] text-slate-400 leading-normal">
+                  교과목의 수행평가 총 만점을 기입해 주세요. 학생의 누적 결과표에 최종 반영 만점으로 표시됩니다.
+                </p>
+                <div className="space-y-2">
+                  {uniqueSubjects.map(sub => {
+                    const settingKey = `${loggedTeacher.code}_${sub}`;
+                    const currentMaxScore = subjectMaxScores[settingKey] || '';
+                    return (
+                      <div key={sub} className="flex items-center justify-between gap-1 bg-slate-50 border border-slate-150 rounded-xl p-2.5">
+                        <span className="text-xs font-black text-slate-700 truncate max-w-[100px]" title={sub}>
+                          {sub}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <input
+                            type="text"
+                            placeholder="예: 30"
+                            value={currentMaxScore}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              onUpdateSubjectMaxScore(sub, val);
+                            }}
+                            className="w-16 px-1.5 py-1 text-center border border-slate-300 rounded font-black text-xs text-indigo-900 font-mono bg-white focus:outline-none focus:border-indigo-500"
+                          />
+                          <span className="text-[10px] font-bold text-slate-400">점</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Column 2 & 3: File Upload Area & Config controls */}

@@ -130,7 +130,14 @@ export function isScoreColumn(headerName: string, sampleValue: any): boolean {
                          normalized.includes('총점') || 
                          normalized.includes('평가') || 
                          normalized.includes('과제') || 
-                         normalized.includes('고사');
+                         normalized.includes('고사') ||
+                         normalized.includes('합계') ||
+                         normalized.includes('합') ||
+                         normalized.includes('수행') ||
+                         normalized.includes('총') ||
+                         normalized.includes('비율') ||
+                         normalized.includes('가중') ||
+                         normalized.includes('결과');
 
   // Also check if the sample value is a valid percentage or positive number
   if (sampleValue !== null && sampleValue !== undefined && sampleValue !== '') {
