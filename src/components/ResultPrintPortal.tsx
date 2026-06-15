@@ -253,8 +253,8 @@ export default function ResultPrintPortal({
                             <div className="leading-tight">
                               <span className="block font-black">{ev.round || `${idx + 1}차`}</span>
                               <span className="block text-[8px] text-slate-500 font-normal">반영{rateNum}%</span>
-                              <span className="block text-[8px] text-slate-400 font-bold mt-0.5">
-                                만점 {reflectedMax} (원:{maxScoreNum})
+                              <span className="block text-[9px] text-indigo-900 font-bold mt-0.5">
+                                만점 {reflectedMax}점
                               </span>
                             </div>
                           </th>
@@ -310,15 +310,8 @@ export default function ResultPrintPortal({
                               : '-';
 
                             return (
-                              <td key={ev.id} className="border border-slate-800 px-2 py-1 text-center font-mono">
-                                <div className="leading-tight">
-                                  <span className="font-extrabold text-slate-900">{displayedVal}</span>
-                                  {val !== null && (
-                                    <span className="block text-[9px] text-slate-400 font-normal">
-                                      (원:{val})
-                                    </span>
-                                  )}
-                                </div>
+                              <td key={ev.id} className="border border-slate-800 px-2 py-1.5 text-center font-mono text-[12px]">
+                                <span className="font-extrabold text-slate-900">{displayedVal}</span>
                               </td>
                             );
                           })}
