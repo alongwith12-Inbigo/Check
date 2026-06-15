@@ -397,7 +397,7 @@ export default function AdminDashboard({
                 </p>
                 <div className="space-y-2">
                   {uniqueSubjects.map(sub => {
-                    const settingKey = `${loggedTeacher.code}_${sub}`;
+                    const settingKey = `${loggedTeacher.code.trim()}_${sub.trim()}`;
                     const dbMaxScore = subjectMaxScores[settingKey] || '';
                     return (
                       <div key={sub} className="flex items-center justify-between gap-1 bg-slate-50 border border-slate-150 rounded-xl p-2.5">
@@ -407,7 +407,9 @@ export default function AdminDashboard({
                         <SubjectMaxScoreInput 
                           subject={sub}
                           initialValue={dbMaxScore}
-                          onSave={(newVal) => onUpdateSubjectMaxScore(sub, newVal)}
+                          onSave={async (newVal) => {
+                            await onUpdateSubjectMaxScore(sub, newVal);
+                          }}
                         />
                       </div>
                     );

@@ -79,8 +79,8 @@ export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} 
 
   // Find overall subject's performance max score
   const sampleResult = sortedResults[0];
-  const tCode = teacherCode || sampleResult?.teacherCode || '';
-  const subjName = sampleResult?.subject || '';
+  const tCode = (teacherCode || sampleResult?.teacherCode || '').trim();
+  const subjName = (sampleResult?.subject || '').trim();
   const settingKey = `${tCode}_${subjName}`;
   const customMaxScoreStr = subjectMaxScores[settingKey] || '';
   const courseMaxScore = customMaxScoreStr ? parseFloat(customMaxScoreStr) : aggregateReflectedMax;

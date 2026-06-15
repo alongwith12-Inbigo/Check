@@ -202,13 +202,23 @@ export default function App() {
 
   const handleUpdateSubjectMaxScore = async (subject: string, maxScore: string) => {
     if (!loggedTeacher) return;
-    const settingId = `${loggedTeacher.code}_${subject}`;
+    const cleanTeacherCode = loggedTeacher.code.trim();
+    const cleanSubject = subject.trim();
+    const cleanMaxScore = maxScore.trim();
+    const settingId = `${cleanTeacherCode}_${cleanSubject}`;
+
+    // Optimistically update the state immediately for seamless UX
+    setSubjectMaxScores(prev => ({
+      ...prev,
+      [settingId]: cleanMaxScore
+    }));
+
     try {
       const docRef = doc(db, 'subjectSettings', settingId);
       await setDoc(docRef, {
-        teacherCode: loggedTeacher.code,
-        subject: subject,
-        maxScore: maxScore
+        teacherCode: cleanTeacherCode,
+        subject: cleanSubject,
+        maxScore: cleanMaxScore
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `subjectSettings/${settingId}`);

@@ -39,9 +39,9 @@ service cloud.firestore {
       allow read: if true;
 
       // Allow create and update for teachers
-      allow create, update: if request.resource.data.teacherCode is string && request.resource.data.teacherCode.size() <= 20
-        && request.resource.data.subject is string && request.resource.data.subject.size() <= 100
-        && request.resource.data.maxScore is string && request.resource.data.maxScore.size() <= 10;
+      allow create, update: if request.resource.data.teacherCode is string && request.resource.data.teacherCode.size() <= 100
+        && request.resource.data.subject is string && request.resource.data.subject.size() <= 200
+        && request.resource.data.maxScore is string && request.resource.data.maxScore.size() <= 50;
 
       allow delete: if true;
     }
