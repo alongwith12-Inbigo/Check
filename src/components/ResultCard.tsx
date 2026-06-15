@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   ArrowLeft, 
   Printer, 
@@ -12,15 +12,27 @@ import {
 } from 'lucide-react';
 import { StudentSession } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn } from '../utils';
+import SignatureCanvas from './SignatureCanvas';
 
 interface ResultCardProps {
   sessionData: StudentSession;
   onBack: () => void;
   subjectMaxScores?: Record<string, string>;
+  signatures?: Record<string, string>;
+  signatureEnabled?: boolean;
+  onSaveSignature?: (subject: string, studentId: string, studentName: string, signatureDataUrl: string) => void | Promise<void>;
 }
 
-export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} }: ResultCardProps) {
+export default function ResultCard({ 
+  sessionData, 
+  onBack, 
+  subjectMaxScores = {},
+  signatures = {},
+  signatureEnabled = false,
+  onSaveSignature
+}: ResultCardProps) {
   const { studentName, studentId, teacherName, results, teacherCode } = sessionData;
+  const [isSavingSig, setIsSavingSig] = useState(false);
 
   const handlePrint = () => {
     window.print();
@@ -389,6 +401,53 @@ export default function ResultCard({ sessionData, onBack, subjectMaxScores = {} 
           </div>
         </div>
       </div>
+
+      {/* Student Signature Block */}
+      {signatureEnabled && (
+        <div id="student-signature-block" className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4 print:border-2 print:border-slate-850">
+          <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+            ✒️ 수행평가 결과 확인 학생 최종 서명
+          </h3>
+          <p className="text-[11px] text-slate-500 leading-normal">
+            본인의 수행평가 총점과 상세 세부 성적을 직접 정확히 확인하였으며, 이에 서명합니다.
+          </p>
+
+          {(() => {
+            const signatureKey = `${tCode}_${subjName}_${studentId.trim()}`;
+            const savedSignature = signatures[signatureKey] || '';
+
+            if (savedSignature) {
+              return (
+                <div className="bg-emerald-50/50 border border-emerald-250 rounded-2xl p-4 flex flex-col items-center justify-center gap-2.5">
+                  <div className="text-xs font-black text-emerald-850 flex items-center gap-1">
+                    🎉 학생 확인 서명이 완료되었습니다 (제출 완료)
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-xl p-3 max-w-[220px] overflow-hidden flex items-center justify-center shadow-xs">
+                    <img src={savedSignature} alt="학생 서명" className="h-14 object-contain" referrerPolicy="no-referrer" />
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono font-bold">서명 제출 일시 기록됨</span>
+                </div>
+              );
+            }
+
+            return (
+              <SignatureCanvas 
+                onSave={async (dataUrl) => {
+                  if (onSaveSignature) {
+                    setIsSavingSig(true);
+                    try {
+                      await onSaveSignature(subjName, studentId, studentName, dataUrl);
+                    } finally {
+                      setIsSavingSig(false);
+                    }
+                  }
+                }}
+                isLoading={isSavingSig}
+              />
+            );
+          })()}
+        </div>
+      )}
 
       {/* Safety Legal Notice trustfooter */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 text-center text-[11px] text-slate-400 flex flex-col sm:flex-row justify-between items-center gap-3 print:hidden">

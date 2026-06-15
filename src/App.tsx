@@ -54,6 +54,12 @@ export default function App() {
   // Active evaluation ID for the logged in teacher's panel
   const [activeEvaluationId, setActiveEvaluationId] = useState<string>('');
 
+  // Teacher-level settings (e.g., signature enabled)
+  const [teacherSettings, setTeacherSettings] = useState<Record<string, boolean>>({});
+
+  // Student signatures mapping. Key: `${teacherCode}_${subject}_${studentId}` -> signatureDataUrl
+  const [signatures, setSignatures] = useState<Record<string, string>>({});
+
   // Subscribe to Subject Settings in real-time from Firestore
   useEffect(() => {
     const collRef = collection(db, 'subjectSettings');
@@ -66,6 +72,40 @@ export default function App() {
       setSubjectMaxScores(scores);
     }, (error) => {
       console.warn("Firestore subjectSettings subscription failed: ", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to Teacher Settings in real-time from Firestore
+  useEffect(() => {
+    const collRef = collection(db, 'teacherSettings');
+    const unsubscribe = onSnapshot(collRef, (snap) => {
+      const settings: Record<string, boolean> = {};
+      snap.forEach((d) => {
+        const data = d.data();
+        settings[d.id] = !!data.signatureEnabled;
+      });
+      setTeacherSettings(settings);
+    }, (error) => {
+      console.warn("Firestore teacherSettings subscription failed: ", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to Student Signatures in real-time from Firestore
+  useEffect(() => {
+    const collRef = collection(db, 'signatures');
+    const unsubscribe = onSnapshot(collRef, (snap) => {
+      const sigs: Record<string, string> = {};
+      snap.forEach((d) => {
+        const data = d.data();
+        sigs[d.id] = data.signatureDataUrl || '';
+      });
+      setSignatures(sigs);
+    }, (error) => {
+      console.warn("Firestore signatures subscription failed: ", error);
     });
 
     return () => unsubscribe();
@@ -222,6 +262,49 @@ export default function App() {
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `subjectSettings/${settingId}`);
+    }
+  };
+
+  const handleToggleSignature = async (enabled: boolean) => {
+    if (!loggedTeacher) return;
+    const cleanTeacherCode = loggedTeacher.code.trim();
+
+    setTeacherSettings(prev => ({
+      ...prev,
+      [cleanTeacherCode]: enabled
+    }));
+
+    try {
+      const docRef = doc(db, 'teacherSettings', cleanTeacherCode);
+      await setDoc(docRef, {
+        teacherCode: cleanTeacherCode,
+        signatureEnabled: enabled
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `teacherSettings/${cleanTeacherCode}`);
+    }
+  };
+
+  const handleSaveSignature = async (subject: string, studentId: string, studentName: string, signatureDataUrl: string) => {
+    const tCode = loggedStudent?.teacherCode || selectedTeacherCode || '';
+    if (!tCode) return;
+    const cleanTeacherCode = tCode.trim();
+    const cleanSubject = subject.trim();
+    const cleanStudentId = studentId.trim();
+    const signatureId = `${cleanTeacherCode}_${cleanSubject}_${cleanStudentId}`;
+
+    try {
+      const docRef = doc(db, 'signatures', signatureId);
+      await setDoc(docRef, {
+        teacherCode: cleanTeacherCode,
+        subject: cleanSubject,
+        studentId: cleanStudentId,
+        studentName: studentName.trim(),
+        signatureDataUrl,
+        signedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `signatures/${signatureId}`);
     }
   };
 
@@ -403,6 +486,9 @@ export default function App() {
                   onLogout={handleTeacherLogout}
                   subjectMaxScores={subjectMaxScores}
                   onUpdateSubjectMaxScore={handleUpdateSubjectMaxScore}
+                  teacherSettings={teacherSettings}
+                  signatures={signatures}
+                  onToggleSignature={handleToggleSignature}
                 />
               </motion.div>
             ) : (
@@ -532,6 +618,9 @@ export default function App() {
                 sessionData={loggedStudent}
                 onBack={handleStudentLogout}
                 subjectMaxScores={subjectMaxScores}
+                signatures={signatures}
+                signatureEnabled={!!teacherSettings[(loggedStudent.teacherCode || '').trim()]}
+                onSaveSignature={handleSaveSignature}
               />
             </motion.div>
           ) : (

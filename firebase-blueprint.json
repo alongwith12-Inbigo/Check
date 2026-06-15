@@ -71,6 +71,54 @@
         }
       },
       "required": ["teacherCode", "subject", "maxScore"]
+    },
+    "TeacherSettings": {
+      "title": "TeacherSettings",
+      "description": "Settings for each teacher, e.g., signature enabled",
+      "type": "object",
+      "properties": {
+        "teacherCode": {
+          "type": "string",
+          "description": "Differentiated teacher code"
+        },
+        "signatureEnabled": {
+          "type": "boolean",
+          "description": "Whether student signature feature is enabled"
+        }
+      },
+      "required": ["teacherCode", "signatureEnabled"]
+    },
+    "StudentSignature": {
+      "title": "StudentSignature",
+      "description": "Signature submitted by student",
+      "type": "object",
+      "properties": {
+        "teacherCode": {
+          "type": "string",
+          "description": "Teacher code"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Subject name"
+        },
+        "studentId": {
+          "type": "string",
+          "description": "Student school ID"
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Student name"
+        },
+        "signatureDataUrl": {
+          "type": "string",
+          "description": "Base64 signature image representation"
+        },
+        "signedAt": {
+          "type": "string",
+          "description": "Signed timestamp"
+        }
+      },
+      "required": ["teacherCode", "subject", "studentId", "studentName", "signatureDataUrl", "signedAt"]
     }
   },
   "firestore": {
@@ -85,6 +133,14 @@
     "/subjectSettings/{settingId}": {
       "schema": "SubjectSettings",
       "description": "Contains subject-level overall evaluation max score settings"
+    },
+    "/teacherSettings/{teacherCode}": {
+      "schema": "TeacherSettings",
+      "description": "Teacher-level settings like enabling student signatures"
+    },
+    "/signatures/{signatureId}": {
+      "schema": "StudentSignature",
+      "description": "Student signatures for their scores in each subject"
     }
   }
 }

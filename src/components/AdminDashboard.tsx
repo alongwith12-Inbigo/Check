@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { EvaluationState, Teacher } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey } from '../utils';
+import ResultPrintPortal from './ResultPrintPortal';
 
 interface AdminDashboardProps {
   myEvaluations: EvaluationState[];
@@ -29,6 +30,9 @@ interface AdminDashboardProps {
   onLogout: () => void;
   subjectMaxScores?: Record<string, string>;
   onUpdateSubjectMaxScore?: (subject: string, maxScore: string) => void | Promise<void>;
+  teacherSettings?: Record<string, boolean>;
+  signatures?: Record<string, string>;
+  onToggleSignature?: (enabled: boolean) => void | Promise<void>;
 }
 
 interface SubjectMaxScoreInputProps {
@@ -110,9 +114,13 @@ export default function AdminDashboard({
   loggedTeacher,
   onLogout,
   subjectMaxScores = {},
-  onUpdateSubjectMaxScore = () => {}
+  onUpdateSubjectMaxScore = () => {},
+  teacherSettings = {},
+  signatures = {},
+  onToggleSignature = () => {}
 }: AdminDashboardProps) {
   const [errorMsg, setErrorMsg] = useState('');
+  const [isPrintOpen, setIsPrintOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -302,6 +310,12 @@ export default function AdminDashboard({
         </div>
         <div className="flex items-center gap-2">
           <button 
+            onClick={() => setIsPrintOpen(true)}
+            className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black shadow-sm transition cursor-pointer flex items-center gap-1.5"
+          >
+            🖨️ 학생 수행평가 점수 확인 출력
+          </button>
+          <button 
             onClick={onLogout}
             className="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-bold text-red-600 bg-white hover:bg-red-50 transition cursor-pointer"
           >
@@ -418,6 +432,35 @@ export default function AdminDashboard({
               </div>
             );
           })()}
+
+          {/* Student Signature Configuration Card */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+            <h3 className="text-xs font-black text-slate-850 flex items-center gap-1.5 pb-2 border-b border-indigo-100 uppercase tracking-tight">
+              ✍️ 학생 서명 기능 활성화
+            </h3>
+            <p className="text-[10px] text-slate-450 leading-normal">
+              학생들이 자신의 수행평가 점수 조회 결과 화면 최하단에서 직접 자율 서명 후 저장할 수 있도록 기능을 활성화합니다.
+            </p>
+            <div className="flex items-center justify-between bg-slate-50 border border-slate-150 rounded-xl p-3">
+              <span className="text-xs font-bold text-slate-700">학생 서명 활성화</span>
+              <label className="relative inline-flex items-center cursor-pointer select-none">
+                <input 
+                  type="checkbox" 
+                  checked={!!teacherSettings[loggedTeacher.code]}
+                  onChange={(e) => onToggleSignature(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-900"></div>
+              </label>
+            </div>
+            <div className="text-[10px] text-slate-400 font-medium">
+              상태: {!!teacherSettings[loggedTeacher.code] ? (
+                <span className="text-emerald-600 font-bold">🟢 활성화됨 (학생 조회 시 서명란 표시)</span>
+              ) : (
+                <span className="text-slate-500 font-bold">⚪ 비활성화됨 (점수만 단순 조회)</span>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Column 2 & 3: File Upload Area & Config controls */}
@@ -778,6 +821,16 @@ export default function AdminDashboard({
         </div>
 
       </div>
+
+      {isPrintOpen && (
+        <ResultPrintPortal 
+          myEvaluations={myEvaluations}
+          signatures={signatures}
+          loggedTeacher={loggedTeacher}
+          subjectMaxScores={subjectMaxScores}
+          onClose={() => setIsPrintOpen(false)}
+        />
+      )}
 
     </div>
   );
