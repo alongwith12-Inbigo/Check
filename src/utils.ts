@@ -31,6 +31,18 @@ export function findTeacherCodeKey(headers: string[]): string | undefined {
   });
 }
 
+export function findTeacherPasswordKey(headers: string[]): string | undefined {
+  return headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized.includes('비밀번호') || 
+           normalized.includes('암호') || 
+           normalized.includes('패스워드') || 
+           normalized === '비밀' || 
+           normalized === 'password' || 
+           normalized === 'pw';
+  });
+}
+
 export function findTeacherNameKey(headers: string[]): string | undefined {
   return headers.find(h => {
     const normalized = String(h).replace(/\s+/g, '').toLowerCase();

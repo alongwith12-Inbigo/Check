@@ -121,6 +121,7 @@ export default function App() {
         list.push({
           code: d.id,
           name: data.name || '',
+          password: data.password || '',
         });
       });
       list.sort((a, b) => a.code.localeCompare(b.code));
@@ -343,7 +344,8 @@ export default function App() {
         const docRef = doc(db, 'teachers', t.code);
         await setDoc(docRef, {
           code: t.code,
-          name: t.name
+          name: t.name,
+          password: t.password || ''
         });
       }
     } catch (error) {
@@ -414,29 +416,32 @@ export default function App() {
         setAuthError('선생님 암호를 기입해 주세요.');
         return;
       }
-      if (inputPassword !== '1004') {
+
+      const matchedTeacher = teachers.find(t => t.code === trimmedCode);
+      if (!matchedTeacher) {
+        setAuthError('등록되지 않은 선생님 정보입니다.');
+        return;
+      }
+
+      const expectedPassword = (matchedTeacher.password || '').trim() || '1004';
+      if (inputPassword.trim() !== expectedPassword) {
         setAuthError('선생님 비밀번호가 일치하지 않습니다.');
         return;
       }
 
-      const matchedTeacher = teachers.find(t => t.code === trimmedCode);
-      if (matchedTeacher) {
-        setLoggedTeacher(matchedTeacher);
-        
-        // Auto-select starting evaluation if one exists
-        const matchedEvals = allEvaluations.filter(e => e.teacherCode === matchedTeacher.code);
-        if (matchedEvals.length > 0) {
-          setActiveEvaluationId(matchedEvals[0].id || '');
-        } else {
-          setActiveEvaluationId('');
-        }
-
-        setAuthError('');
-        setInputTeacherCode('');
-        setInputPassword('');
+      setLoggedTeacher(matchedTeacher);
+      
+      // Auto-select starting evaluation if one exists
+      const matchedEvals = allEvaluations.filter(e => e.teacherCode === matchedTeacher.code);
+      if (matchedEvals.length > 0) {
+        setActiveEvaluationId(matchedEvals[0].id || '');
       } else {
-        setAuthError('등록되지 않은 선생님 정보입니다.');
+        setActiveEvaluationId('');
       }
+
+      setAuthError('');
+      setInputTeacherCode('');
+      setInputPassword('');
     }
   };
 

@@ -12,7 +12,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Teacher } from '../types';
-import { findTeacherCodeKey, findTeacherNameKey } from '../utils';
+import { findTeacherCodeKey, findTeacherNameKey, findTeacherPasswordKey } from '../utils';
+import { UserPlus } from 'lucide-react';
 
 interface AdminManagerProps {
   teachers: Teacher[];
@@ -31,6 +32,11 @@ export default function AdminManager({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  
+  // State for individual teacher registration
+  const [newCode, setNewCode] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,6 +64,7 @@ export default function AdminManager({
 
         const codeKey = findTeacherCodeKey(cleanHeaders);
         const nameKey = findTeacherNameKey(cleanHeaders);
+        const passwordKey = findTeacherPasswordKey(cleanHeaders);
 
         if (!codeKey || !nameKey) {
           setErrorMsg(
@@ -75,6 +82,7 @@ export default function AdminManager({
         for (const row of rawRows) {
           const rawCode = String(row[codeKey]).trim();
           const rawName = String(row[nameKey]).trim();
+          const rawPassword = passwordKey ? String(row[passwordKey] || '').trim() : '';
 
           // Standardize code to 3-digit length nicely (e.g. "98" -> "098" or "101" -> "101")
           if (!rawCode || !rawName) {
@@ -94,10 +102,19 @@ export default function AdminManager({
 
           // Merge or update existing item
           const idx = updatedTeachers.findIndex(t => t.code === formattedCode);
+          const existingPw = idx >= 0 ? (updatedTeachers[idx].password || '') : '';
+          const finalPw = rawPassword || existingPw || '1004';
+
+          const updatedTeacherData: Teacher = { 
+            code: formattedCode, 
+            name: rawName,
+            password: finalPw
+          };
+
           if (idx >= 0) {
-            updatedTeachers[idx] = { code: formattedCode, name: rawName };
+            updatedTeachers[idx] = updatedTeacherData;
           } else {
-            updatedTeachers.push({ code: formattedCode, name: rawName });
+            updatedTeachers.push(updatedTeacherData);
           }
           successCount++;
         }
@@ -143,6 +160,60 @@ export default function AdminManager({
     }
   };
 
+  const handleAddTeacherIndividually = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    const cleanCode = newCode.replace(/\D/g, '').trim();
+    const cleanName = newName.trim();
+    const cleanPassword = newPassword.trim();
+
+    if (!cleanCode) {
+      setErrorMsg('교사코드를 숫자로 입력하십시오.');
+      return;
+    }
+
+    let formattedCode = cleanCode;
+    if (formattedCode.length > 0 && formattedCode.length < 3) {
+      formattedCode = formattedCode.padStart(3, '0');
+    }
+
+    if (formattedCode.length !== 3) {
+      setErrorMsg('교사코드는 3자리 숫자로 구성되어야 함 (예: 001, 002)');
+      return;
+    }
+
+    if (!cleanName) {
+      setErrorMsg('담당 선생님 성함을 입력하십시오.');
+      return;
+    }
+
+    const updatedTeachers = [...teachers];
+    const idx = updatedTeachers.findIndex(t => t.code === formattedCode);
+
+    const teaData: Teacher = {
+      code: formattedCode,
+      name: cleanName,
+      password: cleanPassword || '1004'
+    };
+
+    if (idx >= 0) {
+      updatedTeachers[idx] = teaData;
+      setSuccessMsg(`"${cleanName}" 선생님(코드: ${formattedCode})의 계정 정보가 개별 수정되었습니다.`);
+    } else {
+      updatedTeachers.push(teaData);
+      setSuccessMsg(`"${cleanName}" 선생님(코드: ${formattedCode}) 등록이 완료되었습니다.`);
+    }
+
+    updatedTeachers.sort((a, b) => a.code.localeCompare(b.code));
+    onUpdateTeachers(updatedTeachers);
+
+    setNewCode('');
+    setNewName('');
+    setNewPassword('');
+  };
+
   const handleDelete = (code: string, name: string) => {
     if (window.confirm(`"${name}" 선생님(코드: ${code}) 계정을 목록에서 정말 삭제하시겠습니까?\n삭제할 경우 해당 교사가 업로드한 평가 성적도 자동 삭제됩니다.`)) {
       onDeleteTeacher(code, name);
@@ -178,7 +249,7 @@ export default function AdminManager({
       {/* Grid: Left - Setup Form / Right - List */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        {/* Left column: Excel bulk uploader */}
+        {/* Left column: Excel bulk uploader and Individual registration */}
         <div className="md:col-span-1 space-y-4">
           
           {/* Bulk Excel Upload */}
@@ -206,15 +277,78 @@ export default function AdminManager({
                 accept=".xlsx, .xls"
                 onChange={handleFileChange}
                 className="hidden" 
+                id="excel-file-uploader-elem"
               />
               <FileSpreadsheet size={20} className="text-slate-400 mb-2" />
               <p className="text-[11px] font-bold text-slate-755 leading-normal">
                 교사 목록 엑셀 드롭 또는 클릭
               </p>
               <p className="text-[9px] text-slate-420 mt-1 leading-normal">
-                ※ 칼럼에 <strong>교사코드</strong>(세자리)와<br /><strong>선생님이름</strong>이 필수 구성되어야 함
+                ※ 칼럼에 <strong>교사코드</strong>(세자리), <strong>선생님이름</strong>,<br />그리고 선택사항인 <strong>비밀번호</strong>가 구성될 수 있음
               </p>
             </div>
+          </div>
+
+          {/* Individual Teacher Registration Form */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
+              <UserPlus size={16} className="text-indigo-600" />
+              교사 개별 등록/수정
+            </h3>
+
+            <form onSubmit={handleAddTeacherIndividually} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-655 mb-1" htmlFor="t-code">
+                  교사코드 (3자리 숫자)
+                </label>
+                <input 
+                  id="t-code"
+                  type="text" 
+                  maxLength={3}
+                  placeholder="예: 001"
+                  value={newCode}
+                  onChange={(e) => setNewCode(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-505 font-mono"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-655 mb-1" htmlFor="t-name">
+                  담당 선생님 성함
+                </label>
+                <input 
+                  id="t-name"
+                  type="text" 
+                  placeholder="예: 이혜영"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-505 font-sans"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-655 mb-1" htmlFor="t-password">
+                  선생님 비밀번호
+                </label>
+                <input 
+                  id="t-password"
+                  type="text" 
+                  placeholder="미입력시 기본값 1004"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-505 font-mono"
+                />
+              </div>
+
+              <button 
+                type="submit"
+                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition duration-150 flex items-center justify-center gap-1.5 shadow-xs hover:shadow-sm cursor-pointer mt-1"
+              >
+                <UserPlus size={13} /> 교사 등록 / 변경 적용
+              </button>
+            </form>
           </div>
 
           <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl text-[11px] text-indigo-950 space-y-1.5 shadow-xs">
@@ -279,14 +413,15 @@ export default function AdminManager({
                   <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0 font-sans z-10">
                     <th className="py-2.5 px-3 font-semibold text-center w-14 border-r border-slate-200">순서</th>
                     <th className="py-2.5 px-4 font-bold border-r border-slate-200 text-indigo-900">교사코드</th>
-                    <th className="py-2.5 px-4 font-semibold">담당 선생님 성함</th>
+                    <th className="py-2.5 px-4 font-semibold border-r border-slate-200">담당 선생님 성함</th>
+                    <th className="py-2.5 px-4 font-semibold border-r border-slate-200">비밀번호</th>
                     <th className="py-2.5 px-4 font-semibold text-center w-20">관할 폐기</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredTeachers.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="text-center py-10 text-slate-400 italic">
+                      <td colSpan={5} className="text-center py-10 text-slate-400 italic">
                         {teachers.length === 0 
                           ? '현재 등록된 교사가 없습니다. 교사 목록 엑셀 파일(.xlsx)을 업로드해주십시오.'
                           : '검색어와 일치하는 선생님을 찾을 수 없습니다.'}
@@ -301,12 +436,13 @@ export default function AdminManager({
                             {tea.code}
                           </span>
                         </td>
-                        <td className="py-3 px-4 font-semibold text-slate-800 text-[12px]">{tea.name} 선생님</td>
+                        <td className="py-3 px-4 border-r border-slate-200 font-semibold text-slate-800 text-[12px]">{tea.name} 선생님</td>
+                        <td className="py-3 px-4 border-r border-slate-200 font-mono text-slate-600 font-bold text-[11.5px]">{tea.password || '1004'}</td>
                         <td className="py-3 px-4 text-center">
                           <button 
-                            type="button"
-                            onClick={() => handleDelete(tea.code, tea.name)}
-                            className="p-1 px-2 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-200 rounded transition cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
+                             type="button"
+                             onClick={() => handleDelete(tea.code, tea.name)}
+                             className="p-1 px-2 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-200 rounded transition cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
                           >
                             <Trash2 size={11} /> 삭제
                           </button>

@@ -23,6 +23,7 @@ export interface EvaluationState {
 export interface Teacher {
   code: string;
   name: string;
+  password?: string;
 }
 
 export interface StudentCredentials {
