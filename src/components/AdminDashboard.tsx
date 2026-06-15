@@ -59,6 +59,7 @@ export default function AdminDashboard({
   const [reflectRateInput, setReflectRateInput] = useState('100');
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [localScores, setLocalScores] = useState<Record<string, string>>({});
 
   // Sync inputs when active evaluation changes
   useEffect(() => {
@@ -329,7 +330,9 @@ export default function AdminDashboard({
                 <div className="space-y-2">
                   {uniqueSubjects.map(sub => {
                     const settingKey = `${loggedTeacher.code}_${sub}`;
-                    const currentMaxScore = subjectMaxScores[settingKey] || '';
+                    const currentMaxScore = localScores[settingKey] !== undefined 
+                      ? localScores[settingKey] 
+                      : (subjectMaxScores[settingKey] || '');
                     return (
                       <div key={sub} className="flex items-center justify-between gap-1 bg-slate-50 border border-slate-150 rounded-xl p-2.5">
                         <span className="text-xs font-black text-slate-700 truncate max-w-[100px]" title={sub}>
@@ -342,6 +345,10 @@ export default function AdminDashboard({
                             value={currentMaxScore}
                             onChange={(e) => {
                               const val = e.target.value.replace(/\D/g, '');
+                              setLocalScores(prev => ({
+                                ...prev,
+                                [settingKey]: val
+                              }));
                               onUpdateSubjectMaxScore(sub, val);
                             }}
                             className="w-16 px-1.5 py-1 text-center border border-slate-300 rounded font-black text-xs text-indigo-900 font-mono bg-white focus:outline-none focus:border-indigo-500"
