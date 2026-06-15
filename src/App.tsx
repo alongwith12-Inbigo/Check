@@ -514,7 +514,9 @@ export default function App() {
         evaluationTitle={
           loggedTeacher 
             ? `${loggedTeacher.name} 선생님의 과목` 
-            : currentStudentEvaluation?.title || '성적 조회'
+            : loggedStudent
+              ? `${loggedStudent.studentName} 학생의 성적표`
+              : '수행평가 결과 조회'
         } 
       />
 
@@ -694,9 +696,11 @@ export default function App() {
                 onBack={handleStudentLogout}
                 subjectMaxScores={subjectMaxScores}
                 signatures={signatures}
-                signatureEnabled={!!teacherSettings[(loggedStudent.teacherCode || '').trim()]}
+                teacherSettings={teacherSettings}
                 onSaveSignature={handleSaveSignature}
                 onDeleteSignature={handleDeleteSignature}
+                allEvaluations={allEvaluations}
+                teachers={teachers}
               />
             </motion.div>
           ) : (
@@ -720,12 +724,9 @@ export default function App() {
               </div>
 
               <LoginCard 
-                teacherEvaluations={studentTeacherEvaluations}
                 onLoginSuccess={handleStudentLogin}
-                teachers={teachers}
-                selectedTeacherCode={selectedTeacherCode}
-                onSelectTeacher={setSelectedTeacherCode}
                 allStudents={allStudents}
+                allEvaluations={allEvaluations}
               />
             </motion.div>
           )}

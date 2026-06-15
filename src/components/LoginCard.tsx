@@ -8,25 +8,19 @@ import {
   Info,
   CalendarCheck
 } from 'lucide-react';
-import { EvaluationState, Teacher, StudentSession, StudentResultItem, RegisteredStudent } from '../types';
+import { EvaluationState, StudentSession, RegisteredStudent } from '../types';
 import { findStudentIdKey, findBirthdateKey, matchesStudentId, matchesBirthdate } from '../utils';
 
 interface LoginCardProps {
-  teacherEvaluations: EvaluationState[];
   onLoginSuccess: (session: StudentSession) => void;
-  teachers: Teacher[];
-  selectedTeacherCode: string;
-  onSelectTeacher: (code: string) => void;
   allStudents: RegisteredStudent[];
+  allEvaluations: EvaluationState[];
 }
 
 export default function LoginCard({ 
-  teacherEvaluations,
   onLoginSuccess,
-  teachers,
-  selectedTeacherCode,
-  onSelectTeacher,
-  allStudents
+  allStudents,
+  allEvaluations
 }: LoginCardProps) {
   const [studentId, setStudentId] = useState('');
   const [birthdate, setBirthdate] = useState('');
@@ -34,17 +28,9 @@ export default function LoginCard({
   const [showInstructions, setShowInstructions] = useState(false);
   const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
 
-  // Derive the target teacher's full name for better UI references
-  const activeTeacher = teachers.find(t => t.code === selectedTeacherCode);
-
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-
-    if (!selectedTeacherCode) {
-      setErrorMsg('담당 선생님을 선택해 주세요.');
-      return;
-    }
 
     if (!studentId.trim() || !birthdate.trim()) {
       setErrorMsg('학번(5자리)과 생년월일(8자리)을 입력해 주세요.');
@@ -62,90 +48,56 @@ export default function LoginCard({
     );
 
     // If master registry exists, strictly enforce verification against it
-    if (allStudents.length > 0 && !matchedRegisteredStudent) {
-      setErrorMsg(
-        '입력하신 학번과 생년월일이 일치하는 학생 정보를 찾을 수 없습니다.\n' +
-        '학교 관리자가 등록한 교적 정보와 다르면 담임선생님 혹은 학교 관리자에게 연락 바랍니다.'
-      );
-      return;
-    }
-
-    const matchedResults: StudentResultItem[] = [];
-    let detectedStudentName = matchedRegisteredStudent ? matchedRegisteredStudent.name : '';
-
-    // Search across ALL evaluations belonging to this teacher
-    for (const evalItem of teacherEvaluations) {
-      const { headers, rows } = evalItem;
-      const studentIdKey = findStudentIdKey(headers);
-      const birthdateKey = findBirthdateKey(headers);
-
-      if (!studentIdKey) {
-        continue; // Skip this spreadsheet if it missing student ID column
+    if (allStudents.length > 0) {
+      if (!matchedRegisteredStudent) {
+        setErrorMsg(
+          '입력하신 학번과 생년월일이 일치하는 학생 정보를 찾을 수 없습니다.\n' +
+          '학교 관리자가 등록한 교적 정보와 다르면 담임선생님 혹은 학교 관리자에게 연락 바랍니다.'
+        );
+        return;
       }
+    } else {
+      // If master registry is empty, fall back to checking raw rows in allEvaluations 
+      // (Any spreadsheet match that has Student ID and Birthdate matching)
+      let foundInEvaluations = false;
+      let detectedStudentName = '';
 
-      const foundRow = rows.find(row => {
-        const rawRowId = row[studentIdKey];
-        if (allStudents.length > 0) {
-          // If master registry is used, match ONLY on Student ID! (Teacher sheets don't need birthdate now)
-          return matchesStudentId(studentId, rawRowId);
-        } else {
-          // Backward compatibility fallback: match on both ID and Birthdate from teacher's spreadsheet
-          if (!birthdateKey) return false;
-          const rawRowBirth = row[birthdateKey];
-          return matchesStudentId(studentId, rawRowId) && matchesBirthdate(birthdate, rawRowBirth);
-        }
-      });
+      for (const evalItem of allEvaluations) {
+        const studentIdKey = findStudentIdKey(evalItem.headers);
+        const birthdateKey = findBirthdateKey(evalItem.headers);
+        if (!studentIdKey || !birthdateKey) continue;
 
-      if (foundRow) {
-        if (!detectedStudentName) {
+        const foundRow = evalItem.rows.find(row => 
+          matchesStudentId(studentId, row[studentIdKey]) && matchesBirthdate(birthdate, row[birthdateKey])
+        );
+
+        if (foundRow) {
+          foundInEvaluations = true;
           detectedStudentName = String(foundRow['이름'] || foundRow['성명'] || foundRow['학생명'] || foundRow['학생이름'] || '').trim();
+          break;
         }
+      }
 
-        matchedResults.push({
-          evaluationId: evalItem.id || '',
-          evaluationTitle: evalItem.title,
-          subject: evalItem.subject || '과목',
-          round: evalItem.round || '1',
-          evaluationDetailName: evalItem.evaluationDetailName || '종합 수행평가',
-          maxScore: evalItem.maxScore || '',
-          reflectRate: evalItem.reflectRate || '100',
-          headers: evalItem.headers,
-          row: foundRow,
-          teacherCode: evalItem.teacherCode || ''
-        });
+      if (!foundInEvaluations) {
+        setErrorMsg(
+          '입력하신 학번 또는 생년월일과 일치하는 성적 기록을 찾을 수 없습니다.\n' +
+          '교적 명부가 비어 있는 상태이므로, 선생님이 엑셀에 입력한 정보와 맞는지 확인하십시오.'
+        );
+        return;
       }
     }
 
-    // If master registry is empty, and we didn't match any result in teacher's spreadsheets, reject
-    if (allStudents.length === 0 && matchedResults.length === 0) {
-      setErrorMsg(
-        '입력하신 학번 또는 생년월일과 일치하는 성적 기록을 찾을 수 없습니다.\n' +
-        '선생님이 업로드한 엑셀에 학번(5자리)과 생년월일(8자리)이 맞는지 다시 확인해주세요.'
-      );
-      return;
-    }
-
-    // Sort evaluations in ascending order of round (1차 -> 2차 -> ... -> n차)
-    matchedResults.sort((a, b) => {
-      const aNum = parseInt(a.round.replace(/\D/g, ''), 10);
-      const bNum = parseInt(b.round.replace(/\D/g, ''), 10);
-      if (!isNaN(aNum) && !isNaN(bNum)) {
-        return aNum - bNum;
-      }
-      if (!isNaN(aNum)) return -1;
-      if (!isNaN(bNum)) return 1;
-      return a.round.localeCompare(b.round);
-    });
-
-    const finalName = detectedStudentName || (matchedRegisteredStudent ? matchedRegisteredStudent.name : `학생 (${studentId})`);
+    const finalName = matchedRegisteredStudent 
+      ? matchedRegisteredStudent.name 
+      : `학생 (${studentId})`;
     
     onLoginSuccess({
       studentId: studentId.trim(),
       birthdate: birthdate.trim(),
       studentName: finalName,
-      teacherName: activeTeacher ? activeTeacher.name : '교과',
-      results: matchedResults,
-      teacherCode: activeTeacher ? activeTeacher.code : ''
+      teacherName: '',
+      results: [],
+      teacherCode: ''
     });
   };
 
@@ -165,7 +117,7 @@ export default function LoginCard({
         </h2>
         
         <p className="text-xs text-indigo-200 font-medium mt-1.5 leading-relaxed max-w-sm mx-auto">
-          선생님이 업로드한 수행평가 점수와 개별 피드백을 확인할 수 있습니다.
+          학번과 생년월일을 입력하여 수행평가 점수와 개별 피드백을 확인할 수 있습니다.
         </p>
       </div>
 
@@ -174,121 +126,86 @@ export default function LoginCard({
         {/* Real Form Input */}
         <form onSubmit={handleLoginSubmit} className="space-y-4">
           
-          {/* Dropdown 1: Select Teacher */}
-          <div>
-            <label className="block text-xs font-bold text-indigo-950 mb-1.5 tracking-tight">
-              👨‍🏫 담당 선생님 선택
-            </label>
-            <select
-              value={selectedTeacherCode}
-              onChange={(e) => onSelectTeacher(e.target.value)}
-              className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-bold text-slate-800 cursor-pointer"
-            >
-              <option value="">선생님 선택</option>
-              {teachers.map((tea) => (
-                <option key={tea.code} value={tea.code}>
-                  [{tea.code}] {tea.name} 선생님
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Conditional Display based on file count */}
-          {selectedTeacherCode && teacherEvaluations.length === 0 ? (
-            /* Warning Banner when selected teacher has 0 files uploaded */
-            <div className="bg-rose-50 border-2 border-rose-100 p-6 rounded-2xl text-center space-y-3 animate-fadeIn my-4">
-              <span className="inline-flex p-2.5 bg-rose-150 rounded-full text-rose-600 border border-rose-200">
-                <AlertCircle size={20} className="stroke-[2.5]" />
-              </span>
-              <p className="text-xs sm:text-sm font-black text-rose-950 leading-relaxed max-w-xs mx-auto">
-                해당 과목 수행평가 점수 조회 기간이 아닙니다.<br/>
-                교과 선생님께 문의하시기 바랍니다.
-              </p>
+          <div className="space-y-4">
+            
+            {/* Student ID Inputs */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 tracking-tight" htmlFor="student-id">
+                학번(5자리) 입력
+              </label>
+              <input 
+                id="student-id"
+                type="text" 
+                placeholder="예: 10101"
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value)}
+                className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800"
+              />
             </div>
-          ) : (
-            selectedTeacherCode && (
-              <div className="space-y-4 animate-fadeIn">
-                
-                {/* Student ID Inputs */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-705 mb-1.5 tracking-tight" htmlFor="student-id">
-                    학번(5자리) 입력
-                  </label>
-                  <input 
-                    id="student-id"
-                    type="text" 
-                    placeholder="예: 10101"
-                    value={studentId}
-                    onChange={(e) => setStudentId(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800"
-                  />
-                </div>
 
-                {/* Birthdate Inputs (8 digits requested) */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-705 mb-1.5 tracking-tight" htmlFor="birth-date">
-                    생년월일(8자리) 입력
-                  </label>
-                  <input 
-                    id="birth-date"
-                    type="password" 
-                    placeholder="예: 20081231"
-                    value={birthdate}
-                    onChange={(e) => setBirthdate(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800 tracking-widest"
-                  />
-                </div>
+            {/* Birthdate Inputs (8 digits requested) */}
+            <div>
+              <label className="block text-xs font-bold text-slate-705 mb-1.5 tracking-tight" htmlFor="birth-date">
+                생년월일(8자리) 입력
+              </label>
+              <input 
+                id="birth-date"
+                type="password" 
+                placeholder="예: 20081231"
+                value={birthdate}
+                onChange={(e) => setBirthdate(e.target.value)}
+                className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800 tracking-widest"
+              />
+            </div>
 
-                {/* Student Consent (Exact text requested) */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs font-sans">
-                  <div className="border-b border-slate-200 pb-2">
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                      🔒 개인정보 활용 동의 안내
-                    </span>
-                  </div>
-                  
-                  <div className="text-[11px] text-slate-600 leading-relaxed space-y-2 select-text font-medium border-slate-200">
-                    <p className="font-extrabold text-slate-800 text-[11px]">개인정보 수집·이용 동의</p>
-                    <p><strong>1. 수집·이용 목적:</strong> 수행평가 결과 조회 서비스 제공</p>
-                    <p><strong>2. 수집 항목:</strong> 학번, 이름, 수행평가 점수, 교사 피드백(해당 시)</p>
-                    <p><strong>3. 보유 및 이용 기간:</strong> 수행평가 결과 조회 기간 동안 보관 후 즉시 삭제</p>
-                    <p><strong>4. 동의 거부 권리 및 불이익:</strong> 개인정보 수집·이용에 대한 동의를 거부할 수 있으며, 이 경우 수행평가 결과 조회 서비스를 이용할 수 없습니다.</p>
-                    <p className="font-semibold text-slate-700 pt-1">본인은 위 내용을 확인하였으며 개인정보 수집·이용에 동의합니다.</p>
-                  </div>
-
-                  <label className="flex items-start gap-2 pt-2 pb-0.5 cursor-pointer select-none">
-                    <input 
-                      type="checkbox"
-                      checked={agreedToPrivacy}
-                      onChange={(e) => setAgreedToPrivacy(e.target.checked)}
-                      className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-4.5 h-4.5 cursor-pointer"
-                    />
-                    <span className="text-[11px] font-bold text-slate-850 leading-tight">
-                      개인정보 수집 및 이용에 동의합니다. (필수 체크)
-                    </span>
-                  </label>
-                </div>
-
-                {errorMsg && (
-                  <div className="p-3 bg-red-50 text-red-650 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold">
-                    <AlertCircle size={15} className="shrink-0 mt-0.5" />
-                    <span className="font-semibold whitespace-pre-line leading-relaxed">{errorMsg}</span>
-                  </div>
-                )}
-
-                <button 
-                  type="submit"
-                  className={`w-full py-3.5 border text-white rounded-xl text-sm font-extrabold flex items-center justify-center gap-1 shadow-sm hover:shadow-md transition-all cursor-pointer ${
-                    agreedToPrivacy 
-                      ? 'bg-indigo-900 border-indigo-900 hover:bg-indigo-950' 
-                      : 'bg-slate-350 border-slate-300 hover:bg-slate-400 opacity-90'
-                  }`}
-                >
-                  동의 및 로그인
-                </button>
+            {/* Student Consent (Exact text requested) */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs font-sans">
+              <div className="border-b border-slate-200 pb-2">
+                <span className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                  🔒 개인정보 활용 동의 안내
+                </span>
               </div>
-            )
-          )}
+              
+              <div className="text-[11px] text-slate-600 leading-relaxed space-y-2 select-text font-medium border-slate-200">
+                <p className="font-extrabold text-slate-800 text-[11px]">개인정보 수집·이용 동의</p>
+                <p><strong>1. 수집·이용 목적:</strong> 수행평가 결과 조회 서비스 제공</p>
+                <p><strong>2. 수집 항목:</strong> 학번, 이름, 수행평가 점수, 교사 피드백(해당 시)</p>
+                <p><strong>3. 보유 및 이용 기간:</strong> 수행평가 결과 조회 기간 동안 보관 후 즉시 삭제</p>
+                <p><strong>4. 동의 거부 권리 및 불이익:</strong> 개인정보 수집·이용에 대한 동의를 거부할 수 있으며, 이 경우 수행평가 결과 조회 서비스를 이용할 수 없습니다.</p>
+                <p className="font-semibold text-slate-700 pt-1">본인은 위 내용을 확인하였으며 개인정보 수집·이용에 동의합니다.</p>
+              </div>
+
+              <label className="flex items-start gap-2 pt-2 pb-0.5 cursor-pointer select-none">
+                <input 
+                  type="checkbox"
+                  checked={agreedToPrivacy}
+                  onChange={(e) => setAgreedToPrivacy(e.target.checked)}
+                  className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-4.5 h-4.5 cursor-pointer"
+                />
+                <span className="text-[11px] font-bold text-slate-800 leading-tight">
+                  개인정보 수집 및 이용에 동의합니다. (필수 체크)
+                </span>
+              </label>
+            </div>
+
+            {errorMsg && (
+              <div className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold">
+                <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                <span className="font-semibold whitespace-pre-line leading-relaxed">{errorMsg}</span>
+              </div>
+            )}
+
+            <button 
+              type="submit"
+              className={`w-full py-3.5 border text-white rounded-xl text-sm font-extrabold flex items-center justify-center gap-1 shadow-sm hover:shadow-md transition-all cursor-pointer ${
+                agreedToPrivacy 
+                  ? 'bg-indigo-900 border-indigo-900 hover:bg-indigo-950' 
+                  : 'bg-slate-350 border-slate-300 hover:bg-slate-400 opacity-90'
+              }`}
+            >
+              동의 및 로그인
+            </button>
+          </div>
 
         </form>
 
@@ -306,9 +223,9 @@ export default function LoginCard({
             <div className="mt-3 bg-slate-50 p-4 border border-slate-200 rounded-xl text-left text-xs text-slate-600 space-y-2 leading-relaxed animate-fadeIn">
               <p className="font-bold text-slate-900">📌 성적 확인 관련 자주 묻는 질문 (FAQ)</p>
               <ul className="list-disc pl-4 space-y-1 text-slate-600">
-                <li><strong>학번 입력 형식:</strong> 엑셀 파일 내 등록된 형태와 완전히 동일해야 합니다. (예: 다섯 자릿수 학번인 <code className="bg-slate-200 px-1 rounded text-red-650">10101</code> 등)</li>
-                <li><strong>생년월일 형식:</strong> 일반적으로 <strong className="text-slate-900 text-[11.5px]">8자리</strong>(예: <code className="bg-slate-200 px-1 rounded">20061215</code>) 형태나 엑셀 셀 시트에 담긴 생일 형식으로 입력해주십시오.</li>
-                <li><strong>다중 성적 조회 보장:</strong> 로그인에 성공하시면, 해당 선생님께서 업로드 완료하신 모든 회차의 성적 점수 대장이 슬라이드 카드로 하나로 요약되어 모여 집계 조회됩니다.</li>
+                <li><strong>학번 입력 형식:</strong> 엑셀 파일 내 등록된 형태와 완전히 동일해야 합니다. (예: 다섯 자릿수 학번인 <code className="bg-slate-200 px-1 rounded text-red-600">10101</code> 등)</li>
+                <li><strong>생년월일 형식:</strong> 일반적으로 <strong className="text-slate-900 text-[11.5px]">8자리</strong>(예: <code className="bg-slate-200 px-1 rounded">20081231</code>) 형태나 엑셀 셀 시트에 담긴 생일 형식으로 입력해주십시오.</li>
+                <li><strong>다중 성적 조회 보장:</strong> 로그인에 성공하시면, 담임선생님 혹은 교과선생님들께서 등록해 주신 학년반에 따라 교사 드롭다운 메뉴가 생성되어 과목별로 손쉽고 편리하게 일괄 조회가 가능합니다.</li>
               </ul>
             </div>
           )}

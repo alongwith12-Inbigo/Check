@@ -11,8 +11,8 @@ import {
   Percent,
   Info
 } from 'lucide-react';
-import { StudentSession } from '../types';
-import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn } from '../utils';
+import { StudentSession, EvaluationState, Teacher, StudentResultItem } from '../types';
+import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId } from '../utils';
 import SignatureCanvas from './SignatureCanvas';
 
 interface ResultCardProps {
@@ -20,9 +20,11 @@ interface ResultCardProps {
   onBack: () => void;
   subjectMaxScores?: Record<string, string>;
   signatures?: Record<string, string>;
-  signatureEnabled?: boolean;
+  teacherSettings?: Record<string, boolean>;
   onSaveSignature?: (subject: string, studentId: string, studentName: string, signatureDataUrl: string) => void | Promise<void>;
   onDeleteSignature?: (subject: string, studentId: string) => void | Promise<void>;
+  allEvaluations: EvaluationState[];
+  teachers: Teacher[];
 }
 
 export default function ResultCard({ 
@@ -30,12 +32,77 @@ export default function ResultCard({
   onBack, 
   subjectMaxScores = {},
   signatures = {},
-  signatureEnabled = false,
+  teacherSettings = {},
   onSaveSignature,
-  onDeleteSignature
+  onDeleteSignature,
+  allEvaluations,
+  teachers
 }: ResultCardProps) {
-  const { studentName, studentId, teacherName, results, teacherCode } = sessionData;
+  const { studentName, studentId } = sessionData;
   const [isSavingSig, setIsSavingSig] = useState(false);
+
+  const studentGradeClass = studentId.replace(/\D/g, '').slice(0, 3);
+
+  // Determine if teacher entered evaluation for this student's grade/class
+  const getTeacherGradeClassMatch = (evalItem: EvaluationState, targetGradeClass: string) => {
+    const studentIdKey = findStudentIdKey(evalItem.headers);
+    if (!studentIdKey) return false;
+    return evalItem.rows.some(row => {
+      const rawId = String(row[studentIdKey] || '').replace(/\D/g, '');
+      return rawId.startsWith(targetGradeClass);
+    });
+  };
+
+  const matchedTeachers = teachers.filter(t => {
+    const teacherEvals = allEvaluations.filter(e => e.teacherCode === t.code);
+    return teacherEvals.some(ev => getTeacherGradeClassMatch(ev, studentGradeClass));
+  });
+
+  // State to hold the chosen teacher code
+  const [selectedTeacherCode, setSelectedTeacherCode] = useState<string>(() => {
+    return matchedTeachers[0]?.code || '';
+  });
+
+  // Keep selected teacher code in sync if list updates
+  React.useEffect(() => {
+    if (matchedTeachers.length > 0) {
+      if (!matchedTeachers.some(t => t.code === selectedTeacherCode)) {
+        setSelectedTeacherCode(matchedTeachers[0].code);
+      }
+    } else {
+      setSelectedTeacherCode('');
+    }
+  }, [matchedTeachers, selectedTeacherCode]);
+
+  const activeTeacher = matchedTeachers.find(t => t.code === selectedTeacherCode);
+  const teacherName = activeTeacher ? activeTeacher.name : '교과 담당';
+  const teacherCode = selectedTeacherCode;
+  const signatureEnabled = !!teacherSettings[selectedTeacherCode];
+
+  // Dynamically compute the results for this student from the chosen teacher
+  const activeTeacherEvaluations = allEvaluations.filter(e => e.teacherCode === selectedTeacherCode);
+  
+  const results: StudentResultItem[] = [];
+  activeTeacherEvaluations.forEach(evalItem => {
+    const studentIdKey = findStudentIdKey(evalItem.headers);
+    if (!studentIdKey) return;
+
+    const foundRow = evalItem.rows.find(row => matchesStudentId(studentId, row[studentIdKey]));
+    if (foundRow) {
+      results.push({
+        evaluationId: evalItem.id || '',
+        evaluationTitle: evalItem.title,
+        subject: evalItem.subject || '과목',
+        round: evalItem.round || '1',
+        evaluationDetailName: evalItem.evaluationDetailName || '종합 수행평가',
+        maxScore: evalItem.maxScore || '',
+        reflectRate: evalItem.reflectRate || '100',
+        headers: evalItem.headers,
+        row: foundRow,
+        teacherCode: evalItem.teacherCode || ''
+      });
+    }
+  });
 
   const handlePrint = () => {
     window.print();
@@ -107,14 +174,42 @@ export default function ResultCard({
     <div id="student-result-container" className="w-full max-w-3xl mx-auto space-y-6 pb-12 animate-fadeIn print:shadow-none print:border-0 print:p-0">
       
       {/* Top action bar */}
-      <div className="flex justify-between items-center print:hidden px-2">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center print:hidden gap-3 px-2 bg-white/70 backdrop-blur-md p-4 rounded-2xl border border-slate-200">
         <button 
           onClick={onBack}
-          className="group flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-950 transition cursor-pointer"
+          className="group flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-950 transition cursor-pointer shrink-0"
         >
           <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition" /> 뒤로 가기
-        </button>       
-        
+        </button>
+
+        {matchedTeachers.length > 0 ? (
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <span className="text-xs font-black text-indigo-950 shrink-0 select-none">
+              📘 과목 선생님 :
+            </span>
+            <select
+              value={selectedTeacherCode}
+              onChange={(e) => setSelectedTeacherCode(e.target.value)}
+              className="px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 w-full sm:w-auto min-w-[200px]"
+            >
+              {matchedTeachers.map((tea) => {
+                const teaEvalsCount = allEvaluations.filter(e => e.teacherCode === tea.code && e.rows.some(r => {
+                  const studentIdKey = findStudentIdKey(e.headers);
+                  return studentIdKey && matchesStudentId(studentId, r[studentIdKey]);
+                })).length;
+                return (
+                  <option key={tea.code} value={tea.code}>
+                    [{tea.code}] {tea.name} 선생님 ({teaEvalsCount}개 영역)
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        ) : (
+          <span className="text-xs text-rose-500 font-extrabold bg-rose-50/50 px-3 py-1.5 rounded-xl border border-rose-150 select-none">
+            ⚠️ 해당 학년반에 등록된 교과 수행평가가 존재하지 않습니다.
+          </span>
+        )}
       </div>
 
       {/* Main Student identity overview banner */}
