@@ -475,7 +475,7 @@ export default function App() {
                         <input
                           id="p-password"
                           type="password"
-                          placeholder="보안 인증 코드를 입력하세요"
+                          placeholder="비밀번호를 입력하세요"
                           value={inputPassword}
                           onChange={(e) => setInputPassword(e.target.value)}
                           className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-black text-slate-800 text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-650"
@@ -561,7 +561,7 @@ export default function App() {
         <span className="font-semibold text-slate-500 flex items-center gap-1 text-[11px]">
           수행평가 결과 조회 시스템 v2.5
         </span>
-        <span className="text-[10px]">Copyright © 2026 Educational Grade Web Engine. All Rights Reserved.</span>
+        <span className="text-[10px]">Copyright © 2026 INBIGO. All Rights Reserved.</span>
       </footer>
     </div>
   );

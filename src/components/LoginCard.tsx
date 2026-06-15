@@ -146,7 +146,7 @@ export default function LoginCard({
         </h2>
         
         <p className="text-xs text-indigo-200 font-medium mt-1.5 leading-relaxed max-w-sm mx-auto">
-          선생님이 업로드한 모든 차시의 수행평가 점수와 개별 성취 피드백을 원격 조회로 통합 일람할 수 있습니다.
+          선생님이 업로드한 수행평가 점수와 개별 피드백을 확인할 수 있습니다.
         </p>
       </div>
 
