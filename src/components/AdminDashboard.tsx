@@ -28,7 +28,75 @@ interface AdminDashboardProps {
   loggedTeacher: Teacher;
   onLogout: () => void;
   subjectMaxScores?: Record<string, string>;
-  onUpdateSubjectMaxScore?: (subject: string, maxScore: string) => void;
+  onUpdateSubjectMaxScore?: (subject: string, maxScore: string) => void | Promise<void>;
+}
+
+interface SubjectMaxScoreInputProps {
+  subject: string;
+  initialValue: string;
+  onSave: (val: string) => void | Promise<void>;
+}
+
+function SubjectMaxScoreInput({ subject, initialValue, onSave }: SubjectMaxScoreInputProps) {
+  const [val, setVal] = useState(initialValue);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasSaved, setHasSaved] = useState(false);
+
+  useEffect(() => {
+    setVal(initialValue);
+  }, [initialValue]);
+
+  const handleSave = async () => {
+    if (val !== initialValue) {
+      setIsSaving(true);
+      setHasSaved(false);
+      try {
+        await onSave(val);
+        setIsSaving(false);
+        setHasSaved(true);
+        setTimeout(() => setHasSaved(false), 2000);
+      } catch (err) {
+        setIsSaving(false);
+      }
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 shrink-0">
+      <input
+        type="text"
+        placeholder="예: 30"
+        value={val}
+        onChange={(e) => {
+          const onlyDigits = e.target.value.replace(/\D/g, '');
+          setVal(onlyDigits);
+        }}
+        onBlur={handleSave}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            handleSave();
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        className="w-16 px-1.5 py-1 text-center border border-slate-300 rounded font-black text-xs text-indigo-900 font-mono bg-white focus:outline-none focus:border-indigo-500 transition-colors"
+      />
+      <span className="text-[10px] font-bold text-slate-400">점</span>
+      
+      {/* Visual Indicator of Save Success */}
+      <div className="w-14 flex items-center text-[10px] font-bold h-5 select-none">
+        {isSaving && (
+          <span className="text-amber-500 animate-pulse flex items-center gap-0.5">
+            ⌛ 저장중
+          </span>
+        )}
+        {hasSaved && !isSaving && (
+          <span className="text-emerald-600 flex items-center gap-0.5 animate-fadeIn">
+            ✅ 저장됨
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function AdminDashboard({ 
@@ -330,31 +398,17 @@ export default function AdminDashboard({
                 <div className="space-y-2">
                   {uniqueSubjects.map(sub => {
                     const settingKey = `${loggedTeacher.code}_${sub}`;
-                    const currentMaxScore = localScores[settingKey] !== undefined 
-                      ? localScores[settingKey] 
-                      : (subjectMaxScores[settingKey] || '');
+                    const dbMaxScore = subjectMaxScores[settingKey] || '';
                     return (
                       <div key={sub} className="flex items-center justify-between gap-1 bg-slate-50 border border-slate-150 rounded-xl p-2.5">
                         <span className="text-xs font-black text-slate-700 truncate max-w-[100px]" title={sub}>
                           {sub}
                         </span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <input
-                            type="text"
-                            placeholder="예: 30"
-                            value={currentMaxScore}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, '');
-                              setLocalScores(prev => ({
-                                ...prev,
-                                [settingKey]: val
-                              }));
-                              onUpdateSubjectMaxScore(sub, val);
-                            }}
-                            className="w-16 px-1.5 py-1 text-center border border-slate-300 rounded font-black text-xs text-indigo-900 font-mono bg-white focus:outline-none focus:border-indigo-500"
-                          />
-                          <span className="text-[10px] font-bold text-slate-400">점</span>
-                        </div>
+                        <SubjectMaxScoreInput 
+                          subject={sub}
+                          initialValue={dbMaxScore}
+                          onSave={(newVal) => onUpdateSubjectMaxScore(sub, newVal)}
+                        />
                       </div>
                     );
                   })}
