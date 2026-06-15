@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Printer, X, FileSpreadsheet, Check } from 'lucide-react';
 import { EvaluationState, Teacher } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn } from '../utils';
@@ -146,8 +147,8 @@ export default function ResultPrintPortal({
     window.print();
   };
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/60 z-50 overflow-y-auto flex items-center justify-center p-2 sm:p-4 print:static print:bg-white print:overflow-visible print:p-0">
+  return createPortal(
+    <div className="fixed inset-0 bg-slate-900/60 z-50 overflow-y-auto flex items-center justify-center p-2 sm:p-4 print:static print:bg-white print:overflow-visible print:p-0 print-portal-container">
       <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-0 print:static print:w-full">
         
         {/* Controls Header Area */}
@@ -337,6 +338,7 @@ export default function ResultPrintPortal({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

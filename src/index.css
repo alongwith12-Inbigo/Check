@@ -13,24 +13,61 @@ body {
 }
 
 @media print {
-  /* Hide all elements on the entire page by default */
-  body * {
-    visibility: hidden !important;
+  /* Completely hide the core application layout during print to prevent blank pages */
+  #root {
+    display: none !important;
   }
-  
-  /* Make only our printable sheet and its parents/descendants visible */
-  #printable-score-confirmation-sheet,
-  #printable-score-confirmation-sheet * {
-    visibility: visible !important;
-  }
-  
-  /* Align the printable sheet at the absolute top-left of the print page */
-  #printable-score-confirmation-sheet {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+
+  /* Reset body and html layout properties for clean printing */
+  html, body {
     width: 100% !important;
-    max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Style the print portal container to occupy full page context statically */
+  .print-portal-container {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+  }
+
+  /* Hide headers, controls, select boxes, and close buttons on printouts */
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Expand print dialog inner frame and clear fixed heights */
+  .print-portal-container > div {
+    position: static !important;
+    display: block !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    border: none !important;
+    box-shadow: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Optimize the main table printable sheet */
+  #printable-score-confirmation-sheet {
+    display: block !important;
+    width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     border: none !important;
@@ -38,10 +75,10 @@ body {
     background: white !important;
   }
 
-  /* Ensure the page breaks cleanly and doesn't overlap */
+  /* Ensure elegant portrait print layout and tight margins */
   @page {
-    size: auto;
-    margin: 15mm 15mm 15mm 15mm;
+    size: A4 portrait;
+    margin: 12mm 10mm 15mm 10mm;
   }
 }
 
