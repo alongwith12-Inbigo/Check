@@ -244,14 +244,22 @@ export default function ResultPrintPortal({
                       <th className="border border-slate-800 px-3 py-2 text-center w-24">성명</th>
                       
                       {/* Active evaluation headers matching rounds */}
-                      {sortedEvals.map((ev, idx) => (
-                        <th key={ev.id || idx} className="border border-slate-800 px-2 py-2 text-center">
-                          <div className="leading-tight">
-                            <span className="block font-black">{ev.round || `${idx + 1}차`}</span>
-                            <span className="block text-[8px] text-slate-500 font-normal">반영{ev.reflectRate || '100'}%</span>
-                          </div>
-                        </th>
-                      ))}
+                      {sortedEvals.map((ev, idx) => {
+                        const maxScoreNum = parseFloat(ev.maxScore || '100') || 100;
+                        const rateNum = parseFloat(ev.reflectRate || '100') || 100;
+                        const reflectedMax = Number((maxScoreNum * (rateNum / 100)).toFixed(2)).toString();
+                        return (
+                          <th key={ev.id || idx} className="border border-slate-800 px-2 py-2 text-center">
+                            <div className="leading-tight">
+                              <span className="block font-black">{ev.round || `${idx + 1}차`}</span>
+                              <span className="block text-[8px] text-slate-500 font-normal">반영{rateNum}%</span>
+                              <span className="block text-[8px] text-slate-400 font-bold mt-0.5">
+                                만점 {reflectedMax} (원:{maxScoreNum})
+                              </span>
+                            </div>
+                          </th>
+                        );
+                      })}
 
                       <th className="border border-slate-800 px-3 py-2 text-center w-24">산출총점</th>
                       <th className="border border-slate-800 px-3 py-2 text-center w-36">확인 서명</th>
@@ -295,9 +303,22 @@ export default function ResultPrintPortal({
                           {/* Individual evaluation rounds */}
                           {sortedEvals.map(ev => {
                             const val = getScoreValue(ev, student.studentId);
+                            const rateNum = parseFloat(ev.reflectRate || '100') || 100;
+                            const reflectedVal = val !== null ? val * (rateNum / 100) : null;
+                            const displayedVal = reflectedVal !== null 
+                              ? Number(reflectedVal.toFixed(2)).toString() 
+                              : '-';
+
                             return (
-                              <td key={ev.id} className="border border-slate-800 px-2 py-1.5 text-center font-mono">
-                                {val !== null ? val : '-'}
+                              <td key={ev.id} className="border border-slate-800 px-2 py-1 text-center font-mono">
+                                <div className="leading-tight">
+                                  <span className="font-extrabold text-slate-900">{displayedVal}</span>
+                                  {val !== null && (
+                                    <span className="block text-[9px] text-slate-400 font-normal">
+                                      (원:{val})
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                             );
                           })}
