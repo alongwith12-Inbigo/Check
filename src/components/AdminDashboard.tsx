@@ -52,6 +52,7 @@ export default function AdminDashboard({
   const [roundInput, setRoundInput] = useState('');
   const [detailNameInput, setDetailNameInput] = useState('');
   const [maxScoreInput, setMaxScoreInput] = useState('');
+  const [reflectRateInput, setReflectRateInput] = useState('100');
   
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -62,16 +63,18 @@ export default function AdminDashboard({
       setRoundInput(activeEval.round || '');
       setDetailNameInput(activeEval.evaluationDetailName || '');
       setMaxScoreInput(activeEval.maxScore || '');
+      setReflectRateInput(activeEval.reflectRate || '100');
     } else {
       setSubjectInput('');
       setRoundInput('');
       setDetailNameInput('');
       setMaxScoreInput('');
+      setReflectRateInput('100');
     }
     setErrorMsg('');
   }, [activeEvaluationId, activeEval]);
 
-  const propagateSplitChanges = (subject: string, round: string, detail: string, maxS: string) => {
+  const propagateSplitChanges = (subject: string, round: string, detail: string, maxS: string, reflectR: string) => {
     if (!activeEval || !activeEvaluationId) return;
 
     let combinedTitle = '';
@@ -79,6 +82,7 @@ export default function AdminDashboard({
     const cleanRnd = round.trim();
     const cleanDet = detail.trim();
     const cleanMax = maxS.trim();
+    const cleanRef = reflectR.trim();
 
     if (cleanSub && cleanRnd && cleanDet) {
       combinedTitle = `${cleanSub} (${cleanRnd}차) 수행평가: ${cleanDet}`;
@@ -98,6 +102,7 @@ export default function AdminDashboard({
       round: cleanRnd,
       evaluationDetailName: cleanDet,
       maxScore: cleanMax,
+      reflectRate: cleanRef,
       title: combinedTitle
     });
   };
@@ -137,6 +142,7 @@ export default function AdminDashboard({
         const defaultRound = roundInput.trim() || '1';
         const defaultDetail = detailNameInput.trim() || '수행평가';
         const defaultMax = maxScoreInput.trim() || '20';
+        const defaultReflect = reflectRateInput.trim() || '100';
         const initialTitle = `${defaultSubject} (${defaultRound}차) 수행평가: ${defaultDetail}`;
 
         const newEvalMetadata: EvaluationState = {
@@ -145,6 +151,7 @@ export default function AdminDashboard({
           round: defaultRound,
           evaluationDetailName: defaultDetail,
           maxScore: defaultMax,
+          reflectRate: defaultReflect,
           headers: cleanHeaders,
           rows: rawRows,
           uploadedAt: new Date().toLocaleString('ko-KR')
@@ -364,9 +371,19 @@ export default function AdminDashboard({
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
                   />
                 </div>
-                <div className="sm:col-span-3 bg-slate-50 border border-slate-150 p-2 text-[10px] text-slate-500 rounded-lg flex items-start gap-1 mt-1 leading-normal">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">실제 반영 비율 (%)</label>
+                  <input 
+                    type="text"
+                    value={reflectRateInput}
+                    onChange={(e) => setReflectRateInput(e.target.value.replace(/\D/g, ''))}
+                    placeholder="예: 30"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none bg-indigo-50/55 text-indigo-950 font-bold"
+                  />
+                </div>
+                <div className="sm:col-span-2 bg-slate-50 border border-slate-150 p-2 text-[10px] text-slate-505 rounded-lg flex items-start gap-1 mt-1 leading-normal">
                   <Info size={13} className="text-slate-600 shrink-0 mt-0.5" />
-                  <span>설정하고 아래 드래그 공간에 엑셀을 업로드하면 위 메타정보를 자동 취합하여 수행평가 세션이 저장 개설됩니다!</span>
+                  <span>설정하고 아래 드래그 공간에 엑셀을 업로드하면 실제 반영 비율이 함께 기록 보존됩니다!</span>
                 </div>
               </div>
 
@@ -427,7 +444,7 @@ export default function AdminDashboard({
                       onChange={(e) => {
                         const val = e.target.value;
                         setSubjectInput(val);
-                        propagateSplitChanges(val, roundInput, detailNameInput, maxScoreInput);
+                        propagateSplitChanges(val, roundInput, detailNameInput, maxScoreInput, reflectRateInput);
                       }}
                       placeholder="예: 정보 과학"
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-slate-800 bg-slate-50"
@@ -446,7 +463,7 @@ export default function AdminDashboard({
                         const raw = e.target.value;
                         const val = raw.replace(/차$/, '').trim();
                         setRoundInput(val);
-                        propagateSplitChanges(subjectInput, val, detailNameInput, maxScoreInput);
+                        propagateSplitChanges(subjectInput, val, detailNameInput, maxScoreInput, reflectRateInput);
                       }}
                       placeholder="예: 1"
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-center font-mono text-slate-800 bg-slate-50"
@@ -464,7 +481,7 @@ export default function AdminDashboard({
                       onChange={(e) => {
                         const val = e.target.value;
                         setDetailNameInput(val);
-                        propagateSplitChanges(subjectInput, roundInput, val, maxScoreInput);
+                        propagateSplitChanges(subjectInput, roundInput, val, maxScoreInput, reflectRateInput);
                       }}
                       placeholder="예: 알고리즘 설계"
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-slate-800 bg-slate-50"
@@ -483,10 +500,29 @@ export default function AdminDashboard({
                       onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, '');
                         setMaxScoreInput(val);
-                        propagateSplitChanges(subjectInput, roundInput, detailNameInput, val);
+                        propagateSplitChanges(subjectInput, roundInput, detailNameInput, val, reflectRateInput);
                       }}
                       placeholder="예: 20"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-center font-mono text-indigo-950 bg-indigo-50/40 border-indigo-200"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-center font-mono text-indigo-950 bg-indigo-50/40 border-indigo-250"
+                    />
+                  </div>
+
+                  {/* Reflection rate entry */}
+                  <div>
+                    <label htmlFor="eval-reflectrate-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
+                      5. 실제 반영 비율 (%)
+                    </label>
+                    <input 
+                      id="eval-reflectrate-txt"
+                      type="text"
+                      value={reflectRateInput}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '');
+                        setReflectRateInput(val);
+                        propagateSplitChanges(subjectInput, roundInput, detailNameInput, maxScoreInput, val);
+                      }}
+                      placeholder="예: 30"
+                      className="w-full px-3 py-2 border border-indigo-200 rounded-xl text-xs focus:outline-none font-bold text-center font-mono text-indigo-950 bg-indigo-50/55"
                     />
                   </div>
                 </div>

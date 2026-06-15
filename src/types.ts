@@ -14,6 +14,7 @@ export interface EvaluationState {
   round?: string;
   evaluationDetailName?: string;
   maxScore?: string;
+  reflectRate?: string;
   headers: string[];
   rows: ExcelRow[];
   uploadedAt: string | null;
@@ -36,6 +37,7 @@ export interface StudentResultItem {
   round: string;
   evaluationDetailName: string;
   maxScore: string;
+  reflectRate?: string;
   headers: string[];
   row: ExcelRow;
 }

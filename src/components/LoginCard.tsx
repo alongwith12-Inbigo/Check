@@ -91,6 +91,7 @@ export default function LoginCard({
           round: evalItem.round || '1',
           evaluationDetailName: evalItem.evaluationDetailName || '종합 수행평가',
           maxScore: evalItem.maxScore || '',
+          reflectRate: evalItem.reflectRate || '100',
           headers: evalItem.headers,
           row: foundRow
         });
@@ -98,6 +99,18 @@ export default function LoginCard({
     }
 
     if (matchedResults.length > 0) {
+      // Sort evaluations in ascending order of round (1차 -> 2차 -> ... -> n차)
+      matchedResults.sort((a, b) => {
+        const aNum = parseInt(a.round.replace(/\D/g, ''), 10);
+        const bNum = parseInt(b.round.replace(/\D/g, ''), 10);
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          return aNum - bNum;
+        }
+        if (!isNaN(aNum)) return -1;
+        if (!isNaN(bNum)) return 1;
+        return a.round.localeCompare(b.round);
+      });
+
       // Fallback name if none found in raw excel cells
       const finalName = detectedStudentName || `학생 (${studentId})`;
       

@@ -87,6 +87,7 @@ export default function App() {
           round: data.round || '',
           evaluationDetailName: data.evaluationDetailName || '',
           maxScore: data.maxScore !== undefined ? String(data.maxScore) : '',
+          reflectRate: data.reflectRate !== undefined ? String(data.reflectRate) : '100',
           headers: data.headers || [],
           rows: data.rows || [],
           uploadedAt: data.uploadedAt || null,

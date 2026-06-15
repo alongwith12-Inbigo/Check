@@ -25,8 +25,63 @@ export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
     window.print();
   };
 
+  // Sort evaluations in ascending order of round (1차 -> 2차 -> ... -> n차)
+  const sortedResults = [...results].sort((a, b) => {
+    const aNum = parseInt(a.round.replace(/\D/g, ''), 10);
+    const bNum = parseInt(b.round.replace(/\D/g, ''), 10);
+    if (!isNaN(aNum) && !isNaN(bNum)) {
+      return aNum - bNum;
+    }
+    if (!isNaN(aNum)) return -1;
+    if (!isNaN(bNum)) return 1;
+    return a.round.localeCompare(b.round);
+  });
+
+  // Calculate cumulative aggregates
+  let aggregateRawObtained = 0;
+  let aggregateRawMax = 0;
+  let aggregateReflectedObtained = 0;
+  let aggregateReflectedMax = 0;
+
+  sortedResults.forEach(item => {
+    const studentIdKey = findStudentIdKey(item.headers);
+    const birthdateKey = findBirthdateKey(item.headers);
+    const feedbackKeys = findFeedbackKey(item.headers);
+
+    const scoreKeys = item.headers.filter(h => {
+      if (h === studentIdKey || h === birthdateKey || feedbackKeys.includes(h)) return false;
+      if (String(h).includes('이름') || String(h).includes('성명')) return false;
+      return isScoreColumn(h, item.row[h]);
+    });
+
+    const totalScoreKey = scoreKeys.find(h => {
+      const norm = String(h).replace(/\s+/g, '').toLowerCase();
+      return norm.includes('합계') || norm.includes('총점') || norm.includes('총합') || norm.includes('최종') || norm.includes('합산');
+    }) || scoreKeys[scoreKeys.length - 1];
+
+    if (totalScoreKey) {
+      const rawScoreVal = parseFloat(String(item.row[totalScoreKey] || '0').trim());
+      const computedTotalScore = isNaN(rawScoreVal) ? 0 : rawScoreVal;
+      const maxScoreNum = parseFloat(item.maxScore || '100') || 100;
+      const rateNum = parseFloat(item.reflectRate || '100') || 100;
+
+      aggregateRawObtained += computedTotalScore;
+      aggregateRawMax += maxScoreNum;
+
+      if (maxScoreNum > 0) {
+        aggregateReflectedObtained += (computedTotalScore / maxScoreNum) * rateNum;
+      } else {
+        aggregateReflectedObtained += computedTotalScore * (rateNum / 100);
+      }
+      aggregateReflectedMax += rateNum;
+    }
+  });
+
+  const formattedAggregateReflectedObtained = Number(aggregateReflectedObtained.toFixed(2)).toString();
+  const formattedAggregateRawObtained = Number(aggregateRawObtained.toFixed(2)).toString();
+
   // Compute stats across all evaluations
-  const totalEvalsCount = results.length;
+  const totalEvalsCount = sortedResults.length;
 
   return (
     <div id="student-result-container" className="w-full max-w-3xl mx-auto space-y-6 pb-12 animate-fadeIn print:shadow-none print:border-0 print:p-0">
@@ -71,7 +126,7 @@ export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
 
       {/* Grid: Listing evaluations card details */}
       <div className="space-y-6">
-        {results.map((item, index) => {
+        {sortedResults.map((item, index) => {
           const { headers, row, evaluationTitle, subject, round, evaluationDetailName, maxScore } = item;
           
           const studentIdKey = findStudentIdKey(headers);
@@ -182,27 +237,64 @@ export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
                 )}
 
                 {/* 2. Total Sum Score large horizontal highlight banner */}
-                {totalScoreKey && (
-                  <div className="bg-indigo-50/55 border border-indigo-100 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 print:bg-slate-50 print:border-slate-200">
-                    <div className="text-center sm:text-left space-y-0.5">
-                      <span className="text-[10px] bg-white border border-indigo-150 rounded-md font-bold px-2 py-0.5 text-indigo-850 inline-block">
-                        합산 점수
-                      </span>
-                      <h4 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
-                        {subject} {String(round).endsWith('차') ? round : `${round}차`} 수행평가
-                      </h4>
+                {totalScoreKey && (() => {
+                  const rawScoreVal = parseFloat(String(row[totalScoreKey] || '0').trim());
+                  const computedTotalScore = isNaN(rawScoreVal) ? 0 : rawScoreVal;
+                  const maxScoreNum = parseFloat(maxScore || '100') || 100;
+                  const rateNum = parseFloat(item.reflectRate || '100') || 100;
+
+                  let reflectedValue = 0;
+                  let calculationFormula = "";
+
+                  if (maxScoreNum > 0) {
+                    reflectedValue = (computedTotalScore / maxScoreNum) * rateNum;
+                    calculationFormula = `(${computedTotalScore}점 / 만점 ${maxScoreNum}점) × 반영비율 ${rateNum}%`;
+                  } else {
+                    reflectedValue = computedTotalScore * (rateNum / 100);
+                    calculationFormula = `${computedTotalScore}점 × 반영비율 ${rateNum}%`;
+                  }
+
+                  const formattedReflectedValue = Number(reflectedValue.toFixed(2)).toString();
+
+                  return (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-5 print:bg-white print:border-slate-300">
+                      
+                      {/* Left: Metadata info & raw total score */}
+                      <div className="space-y-2 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] bg-slate-200 border border-slate-300 rounded-md font-bold px-2 py-0.5 text-slate-700">
+                            영역 합산 점수: {computedTotalScore} 점 / {maxScoreNum} 점
+                          </span>
+                          <span className="text-[10px] bg-indigo-100 border border-indigo-200 rounded-md font-bold px-2 py-0.5 text-indigo-800">
+                            반영 비율: {rateNum}%
+                          </span>
+                        </div>
+                        
+                        <h4 className="text-sm font-extrabold text-slate-800">
+                          {subject} {String(round).endsWith('차') ? round : `${round}차`} 수행평가 실제 반영 점수
+                        </h4>
+                        
+                        <p className="text-[10.5px] text-slate-500 font-medium font-mono">
+                          성적 반영 공식 : <span className="font-bold text-indigo-900">{calculationFormula}</span>
+                        </p>
+                      </div>
+
+                      {/* Right: Larger reflected score highlight */}
+                      <div className="flex flex-col justify-center items-center md:items-end bg-indigo-50/50 border border-indigo-100/60 rounded-xl p-4 min-w-[170px] text-center md:text-right">
+                        <span className="text-[10.5px] text-indigo-800 font-extrabold uppercase tracking-wide">실제 성적 반영 점수</span>
+                        <div className="mt-1 flex items-baseline gap-1.5">
+                          <span className="text-3xl sm:text-4.5xl font-black text-indigo-950 font-sans tracking-tight">
+                            {formattedReflectedValue}
+                          </span>
+                          <span className="text-xs text-slate-400 font-bold">
+                            / {rateNum} 점 만점
+                          </span>
+                        </div>
+                      </div>
+
                     </div>
-                    
-                    <div className="text-center sm:text-right">
-                      <span className="text-2.5xl sm:text-3xl font-black text-indigo-950 font-sans tracking-tight">
-                        {row[totalScoreKey] || '0'}
-                      </span>
-                      <span className="text-xs text-slate-400 font-bold ml-1">
-                        / {maxScore || '100'} 점
-                      </span>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* 3. Personalized Teacher's comments and Feedback markup bubble */}
                 {hasAnyFeedback ? (
@@ -243,6 +335,65 @@ export default function ResultCard({ sessionData, onBack }: ResultCardProps) {
             </div>
           );
         })}
+      </div>
+
+      {/* Cumulative Final Report Section */}
+      <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl p-6 sm:p-8 relative overflow-hidden shadow-lg print:bg-white print:text-black print:border-2 print:border-slate-800 space-y-6">
+        <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none print:hidden">
+          <Award size={160} className="stroke-[1.5] text-amber-500" />
+        </div>
+
+        <div className="flex items-center gap-2.5 relative z-10">
+          <div className="p-2.5 bg-amber-400 text-slate-950 rounded-2xl print:bg-slate-200 print:text-black">
+            <Award size={22} className="stroke-[2.5]" />
+          </div>
+          <div>
+            <span className="text-[10px] sm:text-xs font-black text-amber-300 uppercase tracking-widest block print:text-slate-500 leading-none">
+              Cumulative Final Grade Report
+            </span>
+            <h2 className="text-base sm:text-xl font-black tracking-tight text-white print:text-black mt-1">
+              전체 수행평가 누적 결과 종합
+            </h2>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+          {/* Raw Scores Sum Box */}
+          <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-5 print:bg-slate-50 print:border-slate-300">
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              영역별 점수(원점수) 합산 총점
+            </span>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-3xl sm:text-4xl font-extrabold text-slate-100 font-mono print:text-black">
+                {formattedAggregateRawObtained}
+              </span>
+              <span className="text-xs sm:text-sm font-semibold text-slate-400 print:text-slate-500">
+                / {aggregateRawMax} 점 만점
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-450 mt-2 leading-relaxed">
+              ※ 단순 영역 점수 총합 기준이며, 실제 성적에 반영되는 비율은 적용되지 않은 총 원점수입니다.
+            </p>
+          </div>
+
+          {/* Reflected Real Score Sum Box */}
+          <div className="bg-linear-to-br from-indigo-950/90 to-indigo-900/60 border-2 border-indigo-500/30 rounded-2xl p-5 print:bg-slate-100 print:from-slate-100 print:to-slate-100 print:border-2 print:border-slate-800">
+            <span className="text-[10.5px] sm:text-[11.5px] font-bold text-amber-305 uppercase tracking-widest block print:text-slate-700">
+              👑 실제 최종 성적 반영 총점
+            </span>
+            <div className="mt-2.5 flex items-baseline gap-2">
+              <span className="text-4xl sm:text-5xl font-black text-amber-400 font-sans tracking-tight print:text-indigo-950">
+                {formattedAggregateReflectedObtained}
+              </span>
+              <span className="text-sm font-bold text-indigo-200 print:text-slate-650">
+                / {aggregateReflectedMax} 점 만점
+              </span>
+            </div>
+            <p className="text-[10.8px] text-indigo-150 mt-2 leading-relaxed font-semibold">
+              ※ 각 영역별 만점과 실제 성적 반영 비율(%)을 가중 계산하여 종합한 최종 수행평가 성적 비율 기준 점수입니다.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Safety Legal Notice trustfooter */}
