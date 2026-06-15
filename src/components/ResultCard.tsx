@@ -21,6 +21,7 @@ interface ResultCardProps {
   signatures?: Record<string, string>;
   signatureEnabled?: boolean;
   onSaveSignature?: (subject: string, studentId: string, studentName: string, signatureDataUrl: string) => void | Promise<void>;
+  onDeleteSignature?: (subject: string, studentId: string) => void | Promise<void>;
 }
 
 export default function ResultCard({ 
@@ -29,7 +30,8 @@ export default function ResultCard({
   subjectMaxScores = {},
   signatures = {},
   signatureEnabled = false,
-  onSaveSignature
+  onSaveSignature,
+  onDeleteSignature
 }: ResultCardProps) {
   const { studentName, studentId, teacherName, results, teacherCode } = sessionData;
   const [isSavingSig, setIsSavingSig] = useState(false);
@@ -425,7 +427,22 @@ export default function ResultCard({
                   <div className="bg-white border border-slate-200 rounded-xl p-3 max-w-[220px] overflow-hidden flex items-center justify-center shadow-xs">
                     <img src={savedSignature} alt="학생 서명" className="h-14 object-contain" referrerPolicy="no-referrer" />
                   </div>
-                  <span className="text-[10px] text-slate-400 font-mono font-bold">서명 제출 일시 기록됨</span>
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-[10px] text-slate-400 font-mono font-bold">서명 제출 일시 기록됨</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (window.confirm("제출한 서명을 삭제하고 다시 새롭게 서명하시겠습니까?")) {
+                          if (onDeleteSignature) {
+                            await onDeleteSignature(subjName, studentId);
+                          }
+                        }
+                      }}
+                      className="mt-1 text-[11px] font-black text-red-500 hover:text-red-700 bg-white border border-red-200 hover:bg-red-50 rounded-lg px-2.5 py-1.5 transition cursor-pointer shadow-2xs active:scale-95"
+                    >
+                      🗑️ 서명 삭제 후 다시 작성하기
+                    </button>
+                  </div>
                 </div>
               );
             }

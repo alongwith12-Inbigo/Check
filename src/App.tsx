@@ -308,6 +308,22 @@ export default function App() {
     }
   };
 
+  const handleDeleteSignature = async (subject: string, studentId: string) => {
+    const tCode = loggedStudent?.teacherCode || selectedTeacherCode || '';
+    if (!tCode) return;
+    const cleanTeacherCode = tCode.trim();
+    const cleanSubject = subject.trim();
+    const cleanStudentId = studentId.trim();
+    const signatureId = `${cleanTeacherCode}_${cleanSubject}_${cleanStudentId}`;
+
+    try {
+      const docRef = doc(db, 'signatures', signatureId);
+      await deleteDoc(docRef);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `signatures/${signatureId}`);
+    }
+  };
+
   const handleDeleteEvaluation = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'evaluation', id));
@@ -621,6 +637,7 @@ export default function App() {
                 signatures={signatures}
                 signatureEnabled={!!teacherSettings[(loggedStudent.teacherCode || '').trim()]}
                 onSaveSignature={handleSaveSignature}
+                onDeleteSignature={handleDeleteSignature}
               />
             </motion.div>
           ) : (

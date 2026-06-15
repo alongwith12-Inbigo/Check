@@ -41,16 +41,19 @@ export default function SignatureCanvas({ onSave, isLoading = false }: Signature
 
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / (rect.width || 1);
+    const scaleY = canvas.height / (rect.height || 1);
+
     if ('touches' in e) {
       if (e.touches.length === 0) return null;
       return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top,
+        x: (e.touches[0].clientX - rect.left) * scaleX,
+        y: (e.touches[0].clientY - rect.top) * scaleY,
       };
     } else {
       return {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY,
       };
     }
   };
@@ -67,6 +70,10 @@ export default function SignatureCanvas({ onSave, isLoading = false }: Signature
 
     const ctx = canvas.getContext('2d');
     if (ctx) {
+      ctx.strokeStyle = '#1e1b4b'; // Deep Indigo
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
       ctx.moveTo(pos.x, pos.y);
     }
@@ -80,6 +87,11 @@ export default function SignatureCanvas({ onSave, isLoading = false }: Signature
     const ctx = canvas.getContext('2d');
     const pos = getCoordinates(e, canvas);
     if (!ctx || !pos || !lastPos.current) return;
+
+    ctx.strokeStyle = '#1e1b4b'; // Deep Indigo
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
