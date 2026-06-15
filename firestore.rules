@@ -55,5 +55,10 @@ service cloud.firestore {
     match /signatures/{signatureId} {
       allow read, write: if true;
     }
+
+    // 7. Registered Students database access rules
+    match /students/{studentId} {
+      allow read, write: if true;
+    }
   }
 }

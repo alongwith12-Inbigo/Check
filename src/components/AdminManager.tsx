@@ -9,27 +9,48 @@ import {
   AlertCircle, 
   LogOut, 
   Info,
-  Edit
+  Edit,
+  UserPlus,
+  ArrowRight,
+  GraduationCap
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Teacher } from '../types';
-import { findTeacherCodeKey, findTeacherNameKey, findTeacherPasswordKey } from '../utils';
-import { UserPlus } from 'lucide-react';
+import { Teacher, RegisteredStudent } from '../types';
+import { 
+  findTeacherCodeKey, 
+  findTeacherNameKey, 
+  findTeacherPasswordKey,
+  findStudentIdKey,
+  findBirthdateKey
+} from '../utils';
 
 interface AdminManagerProps {
   teachers: Teacher[];
   onUpdateTeachers: (newTeachers: Teacher[]) => void;
   onDeleteTeacher: (code: string, name: string) => void;
   onLogout: () => void;
+  allStudents: RegisteredStudent[];
+  onUpdateStudents: (newStudents: RegisteredStudent[]) => void;
+  onDeleteStudent: (studentId: string, name: string) => void;
 }
 
 export default function AdminManager({ 
   teachers, 
   onUpdateTeachers, 
   onDeleteTeacher, 
-  onLogout 
+  onLogout,
+  allStudents,
+  onUpdateStudents,
+  onDeleteStudent
 }: AdminManagerProps) {
+  // Navigation state
+  const [activeTab, setActiveTab] = useState<'teachers' | 'students'>('teachers');
+
+  // Search filter
   const [searchTerm, setSearchTerm] = useState('');
+  const [studentSearchTerm, setStudentSearchTerm] = useState('');
+
+  // Messages state
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
@@ -39,10 +60,16 @@ export default function AdminManager({
   const [newCode, setNewCode] = useState('');
   const [newName, setNewName] = useState('');
   const [newPassword, setNewPassword] = useState('');
+
+  // State for individual student registration & edit
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [newStudentId, setNewStudentId] = useState('');
+  const [newStudentName, setNewStudentName] = useState('');
+  const [newStudentBirthdate, setNewStudentBirthdate] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Bulk xlsx parsing
+  // Bulk Teachers XLSX processing
   const processTeachersExcel = (file: File) => {
     setErrorMsg('');
     setSuccessMsg('');
@@ -60,33 +87,31 @@ export default function AdminManager({
         const cleanHeaders = (headersJson || []).filter(h => h && String(h).trim() !== "");
 
         if (cleanHeaders.length === 0 || rawRows.length === 0) {
-          setErrorMsg('엑셀 파일 분석 실패: 유효한 행 데이터를 발견할 수 없습니다.');
+          setErrorMsg('엑셀 파일 분석 실패: 관리 테이블에 포함된 유효한 행을 발견하지 못했습니다.');
           return;
         }
 
-        const codeKey = findTeacherCodeKey(cleanHeaders);
-        const nameKey = findTeacherNameKey(cleanHeaders);
-        const passwordKey = findTeacherPasswordKey(cleanHeaders);
+        const codeHeaderKey = findTeacherCodeKey(cleanHeaders);
+        const nameHeaderKey = findTeacherNameKey(cleanHeaders);
+        const passwordHeaderKey = findTeacherPasswordKey(cleanHeaders);
 
-        if (!codeKey || !nameKey) {
+        if (!codeHeaderKey || !nameHeaderKey) {
           setErrorMsg(
-            `필수 컬럼 식별 불가: 선생님 엑셀에 '교사코드'와 '선생님이름'이 감지되지 않았습니다.\n` +
-            `감지된 헤더 속성: [${cleanHeaders.join(', ')}]`
+            `필수 컬럼 판단 오류: 업로드된 엑셀에서 '교사코드' 또는 '선생님이름'이 매핑되는 컬럼을 찾을 수 없습니다.\n` +
+            `헤더 목록: [${cleanHeaders.join(', ')}]`
           );
           return;
         }
 
-        // Add records to teachers collection
-        let successCount = 0;
+        let addedCount = 0;
         let skippedCount = 0;
         const updatedTeachers = [...teachers];
 
         for (const row of rawRows) {
-          const rawCode = String(row[codeKey]).trim();
-          const rawName = String(row[nameKey]).trim();
-          const rawPassword = passwordKey ? String(row[passwordKey] || '').trim() : '';
+          const rawCode = String(row[codeHeaderKey]).replace(/\s+/g, '');
+          const rawName = String(row[nameHeaderKey]).trim();
+          const rawPassword = passwordHeaderKey ? String(row[passwordHeaderKey]).replace(/\s+/g, '') : '';
 
-          // Standardize code to 3-digit length nicely (e.g. "98" -> "098" or "101" -> "101")
           if (!rawCode || !rawName) {
             skippedCount++;
             continue;
@@ -102,23 +127,19 @@ export default function AdminManager({
             continue;
           }
 
-          // Merge or update existing item
-          const idx = updatedTeachers.findIndex(t => t.code === formattedCode);
-          const existingPw = idx >= 0 ? (updatedTeachers[idx].password || '') : '';
-          const finalPw = rawPassword || existingPw || '1004';
-
-          const updatedTeacherData: Teacher = { 
-            code: formattedCode, 
+          const teaItem: Teacher = {
+            code: formattedCode,
             name: rawName,
-            password: finalPw
+            password: rawPassword || '1004'
           };
 
+          const idx = updatedTeachers.findIndex(t => t.code === formattedCode);
           if (idx >= 0) {
-            updatedTeachers[idx] = updatedTeacherData;
+            updatedTeachers[idx] = teaItem;
           } else {
-            updatedTeachers.push(updatedTeacherData);
+            updatedTeachers.push(teaItem);
           }
-          successCount++;
+          addedCount++;
         }
 
         updatedTeachers.sort((a, b) => {
@@ -129,11 +150,11 @@ export default function AdminManager({
           }
           return a.code.localeCompare(b.code);
         });
-        onUpdateTeachers(updatedTeachers);
 
+        onUpdateTeachers(updatedTeachers);
         setSuccessMsg(
-          `엑셀 일괄 등록 완료: 교사 ${successCount}명을 추가/동기화하였습니다.` +
-          (skippedCount > 0 ? ` (부적절한 형식 혹은 공백 행 ${skippedCount}개는 제외됨)` : '')
+          `교사 엑셀 등록 성공: 총 ${addedCount}명의 선생님 계정이 분석, 반영되었습니다.` +
+          (skippedCount > 0 ? ` (교사코드 3자리 누락 등 부적합 형태 ${skippedCount}줄 무시 처리)` : '')
         );
       } catch (err) {
         console.error(err);
@@ -143,10 +164,116 @@ export default function AdminManager({
     reader.readAsArrayBuffer(file);
   };
 
+  // Bulk Students XLSX processing
+  const processStudentsExcel = (file: File) => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' }) as Record<string, any>[];
+        const headersJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as string[];
+        const cleanHeaders = (headersJson || []).filter(h => h && String(h).trim() !== "");
+
+        if (cleanHeaders.length === 0 || rawRows.length === 0) {
+          setErrorMsg('학생 엑셀 파일 분석 실패: 테이블에 로드할 행 데이터가 존재하지 않습니다.');
+          return;
+        }
+
+        const studentIdKey = findStudentIdKey(cleanHeaders);
+        const birthdateKey = findBirthdateKey(cleanHeaders);
+        
+        // Find name key using standard korean keywords
+        const nameKey = cleanHeaders.find(h => {
+          const norm = String(h).replace(/\s+/g, '').toLowerCase();
+          return norm.includes('이름') || norm.includes('성명') || norm.includes('학생명') || norm === 'name';
+        });
+
+        if (!studentIdKey || !birthdateKey) {
+          setErrorMsg(
+            `필수 컬럼 판단 실패: 업로드한 엑셀에 '학번(5자리)'과 '생년월일(8자리)'이 매핑되는 컬럼이 필요합니다.\n` +
+            `감지된 헤더 속성: [${cleanHeaders.join(', ')}]`
+          );
+          return;
+        }
+
+        let successCount = 0;
+        let skippedCount = 0;
+        const updatedStudents = [...allStudents];
+
+        for (const row of rawRows) {
+          const rawId = String(row[studentIdKey]).replace(/\s+/g, '');
+          const rawBirth = String(row[birthdateKey]).replace(/\s+/g, '').replace(/\D/g, '');
+          const rawName = nameKey ? String(row[nameKey]).trim() : '';
+
+          if (!rawId || !rawBirth) {
+            skippedCount++;
+            continue;
+          }
+
+          const formattedId = rawId.replace(/\D/g, '').trim();
+          if (formattedId.length !== 5) {
+            skippedCount++;
+            continue;
+          }
+
+          let formattedBirth = rawBirth;
+          if (formattedBirth.length === 6) {
+            const yearPrefix = parseInt(formattedBirth.substring(0, 2), 10) > 30 ? '19' : '20';
+            formattedBirth = yearPrefix + formattedBirth;
+          }
+
+          if (formattedBirth.length !== 8) {
+            skippedCount++;
+            continue;
+          }
+
+          const finalName = rawName || `학생 (${formattedId})`;
+
+          const item: RegisteredStudent = {
+            studentId: formattedId,
+            name: finalName,
+            birthdate: formattedBirth
+          };
+
+          const idx = updatedStudents.findIndex(s => s.studentId === formattedId);
+          if (idx >= 0) {
+            updatedStudents[idx] = item;
+          } else {
+            updatedStudents.push(item);
+          }
+          successCount++;
+        }
+
+        updatedStudents.sort((a, b) => a.studentId.localeCompare(b.studentId));
+        onUpdateStudents(updatedStudents);
+
+        setSuccessMsg(
+          `학생 엑셀 조회 등록 완료: 총 ${successCount}명의 교적 정보가 연동되었습니다.` +
+          (skippedCount > 0 ? ` (학번 5자리 성립 미달, 생년월일 표기 오차 등으로 ${skippedCount}줄 무시 처리됨)` : '')
+        );
+      } catch (err) {
+        console.error(err);
+        setErrorMsg('엑셀 파일을 구조화하여 학적 목록을 파싱하는 데 실패했습니다.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      processTeachersExcel(file);
+      if (activeTab === 'teachers') {
+        processTeachersExcel(file);
+      } else {
+        processStudentsExcel(file);
+      }
     }
   };
 
@@ -165,10 +292,16 @@ export default function AdminManager({
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processTeachersExcel(e.dataTransfer.files[0]);
+      const file = e.dataTransfer.files[0];
+      if (activeTab === 'teachers') {
+        processTeachersExcel(file);
+      } else {
+        processStudentsExcel(file);
+      }
     }
   };
 
+  // Individual additions
   const handleAddTeacherIndividually = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -215,7 +348,6 @@ export default function AdminManager({
       setSuccessMsg(`"${cleanName}" 선생님(코드: ${formattedCode}) 등록이 완료되었습니다.`);
     }
 
-    // Always sort by teacher code in ascending numeric-aware order
     updatedTeachers.sort((a, b) => {
       const numA = parseInt(a.code, 10);
       const numB = parseInt(b.code, 10);
@@ -233,6 +365,58 @@ export default function AdminManager({
     setEditingTeacherCode(null);
   };
 
+  const handleAddStudentIndividually = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    const cleanId = newStudentId.replace(/\D/g, '').trim();
+    const cleanName = newStudentName.trim();
+    const cleanBirth = newStudentBirthdate.replace(/\D/g, '').trim();
+
+    if (cleanId.length !== 5) {
+      setErrorMsg('학번은 5자리 숫자로 정확히 입력해 주세요. (예: 30512)');
+      return;
+    }
+
+    if (!cleanName) {
+      setErrorMsg('학생 성명을 입력해 주세요.');
+      return;
+    }
+
+    if (cleanBirth.length !== 8) {
+      setErrorMsg('생년월일은 8자리 숫자로 정확히 입력해 주세요. (예: 20080512)');
+      return;
+    }
+
+    const updatedStudents = [...allStudents];
+    const idx = updatedStudents.findIndex(s => s.studentId === cleanId);
+
+    const studentData: RegisteredStudent = {
+      studentId: cleanId,
+      name: cleanName,
+      birthdate: cleanBirth
+    };
+
+    if (idx >= 0) {
+      updatedStudents[idx] = studentData;
+      setSuccessMsg(`학번 ${cleanId} "${cleanName}" 학생의 학적 정보가 개별 수정되었습니다.`);
+    } else {
+      updatedStudents.push(studentData);
+      setSuccessMsg(`학번 ${cleanId} "${cleanName}" 학생이 개별 등록되었습니다.`);
+    }
+
+    updatedStudents.sort((a, b) => a.studentId.localeCompare(b.studentId));
+    onUpdateStudents(updatedStudents);
+
+    // Reset Form Fields
+    setNewStudentId('');
+    setNewStudentName('');
+    setNewStudentBirthdate('');
+    setEditingStudentId(null);
+  };
+
+  // Start Edit triggers
   const handleStartEdit = (teacher: Teacher) => {
     setEditingTeacherCode(teacher.code);
     setNewCode(teacher.code);
@@ -241,8 +425,21 @@ export default function AdminManager({
     setErrorMsg('');
     setSuccessMsg('');
     
-    // Smooth scroll to indiv registration/edition form
     const formPanel = document.getElementById('individual-teacher-form');
+    if (formPanel) {
+      formPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const handleStartEditStudent = (student: RegisteredStudent) => {
+    setEditingStudentId(student.studentId);
+    setNewStudentId(student.studentId);
+    setNewStudentName(student.name);
+    setNewStudentBirthdate(student.birthdate);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    const formPanel = document.getElementById('individual-student-form');
     if (formPanel) {
       formPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
@@ -257,17 +454,40 @@ export default function AdminManager({
     setSuccessMsg('');
   };
 
+  const handleCancelEditStudent = () => {
+    setEditingStudentId(null);
+    setNewStudentId('');
+    setNewStudentName('');
+    setNewStudentBirthdate('');
+    setErrorMsg('');
+    setSuccessMsg('');
+  };
+
   const handleDelete = (code: string, name: string) => {
-    if (window.confirm(`"${name}" 선생님(코드: ${code}) 계정을 목록에서 정말 삭제하시겠습니까?\n삭제할 경우 해당 교사가 업로드한 평가 성적도 자동 삭제됩니다.`)) {
+    if (window.confirm(`"${name}" 선생님(코드: ${code}) 계정을 목록에서 정말 삭제하시겠습니까?\n삭제할 경우 해당 교사로 업로드된 평가 성적도 동시 자동 소멸 삭제처리 됩니다.`)) {
       onDeleteTeacher(code, name);
-      setSuccessMsg(`"${name}" 선생님 계정 및 등록한 학생 성적이 삭제되었습니다.`);
+      setSuccessMsg(`"${name}" 선생님 계정 및 등록한 수행평가가 파이어베이스에서 완전 삭제되었습니다.`);
     }
   };
 
+  const handleDeleteStudentRow = (studentId: string, name: string) => {
+    if (window.confirm(`학번 ${studentId} "${name}" 학생의 계정 정보를 데이터베이스에서 정말로 제거하시겠습니까?`)) {
+      onDeleteStudent(studentId, name);
+      setSuccessMsg(`학번 ${studentId} "${name}" 학생의 교적 정보 삭제가 실시간 클라우드 DB에 동기화되었습니다.`);
+    }
+  };
+
+  // Search filter computes
   const filteredTeachers = teachers.filter(t => {
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return t.code.includes(term) || t.name.toLowerCase().includes(term);
+  });
+
+  const filteredStudents = allStudents.filter(s => {
+    if (!studentSearchTerm) return true;
+    const term = studentSearchTerm.toLowerCase();
+    return s.studentId.includes(term) || s.name.toLowerCase().includes(term) || s.birthdate.includes(term);
   });
 
   return (
@@ -289,17 +509,56 @@ export default function AdminManager({
         </button>
       </div>
 
-      {/* Grid: Left - Setup Form / Right - List */}
+      {/* Dual Tab Navigation Area */}
+      <div className="flex border-b border-indigo-100 bg-white p-1 rounded-xl shadow-xs border">
+        <button
+          onClick={() => { setActiveTab('teachers'); setErrorMsg(''); setSuccessMsg(''); }}
+          className={`flex-1 sm:flex-initial text-center px-6 py-2.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+            activeTab === 'teachers'
+              ? 'bg-indigo-900 text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          👨‍🏫 담당 교사 계정 관리 ({teachers.length}명)
+        </button>
+        <button
+          onClick={() => { setActiveTab('students'); setErrorMsg(''); setSuccessMsg(''); }}
+          className={`flex-1 sm:flex-initial text-center px-6 py-2.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+            activeTab === 'students'
+              ? 'bg-indigo-900 text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          🎓 전교생 학번/생년월일 관리 ({allStudents.length}명)
+        </button>
+      </div>
+
+      {/* Shared alerts space */}
+      {errorMsg && (
+        <div className="p-3 bg-red-50 text-red-650 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold animate-pulse">
+          <AlertCircle size={15} className="shrink-0 mt-0.5 text-red-600" />
+          <span className="whitespace-pre-line">{errorMsg}</span>
+        </div>
+      )}
+
+      {successMsg && (
+        <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-150 rounded-xl flex items-start gap-2 text-xs">
+          <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-600" />
+          <span className="font-semibold">{successMsg}</span>
+        </div>
+      )}
+
+      {/* Conditional Rendering Panels based on Tab */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        {/* Left column: Excel bulk uploader and Individual registration */}
+        {/* Left Side: Bulk Spreadsheet & Individual Registrator */}
         <div className="md:col-span-1 space-y-4">
           
-          {/* Bulk Excel Upload */}
+          {/* Uploader Card */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
-              <Upload size={16} className="text-emerald-600" />
-              교사 목록 엑셀 일괄 등록
+              <Upload size={16} className={activeTab === 'teachers' ? "text-emerald-600" : "text-sky-605"} />
+              {activeTab === 'teachers' ? '교사 목록 엑셀 일괄 등록' : '전교생 학번/생년월일 일괄 등록'}
             </h3>
 
             <div 
@@ -310,8 +569,8 @@ export default function AdminManager({
               onClick={() => fileInputRef.current?.click()}
               className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center bg-slate-50/20 py-8 ${
                 dragActive 
-                  ? 'border-indigo-600 bg-indigo-50/40' 
-                  : 'border-slate-305 hover:border-indigo-550 hover:bg-slate-50/60'
+                  ? 'border-indigo-650 bg-indigo-50/50' 
+                  : 'border-slate-300 hover:border-indigo-500 hover:bg-slate-50/70'
               }`}
             >
               <input 
@@ -322,240 +581,403 @@ export default function AdminManager({
                 className="hidden" 
                 id="excel-file-uploader-elem"
               />
-              <FileSpreadsheet size={20} className="text-slate-400 mb-2" />
-              <p className="text-[11px] font-bold text-slate-755 leading-normal">
-                교사 목록 엑셀 드롭 또는 클릭
+              <FileSpreadsheet size={20} className="text-slate-400 mb-2 animate-bounce" />
+              <p className="text-[11px] font-extrabold text-slate-700 leading-normal">
+                {activeTab === 'teachers' ? '교사 목록 엑셀 드롭 또는 클릭' : '전교생 학적부 엑셀 드롭 또는 클릭'}
               </p>
-              <p className="text-[9px] text-slate-420 mt-1 leading-normal">
-                ※ 칼럼에 <strong>교사코드</strong>(세자리), <strong>선생님이름</strong>,<br />그리고 선택사항인 <strong>비밀번호</strong>가 구성될 수 있음
+              <p className="text-[9.5px] text-slate-400 mt-1.5 leading-relaxed">
+                {activeTab === 'teachers' ? (
+                  <>※ 칼럼에 <strong>교사코드</strong>(3자리), <strong>선생님이름</strong>,<br />그리고 선택사항인 <strong>비밀번호</strong> 필수 포함</>
+                ) : (
+                  <>※ 칼럼에 <strong>학번</strong>(5자리), <strong>생년월일</strong>(8자리),<br />그리고 선택사항 <strong>이름</strong> 속성이 포함될 필요</>
+                )}
               </p>
             </div>
           </div>
 
-          {/* Individual Teacher Registration Form */}
-          <div id="individual-teacher-form" className={`p-5 rounded-2xl border transition-all duration-300 space-y-4 shadow-sm ${
-            editingTeacherCode !== null 
-              ? 'bg-amber-50/50 border-amber-300 ring-2 ring-amber-200/50' 
-              : 'bg-white border-slate-200'
-          }`}>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
-              {editingTeacherCode !== null ? (
-                <>
-                  <Edit size={16} className="text-amber-600 animate-pulse" />
-                  <span className="text-amber-900">교사 개별 정보 변경 중</span>
-                </>
-              ) : (
-                <>
-                  <UserPlus size={16} className="text-indigo-600" />
-                  <span>교사 개별 등록/수정</span>
-                </>
-              )}
-            </h3>
+          {/* Individual Form */}
+          {activeTab === 'teachers' ? (
+            <div id="individual-teacher-form" className={`p-5 rounded-2xl border transition-all duration-300 space-y-4 shadow-sm ${
+              editingTeacherCode !== null 
+                ? 'bg-amber-50/40 border-amber-300 ring-2 ring-amber-200/50' 
+                : 'bg-white border-slate-200'
+            }`}>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
+                {editingTeacherCode !== null ? (
+                  <>
+                    <Edit size={16} className="text-amber-600 animate-pulse" />
+                    <span className="text-amber-950 font-black">교사 개별 정보 수정</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus size={16} className="text-indigo-650" />
+                    <span>교사 개별 등록/수정</span>
+                  </>
+                )}
+              </h3>
 
-            <form onSubmit={handleAddTeacherIndividually} className="space-y-3">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-[11px] font-bold text-slate-655" htmlFor="t-code">
-                    교사코드 (3자리 숫자)
+              <form onSubmit={handleAddTeacherIndividually} className="space-y-3">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-[11px] font-bold text-slate-500" htmlFor="t-code">
+                      교사코드 (3자리 숫자)
+                    </label>
+                    {editingTeacherCode !== null && (
+                      <span className="text-[9px] text-amber-900 font-bold bg-amber-100 px-1.5 py-0.5 rounded">
+                        수정 모드: 고정됨
+                      </span>
+                    )}
+                  </div>
+                  <input 
+                    id="t-code"
+                    type="text" 
+                    maxLength={3}
+                    placeholder="예: 001"
+                    value={newCode}
+                    onChange={(e) => setNewCode(e.target.value)}
+                    className={`w-full text-xs px-3 py-2 border rounded-xl focus:outline-none focus:ring-1 font-mono ${
+                      editingTeacherCode !== null
+                        ? 'bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed select-none'
+                        : 'border-slate-300 focus:ring-indigo-350 focus:border-indigo-500'
+                    }`}
+                    disabled={editingTeacherCode !== null}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1" htmlFor="t-name">
+                    담당 선생님 성함
                   </label>
+                  <input 
+                    id="t-name"
+                    type="text" 
+                    placeholder="예: 이혜영"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1" htmlFor="t-password">
+                    선생님 비밀번호
+                  </label>
+                  <input 
+                    id="t-password"
+                    type="text" 
+                    placeholder="미입력시 기본 비밀번호 1004"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500 font-mono"
+                  />
+                </div>
+
+                <div className="pt-1.5 space-y-2">
+                  <button 
+                    type="submit"
+                    className={`w-full py-2 text-white rounded-xl text-xs font-extrabold transition duration-150 flex items-center justify-center gap-1.5 shadow-xs cursor-pointer ${
+                      editingTeacherCode !== null
+                        ? 'bg-amber-600 hover:bg-amber-700'
+                        : 'bg-indigo-900 hover:bg-indigo-950'
+                    }`}
+                  >
+                    {editingTeacherCode !== null ? (
+                      <><CheckCircle2 size={13} /> 변경 내용 연동 저장</>
+                    ) : (
+                      <><UserPlus size={13} /> 교사 추가 등록 / 덮어쓰기</>
+                    )}
+                  </button>
+
                   {editingTeacherCode !== null && (
-                    <span className="text-[9px] text-amber-750 font-bold bg-amber-100 px-1.5 py-0.5 rounded">
-                      수정 모드: 변경 불가
-                    </span>
+                    <button 
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      편집 취소
+                    </button>
                   )}
                 </div>
-                <input 
-                  id="t-code"
-                  type="text" 
-                  maxLength={3}
-                  placeholder="예: 001"
-                  value={newCode}
-                  onChange={(e) => setNewCode(e.target.value)}
-                  className={`w-full text-xs px-3 py-2 border rounded-xl focus:outline-none focus:ring-1 font-mono ${
-                    editingTeacherCode !== null
-                      ? 'bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed select-none'
-                      : 'border-slate-300 focus:ring-indigo-300 focus:border-indigo-505'
-                  }`}
-                  disabled={editingTeacherCode !== null}
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-655 mb-1" htmlFor="t-name">
-                  담당 선생님 성함
-                </label>
-                <input 
-                  id="t-name"
-                  type="text" 
-                  placeholder="예: 이혜영"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-505 font-sans"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-655 mb-1" htmlFor="t-password">
-                  선생님 비밀번호
-                </label>
-                <input 
-                  id="t-password"
-                  type="text" 
-                  placeholder="미입력시 기본값 1004"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-505 font-mono"
-                />
-              </div>
-
-              <div className="pt-1 space-y-2">
-                <button 
-                  type="submit"
-                  className={`w-full py-2 text-white rounded-xl text-xs font-bold transition duration-150 flex items-center justify-center gap-1.5 shadow-xs hover:shadow-sm cursor-pointer ${
-                    editingTeacherCode !== null
-                      ? 'bg-amber-600 hover:bg-amber-700'
-                      : 'bg-indigo-600 hover:bg-indigo-700'
-                  }`}
-                >
-                  {editingTeacherCode !== null ? (
-                    <>
-                      <CheckCircle2 size={13} /> 변경 정보 저장 완료
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus size={13} /> 교사 등록 / 변경 적용
-                    </>
-                  )}
-                </button>
-
-                {editingTeacherCode !== null && (
-                  <button 
-                    type="button"
-                    onClick={handleCancelEdit}
-                    className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    수정 취소 (새 교사 등록으로)
-                  </button>
+              </form>
+            </div>
+          ) : (
+            <div id="individual-student-form" className={`p-5 rounded-2xl border transition-all duration-300 space-y-4 shadow-sm ${
+              editingStudentId !== null 
+                ? 'bg-amber-50/40 border-amber-300 ring-2 ring-amber-200/50' 
+                : 'bg-white border-slate-200'
+            }`}>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
+                {editingStudentId !== null ? (
+                  <>
+                    <Edit size={16} className="text-amber-600 animate-pulse" />
+                    <span className="text-amber-950 font-black">학생 학적 개별 수정</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus size={16} className="text-sky-652" />
+                    <span>학생 개별 등록/수정</span>
+                  </>
                 )}
-              </div>
-            </form>
-          </div>
+              </h3>
 
-          <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl text-[11px] text-indigo-950 space-y-1.5 shadow-xs">
+              <form onSubmit={handleAddStudentIndividually} className="space-y-3">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-[11px] font-bold text-slate-500" htmlFor="s-id">
+                      학번 (5자리 숫자)
+                    </label>
+                    {editingStudentId !== null && (
+                      <span className="text-[9px] text-amber-900 font-bold bg-amber-100 px-1.5 py-0.5 rounded">
+                        수정 모드: 고정됨
+                      </span>
+                    )}
+                  </div>
+                  <input 
+                    id="s-id"
+                    type="text" 
+                    maxLength={5}
+                    placeholder="예: 30512"
+                    value={newStudentId}
+                    onChange={(e) => setNewStudentId(e.target.value)}
+                    className={`w-full text-xs px-3 py-2 border rounded-xl focus:outline-none focus:ring-1 font-mono ${
+                      editingStudentId !== null
+                        ? 'bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed select-none'
+                        : 'border-slate-300 focus:ring-indigo-350 focus:border-indigo-500'
+                    }`}
+                    disabled={editingStudentId !== null}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1" htmlFor="s-name">
+                    학생 성명
+                  </label>
+                  <input 
+                    id="s-name"
+                    type="text" 
+                    placeholder="예: 홍길동"
+                    value={newStudentName}
+                    onChange={(e) => setNewStudentName(e.target.value)}
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1" htmlFor="s-birth">
+                    생년월일 (8자리)
+                  </label>
+                  <input 
+                    id="s-birth"
+                    type="text" 
+                    maxLength={8}
+                    placeholder="예: 20080512"
+                    value={newStudentBirthdate}
+                    onChange={(e) => setNewStudentBirthdate(e.target.value)}
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500 font-mono"
+                    required
+                  />
+                </div>
+
+                <div className="pt-1.5 space-y-2">
+                  <button 
+                    type="submit"
+                    className={`w-full py-2 text-white rounded-xl text-xs font-extrabold transition duration-150 flex items-center justify-center gap-1.5 shadow-xs cursor-pointer ${
+                      editingStudentId !== null
+                        ? 'bg-amber-600 hover:bg-amber-700'
+                        : 'bg-indigo-900 hover:bg-indigo-950'
+                    }`}
+                  >
+                    {editingStudentId !== null ? (
+                      <><CheckCircle2 size={13} /> 학력 정보 수정 저장</>
+                    ) : (
+                      <><UserPlus size={13} /> 학생 등록 / 데이터 병합</>
+                    )}
+                  </button>
+
+                  {editingStudentId !== null && (
+                    <button 
+                      type="button"
+                      onClick={handleCancelEditStudent}
+                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      편집 취소
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+          )}
+
+          <div className="bg-indigo-50/50 border border-indigo-150/60 p-4 rounded-2xl text-[11px] text-indigo-950 space-y-1.5 shadow-2xs">
             <span className="font-bold text-indigo-900 flex items-center gap-1">
-              <Info size={14} className="text-indigo-600" />
-              구글 실시간 클라우드 DB 연동 방식
+              <Info size={14} className="text-indigo-600 shrink-0" />
+              실시간 클라우드 DB 연동 안내
             </span>
-            <p className="leading-relaxed text-indigo-900/80">
-              본 시스템은 구글 파이어스토어(Cloud Firestore) 클라우드 데이터베이스에 실시간으로 안전하게 자료를 동기화하고 연동 보존합니다. 입력 및 삭제된 내역은 즉각 클라우드에 반영되어 모든 접속자 단말에 동시 자동 동기화됩니다.
+            <p className="leading-relaxed text-indigo-950/80">
+              {activeTab === 'teachers' 
+                ? '새로 등록한 선생님은 즉시 조회 메인 화면의 담당 교사 목록에 반영됩니다. 선생님용 계정 비밀번호는 개별 확인 및 수정이 상시 가능합니다.'
+                : '서로 다른 엑셀 파일로 학생 학적부를 나누어 등록하셔도 학번을 Key값으로 하여 기존 자료에 안전하게 실시간 누적 병합(Upsert)됩니다.'
+              }
             </p>
           </div>
 
         </div>
 
-        {/* Right column: Teachers roster list table */}
+        {/* Right Side: Roster Table View with Search Bar */}
         <div className="md:col-span-2 space-y-4">
           
-          {/* Messages Alert space */}
-          {errorMsg && (
-            <div className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold">
-              <AlertCircle size={15} className="shrink-0 mt-0.5" />
-              <span className="whitespace-pre-line">{errorMsg}</span>
-            </div>
-          )}
-
-          {successMsg && (
-            <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl flex items-start gap-2 text-xs">
-              <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-600" />
-              <span className="font-semibold">{successMsg}</span>
-            </div>
-          )}
-
-          {/* Roster Area card */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                  <Users size={16} className="text-slate-500" />
-                  등록 교사 현황 ({teachers.length}명)
+                  <Users size={16} className="text-indigo-900" />
+                  {activeTab === 'teachers' 
+                    ? `등록 교사 현황 (${teachers.length}명)` 
+                    : `전교생 학적 등록 현황 (${allStudents.length}명)`
+                  }
                 </h3>
-                <p className="text-[11px] text-slate-400">교사 데이터 검색</p>
+                <p className="text-[11px] text-slate-400">
+                  {activeTab === 'teachers' ? '교사코드 또는 이름으로 검색' : '학번, 이름 또는 생년월일 조회'}
+                </p>
               </div>
 
               <div className="relative max-w-xs w-full">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-450">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
                   <Search size={14} />
                 </span>
                 <input 
                   type="text" 
-                  placeholder="교사명 또는 코드(3자리) 검색"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full text-xs pl-8 pr-4 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-100 focus:border-indigo-400"
+                  placeholder={activeTab === 'teachers' ? "교사명 또는 코드(3자리) 검색" : "학번, 이름, 생년월일 검색..."}
+                  value={activeTab === 'teachers' ? searchTerm : studentSearchTerm}
+                  onChange={(e) => activeTab === 'teachers' ? setSearchTerm(e.target.value) : setStudentSearchTerm(e.target.value)}
+                  className="w-full text-xs pl-8 pr-4 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-350 focus:border-indigo-400"
                 />
               </div>
             </div>
 
-            <div className="overflow-x-auto border border-slate-200 rounded-xl max-h-[420px]">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0 font-sans z-10">
-                    <th className="py-2.5 px-3 font-semibold text-center w-14 border-r border-slate-200">순서</th>
-                    <th className="py-2.5 px-4 font-bold border-r border-slate-200 text-indigo-900">교사코드</th>
-                    <th className="py-2.5 px-4 font-semibold border-r border-slate-200">담당 선생님 성함</th>
-                    <th className="py-2.5 px-4 font-semibold border-r border-slate-200">비밀번호</th>
-                    <th className="py-2.5 px-4 font-semibold text-center w-32">관리 작업</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredTeachers.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="text-center py-10 text-slate-400 italic">
-                        {teachers.length === 0 
-                           ? '현재 등록된 교사가 없습니다. 교사 목록 엑셀 파일(.xlsx)을 업로드해주십시오.'
-                           : '검색어와 일치하는 선생님을 찾을 수 없습니다.'}
-                      </td>
+            {/* Render Active Table */}
+            {activeTab === 'teachers' ? (
+              <div className="overflow-x-auto border border-slate-200 rounded-xl max-h-[460px]">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-650 border-b border-slate-200 sticky top-0 font-sans z-10 text-[11px]">
+                      <th className="py-2.5 px-3 font-semibold text-center w-14 border-r border-slate-200">순서</th>
+                      <th className="py-2.5 px-4 font-bold border-r border-slate-200 text-indigo-900">교사코드</th>
+                      <th className="py-2.5 px-4 font-semibold border-r border-slate-200">담당 선생님 성함</th>
+                      <th className="py-2.5 px-4 font-semibold border-r border-slate-200">비밀번호</th>
+                      <th className="py-2.5 px-4 font-semibold text-center w-32">관리 작업</th>
                     </tr>
-                  ) : (
-                    filteredTeachers.map((tea, index) => (
-                      <tr key={tea.code} className={`transition-colors ${
-                        editingTeacherCode === tea.code ? 'bg-amber-50 hover:bg-amber-100/80 font-medium' : 'hover:bg-slate-50/70'
-                      }`}>
-                        <td className="py-3 px-3 text-center text-slate-400 font-mono border-r border-slate-200">{index + 1}</td>
-                        <td className="py-3 px-4 border-r border-slate-200 font-black font-mono text-indigo-700 tracking-wider">
-                          <span className="bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded text-[11px]">
-                            {tea.code}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 border-r border-slate-200 font-semibold text-slate-800 text-[12px]">{tea.name} 선생님</td>
-                        <td className="py-3 px-4 border-r border-slate-200 font-mono text-slate-600 font-bold text-[11.5px]">{tea.password || '1004'}</td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="inline-flex items-center gap-1.5">
-                            <button 
-                               type="button"
-                               onClick={() => handleStartEdit(tea)}
-                               className="p-1.5 px-2.5 border border-amber-200 text-amber-705 bg-amber-50/30 hover:bg-amber-50 hover:border-amber-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold shadow-2xs"
-                            >
-                              <Edit size={11} /> 수정
-                            </button>
-                            <button 
-                               type="button"
-                               onClick={() => handleDelete(tea.code, tea.name)}
-                               className="p-1.5 px-2.5 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-200 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
-                            >
-                              <Trash2 size={11} /> 삭제
-                            </button>
-                          </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-150">
+                    {filteredTeachers.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-12 text-slate-400 italic">
+                          {teachers.length === 0 
+                             ? '현재 등록된 교사가 없습니다. 교사 목록 엑셀 파일(.xlsx)을 업로드해주십시오.'
+                             : '검색어와 일치하는 선생님을 찾을 수 없습니다.'}
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      filteredTeachers.map((tea, index) => (
+                        <tr key={tea.code} className={`transition-colors ${
+                          editingTeacherCode === tea.code ? 'bg-amber-50 hover:bg-amber-100/80 font-medium' : 'hover:bg-slate-50/50'
+                        }`}>
+                          <td className="py-2.5 px-3 text-center text-slate-400 font-mono border-r border-slate-200">{index + 1}</td>
+                          <td className="py-2.5 px-4 border-r border-slate-200 font-black font-mono text-indigo-700 tracking-wider">
+                            <span className="bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded text-[11px]">
+                              {tea.code}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4 border-r border-slate-200 font-bold text-slate-800 text-[12px]">{tea.name} 선생님</td>
+                          <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-600 font-extrabold text-[11.5px]">{tea.password || '1004'}</td>
+                          <td className="py-2.5 px-4 text-center">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button 
+                                 type="button"
+                                 onClick={() => handleStartEdit(tea)}
+                                 className="p-1 px-2 border border-amber-200 text-amber-800 bg-amber-50/50 hover:bg-amber-100 hover:border-amber-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
+                              >
+                                <Edit size={10} /> 수정
+                              </button>
+                              <button 
+                                 type="button"
+                                 onClick={() => handleDelete(tea.code, tea.name)}
+                                 className="p-1 px-2 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-205 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
+                              >
+                                <Trash2 size={10} /> 삭제
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-slate-200 rounded-xl max-h-[460px]">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-650 border-b border-slate-200 sticky top-0 font-sans z-10 text-[11px]">
+                      <th className="py-2.5 px-3 font-semibold text-center w-14 border-r border-slate-200">순서</th>
+                      <th className="py-2.5 px-4 font-bold border-r border-slate-200 text-indigo-900">학번 (ID)</th>
+                      <th className="py-2.5 px-4 font-semibold border-r border-slate-200">학생 성명</th>
+                      <th className="py-2.5 px-4 font-semibold border-r border-slate-200">생년월일</th>
+                      <th className="py-2.5 px-4 font-semibold text-center w-32">관리 작업</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-150">
+                    {filteredStudents.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-12 text-slate-400 italic">
+                          {allStudents.length === 0 
+                             ? '현재 등록된 전교생 학번 명부가 없습니다. 학적부 엑셀 파일(.xlsx)을 업로드하여 일괄 연동해 주십시오.'
+                             : '검색 조건에 맞는 학생 정보를 찾을 수 없습니다.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredStudents.map((stud, index) => (
+                        <tr key={stud.studentId} className={`transition-colors ${
+                          editingStudentId === stud.studentId ? 'bg-amber-50 hover:bg-amber-100/80 font-medium' : 'hover:bg-slate-50/50'
+                        }`}>
+                          <td className="py-2.5 px-3 text-center text-slate-400 font-mono border-r border-slate-200">{index + 1}</td>
+                          <td className="py-2.5 px-4 border-r border-slate-200 font-black font-mono text-slate-800 tracking-wider">
+                            <span className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[11px]">
+                              {stud.studentId}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4 border-r border-slate-200 font-bold text-indigo-950 text-[11.5px]">{stud.name}</td>
+                          <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-600 font-extrabold text-[11.5px]">{stud.birthdate}</td>
+                          <td className="py-2.5 px-4 text-center">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button 
+                                 type="button"
+                                 onClick={() => handleStartEditStudent(stud)}
+                                 className="p-1 px-2 border border-amber-200 text-amber-800 bg-amber-50/50 hover:bg-amber-100 hover:border-amber-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
+                              >
+                                <Edit size={10} /> 수정
+                              </button>
+                              <button 
+                                 type="button"
+                                 onClick={() => handleDeleteStudentRow(stud.studentId, stud.name)}
+                                 className="p-1 px-2 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-205 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
+                              >
+                                <Trash2 size={10} /> 삭제
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
           </div>
 

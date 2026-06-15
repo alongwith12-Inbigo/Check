@@ -31,6 +31,12 @@ export interface StudentCredentials {
   birthdate: string;
 }
 
+export interface RegisteredStudent {
+  studentId: string;
+  name: string;
+  birthdate: string;
+}
+
 export interface StudentResultItem {
   evaluationId: string;
   evaluationTitle: string;

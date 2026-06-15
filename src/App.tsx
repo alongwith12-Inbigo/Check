@@ -10,7 +10,7 @@ import LoginCard from './components/LoginCard';
 import ResultCard from './components/ResultCard';
 import AdminDashboard from './components/AdminDashboard';
 import AdminManager from './components/AdminManager';
-import { EvaluationState, Teacher, StudentSession } from './types';
+import { EvaluationState, Teacher, StudentSession, RegisteredStudent } from './types';
 import { doc, onSnapshot, setDoc, collection, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { 
@@ -29,6 +29,9 @@ import {
 export default function App() {
   // All evaluations in the database
   const [allEvaluations, setAllEvaluations] = useState<EvaluationState[]>([]);
+
+  // Registered students roster managed by administration
+  const [allStudents, setAllStudents] = useState<RegisteredStudent[]>([]);
 
   // Subject-level final max score configurations
   const [subjectMaxScores, setSubjectMaxScores] = useState<Record<string, string>>({});
@@ -128,6 +131,28 @@ export default function App() {
       setTeachers(list);
     }, (error) => {
       console.warn("Firestore teachers subscription failed: ", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // 1.5. Subscribe to Students directory in real-time from Firestore
+  useEffect(() => {
+    const collRef = collection(db, 'students');
+    const unsubscribe = onSnapshot(collRef, (snap) => {
+      const list: RegisteredStudent[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        list.push({
+          studentId: d.id,
+          name: data.name || '',
+          birthdate: data.birthdate || '',
+        });
+      });
+      list.sort((a, b) => a.studentId.localeCompare(b.studentId));
+      setAllStudents(list);
+    }, (error) => {
+      console.warn("Firestore students subscription failed: ", error);
     });
 
     return () => unsubscribe();
@@ -380,6 +405,32 @@ export default function App() {
     }
   };
 
+  // Bulk update student roster (Admin view)
+  const handleUpdateStudents = async (newStudents: RegisteredStudent[]) => {
+    setAllStudents(newStudents);
+    try {
+      for (const s of newStudents) {
+        const docRef = doc(db, 'students', s.studentId);
+        await setDoc(docRef, {
+          studentId: s.studentId,
+          name: s.name,
+          birthdate: s.birthdate
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'students');
+    }
+  };
+
+  const handleDeleteStudent = async (studentId: string, name: string) => {
+    setAllStudents(prev => prev.filter(s => s.studentId !== studentId));
+    try {
+      await deleteDoc(doc(db, 'students', studentId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `students/${studentId}`);
+    }
+  };
+
   const handleToggleAdmin = () => {
     setIsAdminOpen(!isAdminOpen);
     setLoggedStudent(null);
@@ -484,6 +535,9 @@ export default function App() {
                   onUpdateTeachers={handleUpdateTeachers}
                   onDeleteTeacher={handleDeleteTeacher}
                   onLogout={handleAdminLogout}
+                  allStudents={allStudents}
+                  onUpdateStudents={handleUpdateStudents}
+                  onDeleteStudent={handleDeleteStudent}
                 />
               </motion.div>
             ) : loggedTeacher ? (
@@ -671,6 +725,7 @@ export default function App() {
                 teachers={teachers}
                 selectedTeacherCode={selectedTeacherCode}
                 onSelectTeacher={setSelectedTeacherCode}
+                allStudents={allStudents}
               />
             </motion.div>
           )}

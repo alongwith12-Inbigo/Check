@@ -8,7 +8,7 @@ import {
   Info,
   CalendarCheck
 } from 'lucide-react';
-import { EvaluationState, Teacher, StudentSession, StudentResultItem } from '../types';
+import { EvaluationState, Teacher, StudentSession, StudentResultItem, RegisteredStudent } from '../types';
 import { findStudentIdKey, findBirthdateKey, matchesStudentId, matchesBirthdate } from '../utils';
 
 interface LoginCardProps {
@@ -17,6 +17,7 @@ interface LoginCardProps {
   teachers: Teacher[];
   selectedTeacherCode: string;
   onSelectTeacher: (code: string) => void;
+  allStudents: RegisteredStudent[];
 }
 
 export default function LoginCard({ 
@@ -24,7 +25,8 @@ export default function LoginCard({
   onLoginSuccess,
   teachers,
   selectedTeacherCode,
-  onSelectTeacher
+  onSelectTeacher,
+  allStudents
 }: LoginCardProps) {
   const [studentId, setStudentId] = useState('');
   const [birthdate, setBirthdate] = useState('');
@@ -54,13 +56,22 @@ export default function LoginCard({
       return;
     }
 
-    if (teacherEvaluations.length === 0) {
-      setErrorMsg('선택한 선생님이 등록하신 수행평가 데이터가 아직 존재하지 않습니다.');
+    // Find matching registered student from the Admin's master student registry
+    const matchedRegisteredStudent = allStudents.find(student => 
+      matchesStudentId(studentId, student.studentId) && matchesBirthdate(birthdate, student.birthdate)
+    );
+
+    // If master registry exists, strictly enforce verification against it
+    if (allStudents.length > 0 && !matchedRegisteredStudent) {
+      setErrorMsg(
+        '입력하신 학번과 생년월일이 일치하는 학생 정보를 찾을 수 없습니다.\n' +
+        '학교 관리자가 등록한 교적 정보와 다르면 담임선생님 혹은 학교 관리자에게 연락 바랍니다.'
+      );
       return;
     }
 
     const matchedResults: StudentResultItem[] = [];
-    let detectedStudentName = '';
+    let detectedStudentName = matchedRegisteredStudent ? matchedRegisteredStudent.name : '';
 
     // Search across ALL evaluations belonging to this teacher
     for (const evalItem of teacherEvaluations) {
@@ -68,15 +79,21 @@ export default function LoginCard({
       const studentIdKey = findStudentIdKey(headers);
       const birthdateKey = findBirthdateKey(headers);
 
-      if (!studentIdKey || !birthdateKey) {
-        continue; // Skip this spreadsheet if it missing basic index mapping columns
+      if (!studentIdKey) {
+        continue; // Skip this spreadsheet if it missing student ID column
       }
 
       const foundRow = rows.find(row => {
         const rawRowId = row[studentIdKey];
-        const rawRowBirth = row[birthdateKey];
-
-        return matchesStudentId(studentId, rawRowId) && matchesBirthdate(birthdate, rawRowBirth);
+        if (allStudents.length > 0) {
+          // If master registry is used, match ONLY on Student ID! (Teacher sheets don't need birthdate now)
+          return matchesStudentId(studentId, rawRowId);
+        } else {
+          // Backward compatibility fallback: match on both ID and Birthdate from teacher's spreadsheet
+          if (!birthdateKey) return false;
+          const rawRowBirth = row[birthdateKey];
+          return matchesStudentId(studentId, rawRowId) && matchesBirthdate(birthdate, rawRowBirth);
+        }
       });
 
       if (foundRow) {
@@ -99,36 +116,37 @@ export default function LoginCard({
       }
     }
 
-    if (matchedResults.length > 0) {
-      // Sort evaluations in ascending order of round (1차 -> 2차 -> ... -> n차)
-      matchedResults.sort((a, b) => {
-        const aNum = parseInt(a.round.replace(/\D/g, ''), 10);
-        const bNum = parseInt(b.round.replace(/\D/g, ''), 10);
-        if (!isNaN(aNum) && !isNaN(bNum)) {
-          return aNum - bNum;
-        }
-        if (!isNaN(aNum)) return -1;
-        if (!isNaN(bNum)) return 1;
-        return a.round.localeCompare(b.round);
-      });
-
-      // Fallback name if none found in raw excel cells
-      const finalName = detectedStudentName || `학생 (${studentId})`;
-      
-      onLoginSuccess({
-        studentId: studentId.trim(),
-        birthdate: birthdate.trim(),
-        studentName: finalName,
-        teacherName: activeTeacher ? activeTeacher.name : '교과',
-        results: matchedResults,
-        teacherCode: activeTeacher ? activeTeacher.code : ''
-      });
-    } else {
+    // If master registry is empty, and we didn't match any result in teacher's spreadsheets, reject
+    if (allStudents.length === 0 && matchedResults.length === 0) {
       setErrorMsg(
-        '입력하신 학번 또는 생년월일과 정확히 일치하는 성적 기록을 찾을 수 없습니다.\n' +
-        '교과 선생님 그리고 학번(5자리)과 생년월일(8자리)이 맞는지 다시 확인해주세요.'
+        '입력하신 학번 또는 생년월일과 일치하는 성적 기록을 찾을 수 없습니다.\n' +
+        '선생님이 업로드한 엑셀에 학번(5자리)과 생년월일(8자리)이 맞는지 다시 확인해주세요.'
       );
+      return;
     }
+
+    // Sort evaluations in ascending order of round (1차 -> 2차 -> ... -> n차)
+    matchedResults.sort((a, b) => {
+      const aNum = parseInt(a.round.replace(/\D/g, ''), 10);
+      const bNum = parseInt(b.round.replace(/\D/g, ''), 10);
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        return aNum - bNum;
+      }
+      if (!isNaN(aNum)) return -1;
+      if (!isNaN(bNum)) return 1;
+      return a.round.localeCompare(b.round);
+    });
+
+    const finalName = detectedStudentName || (matchedRegisteredStudent ? matchedRegisteredStudent.name : `학생 (${studentId})`);
+    
+    onLoginSuccess({
+      studentId: studentId.trim(),
+      birthdate: birthdate.trim(),
+      studentName: finalName,
+      teacherName: activeTeacher ? activeTeacher.name : '교과',
+      results: matchedResults,
+      teacherCode: activeTeacher ? activeTeacher.code : ''
+    });
   };
 
   return (

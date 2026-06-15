@@ -8,7 +8,8 @@ import {
   ClipboardCheck,
   Calendar,
   Layers,
-  Percent
+  Percent,
+  Info
 } from 'lucide-react';
 import { StudentSession } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn } from '../utils';
@@ -145,6 +146,12 @@ export default function ResultCard({
 
       {/* Grid: Listing evaluations card details */}
       <div className="space-y-6">
+        {sortedResults.length === 0 && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-slate-500 font-medium">
+            <Info className="mx-auto text-slate-400 mb-2.5" size={32} />
+            선택한 {teacherName} 선생님님이 업로드하신 {studentName} ({studentId}) 학생의 수행평가 점수 정보가 아직 등록되지 않았습니다.
+          </div>
+        )}
         {sortedResults.map((item, index) => {
           const { headers, row, evaluationTitle, subject, round, evaluationDetailName, maxScore } = item;
           

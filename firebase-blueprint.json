@@ -119,6 +119,26 @@
         }
       },
       "required": ["teacherCode", "subject", "studentId", "studentName", "signatureDataUrl", "signedAt"]
+    },
+    "RegisteredStudent": {
+      "title": "RegisteredStudent",
+      "description": "Student roster uploaded by Admin containing credentials for logins",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string",
+          "description": "5-digit Student ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "Student Name"
+        },
+        "birthdate": {
+          "type": "string",
+          "description": "8-digit birthdate string"
+        }
+      },
+      "required": ["studentId", "name", "birthdate"]
     }
   },
   "firestore": {
@@ -141,6 +161,10 @@
     "/signatures/{signatureId}": {
       "schema": "StudentSignature",
       "description": "Student signatures for their scores in each subject"
+    },
+    "/students/{studentId}": {
+      "schema": "RegisteredStudent",
+      "description": "School-wide student registry for verification and authentication details"
     }
   }
 }
