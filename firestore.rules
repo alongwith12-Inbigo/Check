@@ -48,30 +48,12 @@ service cloud.firestore {
 
     // 5. Teacher Settings document access rule
     match /teacherSettings/{teacherCode} {
-      // Anyone can read teacher settings to check if signature is enabled
-      allow read: if true;
-
-      // Allow create and update for teachers
-      allow create, update: if request.resource.data.teacherCode is string && request.resource.data.teacherCode.size() <= 100
-        && request.resource.data.signatureEnabled is bool;
-
-      allow delete: if true;
+      allow read, write: if true;
     }
 
     // 6. Student Signatures document access rule
     match /signatures/{signatureId} {
-      // Anyone can read signatures for print / view purposes
-      allow read: if true;
-
-      // Allow create and update/save student signatures
-      allow create, update: if request.resource.data.teacherCode is string && request.resource.data.teacherCode.size() <= 100
-        && request.resource.data.subject is string && request.resource.data.subject.size() <= 200
-        && request.resource.data.studentId is string && request.resource.data.studentId.size() <= 50
-        && request.resource.data.studentName is string && request.resource.data.studentName.size() <= 100
-        && request.resource.data.signatureDataUrl is string && request.resource.data.signatureDataUrl.size() <= 500000
-        && request.resource.data.signedAt is string && request.resource.data.signedAt.size() <= 128;
-
-      allow delete: if true;
+      allow read, write: if true;
     }
   }
 }
