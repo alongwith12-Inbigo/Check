@@ -8,7 +8,8 @@ import {
   CheckCircle2, 
   AlertCircle, 
   LogOut, 
-  Info
+  Info,
+  Edit
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Teacher } from '../types';
@@ -33,7 +34,8 @@ export default function AdminManager({
   const [successMsg, setSuccessMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
   
-  // State for individual teacher registration
+  // State for individual teacher registration & edit
+  const [editingTeacherCode, setEditingTeacherCode] = useState<string | null>(null);
   const [newCode, setNewCode] = useState('');
   const [newName, setNewName] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -119,7 +121,14 @@ export default function AdminManager({
           successCount++;
         }
 
-        updatedTeachers.sort((a, b) => a.code.localeCompare(b.code));
+        updatedTeachers.sort((a, b) => {
+          const numA = parseInt(a.code, 10);
+          const numB = parseInt(b.code, 10);
+          if (!isNaN(numA) && !isNaN(numB)) {
+            return numA - numB;
+          }
+          return a.code.localeCompare(b.code);
+        });
         onUpdateTeachers(updatedTeachers);
 
         setSuccessMsg(
@@ -206,12 +215,46 @@ export default function AdminManager({
       setSuccessMsg(`"${cleanName}" 선생님(코드: ${formattedCode}) 등록이 완료되었습니다.`);
     }
 
-    updatedTeachers.sort((a, b) => a.code.localeCompare(b.code));
+    // Always sort by teacher code in ascending numeric-aware order
+    updatedTeachers.sort((a, b) => {
+      const numA = parseInt(a.code, 10);
+      const numB = parseInt(b.code, 10);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+      return a.code.localeCompare(b.code);
+    });
     onUpdateTeachers(updatedTeachers);
 
+    // Reset Form Fields
     setNewCode('');
     setNewName('');
     setNewPassword('');
+    setEditingTeacherCode(null);
+  };
+
+  const handleStartEdit = (teacher: Teacher) => {
+    setEditingTeacherCode(teacher.code);
+    setNewCode(teacher.code);
+    setNewName(teacher.name);
+    setNewPassword(teacher.password || '1004');
+    setErrorMsg('');
+    setSuccessMsg('');
+    
+    // Smooth scroll to indiv registration/edition form
+    const formPanel = document.getElementById('individual-teacher-form');
+    if (formPanel) {
+      formPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTeacherCode(null);
+    setNewCode('');
+    setNewName('');
+    setNewPassword('');
+    setErrorMsg('');
+    setSuccessMsg('');
   };
 
   const handleDelete = (code: string, name: string) => {
@@ -290,17 +333,37 @@ export default function AdminManager({
           </div>
 
           {/* Individual Teacher Registration Form */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div id="individual-teacher-form" className={`p-5 rounded-2xl border transition-all duration-300 space-y-4 shadow-sm ${
+            editingTeacherCode !== null 
+              ? 'bg-amber-50/50 border-amber-300 ring-2 ring-amber-200/50' 
+              : 'bg-white border-slate-200'
+          }`}>
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
-              <UserPlus size={16} className="text-indigo-600" />
-              교사 개별 등록/수정
+              {editingTeacherCode !== null ? (
+                <>
+                  <Edit size={16} className="text-amber-600 animate-pulse" />
+                  <span className="text-amber-900">교사 개별 정보 변경 중</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus size={16} className="text-indigo-600" />
+                  <span>교사 개별 등록/수정</span>
+                </>
+              )}
             </h3>
 
             <form onSubmit={handleAddTeacherIndividually} className="space-y-3">
               <div>
-                <label className="block text-[11px] font-bold text-slate-655 mb-1" htmlFor="t-code">
-                  교사코드 (3자리 숫자)
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[11px] font-bold text-slate-655" htmlFor="t-code">
+                    교사코드 (3자리 숫자)
+                  </label>
+                  {editingTeacherCode !== null && (
+                    <span className="text-[9px] text-amber-750 font-bold bg-amber-100 px-1.5 py-0.5 rounded">
+                      수정 모드: 변경 불가
+                    </span>
+                  )}
+                </div>
                 <input 
                   id="t-code"
                   type="text" 
@@ -308,7 +371,12 @@ export default function AdminManager({
                   placeholder="예: 001"
                   value={newCode}
                   onChange={(e) => setNewCode(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-505 font-mono"
+                  className={`w-full text-xs px-3 py-2 border rounded-xl focus:outline-none focus:ring-1 font-mono ${
+                    editingTeacherCode !== null
+                      ? 'bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed select-none'
+                      : 'border-slate-300 focus:ring-indigo-300 focus:border-indigo-505'
+                  }`}
+                  disabled={editingTeacherCode !== null}
                   required
                 />
               </div>
@@ -342,12 +410,36 @@ export default function AdminManager({
                 />
               </div>
 
-              <button 
-                type="submit"
-                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition duration-150 flex items-center justify-center gap-1.5 shadow-xs hover:shadow-sm cursor-pointer mt-1"
-              >
-                <UserPlus size={13} /> 교사 등록 / 변경 적용
-              </button>
+              <div className="pt-1 space-y-2">
+                <button 
+                  type="submit"
+                  className={`w-full py-2 text-white rounded-xl text-xs font-bold transition duration-150 flex items-center justify-center gap-1.5 shadow-xs hover:shadow-sm cursor-pointer ${
+                    editingTeacherCode !== null
+                      ? 'bg-amber-600 hover:bg-amber-700'
+                      : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}
+                >
+                  {editingTeacherCode !== null ? (
+                    <>
+                      <CheckCircle2 size={13} /> 변경 정보 저장 완료
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus size={13} /> 교사 등록 / 변경 적용
+                    </>
+                  )}
+                </button>
+
+                {editingTeacherCode !== null && (
+                  <button 
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    수정 취소 (새 교사 등록으로)
+                  </button>
+                )}
+              </div>
             </form>
           </div>
 
@@ -415,7 +507,7 @@ export default function AdminManager({
                     <th className="py-2.5 px-4 font-bold border-r border-slate-200 text-indigo-900">교사코드</th>
                     <th className="py-2.5 px-4 font-semibold border-r border-slate-200">담당 선생님 성함</th>
                     <th className="py-2.5 px-4 font-semibold border-r border-slate-200">비밀번호</th>
-                    <th className="py-2.5 px-4 font-semibold text-center w-20">관할 폐기</th>
+                    <th className="py-2.5 px-4 font-semibold text-center w-32">관리 작업</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -423,13 +515,15 @@ export default function AdminManager({
                     <tr>
                       <td colSpan={5} className="text-center py-10 text-slate-400 italic">
                         {teachers.length === 0 
-                          ? '현재 등록된 교사가 없습니다. 교사 목록 엑셀 파일(.xlsx)을 업로드해주십시오.'
-                          : '검색어와 일치하는 선생님을 찾을 수 없습니다.'}
+                           ? '현재 등록된 교사가 없습니다. 교사 목록 엑셀 파일(.xlsx)을 업로드해주십시오.'
+                           : '검색어와 일치하는 선생님을 찾을 수 없습니다.'}
                       </td>
                     </tr>
                   ) : (
                     filteredTeachers.map((tea, index) => (
-                      <tr key={tea.code} className="hover:bg-slate-50/70 transition-colors">
+                      <tr key={tea.code} className={`transition-colors ${
+                        editingTeacherCode === tea.code ? 'bg-amber-50 hover:bg-amber-100/80 font-medium' : 'hover:bg-slate-50/70'
+                      }`}>
                         <td className="py-3 px-3 text-center text-slate-400 font-mono border-r border-slate-200">{index + 1}</td>
                         <td className="py-3 px-4 border-r border-slate-200 font-black font-mono text-indigo-700 tracking-wider">
                           <span className="bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded text-[11px]">
@@ -439,13 +533,22 @@ export default function AdminManager({
                         <td className="py-3 px-4 border-r border-slate-200 font-semibold text-slate-800 text-[12px]">{tea.name} 선생님</td>
                         <td className="py-3 px-4 border-r border-slate-200 font-mono text-slate-600 font-bold text-[11.5px]">{tea.password || '1004'}</td>
                         <td className="py-3 px-4 text-center">
-                          <button 
-                             type="button"
-                             onClick={() => handleDelete(tea.code, tea.name)}
-                             className="p-1 px-2 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-200 rounded transition cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
-                          >
-                            <Trash2 size={11} /> 삭제
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button 
+                               type="button"
+                               onClick={() => handleStartEdit(tea)}
+                               className="p-1.5 px-2.5 border border-amber-200 text-amber-705 bg-amber-50/30 hover:bg-amber-50 hover:border-amber-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold shadow-2xs"
+                            >
+                              <Edit size={11} /> 수정
+                            </button>
+                            <button 
+                               type="button"
+                               onClick={() => handleDelete(tea.code, tea.name)}
+                               className="p-1.5 px-2.5 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-200 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
+                            >
+                              <Trash2 size={11} /> 삭제
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
