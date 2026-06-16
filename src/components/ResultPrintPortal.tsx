@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, FileSpreadsheet, Check } from 'lucide-react';
-import { EvaluationState, Teacher } from '../types';
-import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn } from '../utils';
+import { EvaluationState, Teacher, RegisteredStudent } from '../types';
+import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId } from '../utils';
 
 interface ResultPrintPortalProps {
   myEvaluations: EvaluationState[];
@@ -10,6 +10,7 @@ interface ResultPrintPortalProps {
   loggedTeacher: Teacher;
   subjectMaxScores: Record<string, string>;
   onClose: () => void;
+  allStudents?: RegisteredStudent[];
 }
 
 export default function ResultPrintPortal({
@@ -18,6 +19,7 @@ export default function ResultPrintPortal({
   loggedTeacher,
   subjectMaxScores,
   onClose,
+  allStudents = []
 }: ResultPrintPortalProps) {
   // Unique subjects list
   const uniqueSubjects = Array.from(new Set(myEvaluations.map(e => e.subject).filter(Boolean))) as string[];
@@ -128,10 +130,14 @@ export default function ResultPrintPortal({
       ev.rows.forEach(r => {
         const idVal = String(r[sIdKey] || '').trim();
         if (idVal && extractGradeClass(idVal).gradeClass === selectedClass) {
-          const nameVal = sNameKey ? String(r[sNameKey] || '').trim() : '';
+          const masterStudent = (allStudents || []).find(s => matchesStudentId(idVal, s.studentId));
+          const nameVal = masterStudent 
+            ? masterStudent.name 
+            : (sNameKey ? String(r[sNameKey] || '').trim() : '');
+
           studentMap.set(idVal, {
             studentId: idVal,
-            studentName: nameVal
+            studentName: nameVal || `학생 (${idVal})`
           });
         }
       });

@@ -13,7 +13,7 @@ import {
   FileText,
   Download
 } from 'lucide-react';
-import { StudentSession, EvaluationState, Teacher, StudentResultItem } from '../types';
+import { StudentSession, EvaluationState, Teacher, StudentResultItem, RegisteredStudent } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId } from '../utils';
 import SignatureCanvas from './SignatureCanvas';
 
@@ -27,6 +27,7 @@ interface ResultCardProps {
   onDeleteSignature?: (subject: string, studentId: string) => void | Promise<void>;
   allEvaluations: EvaluationState[];
   teachers: Teacher[];
+  allStudents?: RegisteredStudent[];
 }
 
 export default function ResultCard({ 
@@ -38,10 +39,35 @@ export default function ResultCard({
   onSaveSignature,
   onDeleteSignature,
   allEvaluations,
-  teachers
+  teachers,
+  allStudents = []
 }: ResultCardProps) {
-  const { studentName, studentId } = sessionData;
+  const { studentId } = sessionData;
   const [isSavingSig, setIsSavingSig] = useState(false);
+
+  // Robust student name resolution
+  const resolvedStudent = allStudents.find(s => matchesStudentId(studentId, s.studentId));
+  
+  let evaluationMatchedName = '';
+  for (const ev of allEvaluations) {
+    const idKey = findStudentIdKey(ev.headers);
+    if (!idKey) continue;
+    const row = ev.rows.find(r => matchesStudentId(studentId, r[idKey]));
+    if (row) {
+      const nKey = ev.headers.find(h => {
+        const norm = String(h).replace(/\s+/g, '').toLowerCase();
+        return norm.includes('이름') || norm.includes('성명') || norm.includes('학생명') || norm.includes('학생') || norm === 'name';
+      });
+      if (nKey && row[nKey]) {
+        evaluationMatchedName = String(row[nKey]).trim();
+        break;
+      }
+    }
+  }
+
+  const studentName = resolvedStudent 
+    ? resolvedStudent.name 
+    : (evaluationMatchedName || sessionData.studentName || `학생 (${studentId})`);
 
   const studentGradeClass = studentId.replace(/\D/g, '').slice(0, 3);
 

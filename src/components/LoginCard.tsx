@@ -47,6 +47,8 @@ export default function LoginCard({
       matchesStudentId(studentId, student.studentId) && matchesBirthdate(birthdate, student.birthdate)
     );
 
+    let detectedStudentName = '';
+
     // If master registry exists, strictly enforce verification against it
     if (allStudents.length > 0) {
       if (!matchedRegisteredStudent) {
@@ -60,7 +62,6 @@ export default function LoginCard({
       // If master registry is empty, fall back to checking raw rows in allEvaluations 
       // (Any spreadsheet match that has Student ID and Birthdate matching)
       let foundInEvaluations = false;
-      let detectedStudentName = '';
 
       for (const evalItem of allEvaluations) {
         const studentIdKey = findStudentIdKey(evalItem.headers);
@@ -89,7 +90,7 @@ export default function LoginCard({
 
     const finalName = matchedRegisteredStudent 
       ? matchedRegisteredStudent.name 
-      : `학생 (${studentId})`;
+      : (detectedStudentName || `학생 (${studentId})`);
     
     onLoginSuccess({
       studentId: studentId.trim(),

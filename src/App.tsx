@@ -570,6 +570,7 @@ export default function App() {
                   teacherSettings={teacherSettings}
                   signatures={signatures}
                   onToggleSignature={handleToggleSignature}
+                  allStudents={allStudents}
                 />
               </motion.div>
             ) : (
@@ -705,6 +706,7 @@ export default function App() {
                 onDeleteSignature={handleDeleteSignature}
                 allEvaluations={allEvaluations}
                 teachers={teachers}
+                allStudents={allStudents}
               />
             </motion.div>
           ) : (

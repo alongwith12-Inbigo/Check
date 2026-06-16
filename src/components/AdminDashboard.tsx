@@ -14,7 +14,7 @@ import {
   Sparkles,
   CalendarDays
 } from 'lucide-react';
-import { EvaluationState, Teacher } from '../types';
+import { EvaluationState, Teacher, RegisteredStudent } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey } from '../utils';
 import ResultPrintPortal from './ResultPrintPortal';
 
@@ -33,6 +33,7 @@ interface AdminDashboardProps {
   teacherSettings?: Record<string, boolean>;
   signatures?: Record<string, string>;
   onToggleSignature?: (enabled: boolean) => void | Promise<void>;
+  allStudents?: RegisteredStudent[];
 }
 
 interface SubjectMaxScoreInputProps {
@@ -117,7 +118,8 @@ export default function AdminDashboard({
   onUpdateSubjectMaxScore = () => {},
   teacherSettings = {},
   signatures = {},
-  onToggleSignature = () => {}
+  onToggleSignature = () => {},
+  allStudents = []
 }: AdminDashboardProps) {
   const [errorMsg, setErrorMsg] = useState('');
   const [isPrintOpen, setIsPrintOpen] = useState(false);
@@ -1055,6 +1057,7 @@ export default function AdminDashboard({
           loggedTeacher={loggedTeacher}
           subjectMaxScores={subjectMaxScores}
           onClose={() => setIsPrintOpen(false)}
+          allStudents={allStudents}
         />
       )}
 
