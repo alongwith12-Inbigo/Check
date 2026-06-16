@@ -9,7 +9,9 @@ import {
   Calendar,
   Layers,
   Percent,
-  Info
+  Info,
+  FileText,
+  Download
 } from 'lucide-react';
 import { StudentSession, EvaluationState, Teacher, StudentResultItem } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId } from '../utils';
@@ -45,6 +47,15 @@ export default function ResultCard({
 
   // Determine if teacher entered evaluation for this student's grade/class
   const getTeacherGradeClassMatch = (evalItem: EvaluationState, targetGradeClass: string) => {
+    if (evalItem.uploadType === 'pdf') {
+      const targetClasses = String(evalItem.targetGradeClass || '')
+        .split(',')
+        .map(c => c.trim().replace(/\D/g, ''))
+        .filter(Boolean);
+      const cleanTargetClass = targetGradeClass.replace(/\D/g, '');
+      return targetClasses.length === 0 || targetClasses.includes(cleanTargetClass);
+    }
+
     const studentIdKey = findStudentIdKey(evalItem.headers);
     if (!studentIdKey) return false;
     return evalItem.rows.some(row => {
@@ -84,6 +95,38 @@ export default function ResultCard({
   
   const results: StudentResultItem[] = [];
   activeTeacherEvaluations.forEach(evalItem => {
+    // If it's PDF Summary Type
+    if (evalItem.uploadType === 'pdf') {
+      const targetClasses = String(evalItem.targetGradeClass || '')
+        .split(',')
+        .map(c => c.trim().replace(/\D/g, ''))
+        .filter(Boolean);
+
+      const cleanStudentClass = studentGradeClass.replace(/\D/g, '');
+      const isClassMatched = targetClasses.length === 0 || targetClasses.includes(cleanStudentClass);
+
+      if (isClassMatched) {
+        results.push({
+          evaluationId: evalItem.id || '',
+          evaluationTitle: evalItem.title,
+          subject: evalItem.subject || '과목',
+          round: evalItem.round || '1',
+          evaluationDetailName: evalItem.evaluationDetailName || '전체 결과 통지',
+          maxScore: '',
+          reflectRate: '100',
+          headers: [],
+          row: {},
+          teacherCode: evalItem.teacherCode || '',
+          uploadType: 'pdf',
+          pdfBase64: evalItem.pdfBase64 || '',
+          pdfFileName: evalItem.pdfFileName || '',
+          targetGradeClass: evalItem.targetGradeClass || ''
+        });
+      }
+      return;
+    }
+
+    // Default Excel Type
     const studentIdKey = findStudentIdKey(evalItem.headers);
     if (!studentIdKey) return;
 
@@ -99,7 +142,8 @@ export default function ResultCard({
         reflectRate: evalItem.reflectRate || '100',
         headers: evalItem.headers,
         row: foundRow,
-        teacherCode: evalItem.teacherCode || ''
+        teacherCode: evalItem.teacherCode || '',
+        uploadType: 'excel'
       });
     }
   });
@@ -127,6 +171,8 @@ export default function ResultCard({
   let aggregateReflectedMax = 0;
 
   sortedResults.forEach(item => {
+    if (item.uploadType === 'pdf') return;
+
     const studentIdKey = findStudentIdKey(item.headers);
     const birthdateKey = findBirthdateKey(item.headers);
     const feedbackKeys = findFeedbackKey(item.headers);
@@ -193,10 +239,20 @@ export default function ResultCard({
               className="px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 w-full sm:w-auto min-w-[200px]"
             >
               {matchedTeachers.map((tea) => {
-                const teaEvalsCount = allEvaluations.filter(e => e.teacherCode === tea.code && e.rows.some(r => {
-                  const studentIdKey = findStudentIdKey(e.headers);
-                  return studentIdKey && matchesStudentId(studentId, r[studentIdKey]);
-                })).length;
+                const teaEvalsCount = allEvaluations.filter(e => e.teacherCode === tea.code && (
+                  e.uploadType === 'pdf' 
+                  ? (() => {
+                      const targetClasses = String(e.targetGradeClass || '')
+                        .split(',')
+                        .map(c => c.trim().replace(/\D/g, ''))
+                        .filter(Boolean);
+                      return targetClasses.length === 0 || targetClasses.includes(studentGradeClass.replace(/\D/g, ''));
+                    })()
+                  : e.rows.some(r => {
+                      const studentIdKey = findStudentIdKey(e.headers);
+                      return studentIdKey && matchesStudentId(studentId, r[studentIdKey]);
+                    })
+                )).length;
                 return (
                   <option key={tea.code} value={tea.code}>
                     [{tea.code}] {tea.name} 선생님 ({teaEvalsCount}개 영역)
@@ -248,6 +304,72 @@ export default function ResultCard({
           </div>
         )}
         {sortedResults.map((item, index) => {
+          if (item.uploadType === 'pdf') {
+            return (
+              <div 
+                key={item.evaluationId} 
+                className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden print:border print:border-slate-350 print:shadow-none break-inside-avoid-page"
+              >
+                {/* Header Title Section for PDF */}
+                <div className="bg-slate-50 border-b border-slate-150 p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:bg-slate-100">
+                  <div className="flex items-start gap-2.5">
+                    <div className="p-2 bg-amber-50 text-amber-900 rounded-xl mt-0.5 print:bg-slate-200">
+                      <FileText size={16} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-0.5 rounded-md uppercase print:bg-white">
+                        요약 성적 통지
+                      </span>
+                      <h2 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
+                        {item.subject} ({item.round}차) 종합 수행평가 성적안내표 (PDF)
+                      </h2>
+                    </div>
+                  </div>
+                  <span className="text-[11px] bg-amber-100/60 border border-amber-250 font-bold px-3 py-1 rounded-xl text-amber-800 self-start sm:self-center">
+                    전체 통합 안내형
+                  </span>
+                </div>
+
+                {/* PDF Info & Download Block */}
+                <div className="p-6 sm:p-7 space-y-4">
+                  <div className="bg-amber-50/40 border border-amber-150 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 animate-fadeIn">
+                    <div className="space-y-1 text-center sm:text-left">
+                      <span className="text-[10px] bg-amber-150 border border-amber-200 rounded font-black px-2 py-0.5 text-amber-900">
+                        종합 요약 결과지 동기화
+                      </span>
+                      <h4 className="text-xs font-black text-slate-800 mt-1.5 h-auto leading-relaxed">
+                        선생님께서 전체 요약 점수 및 영역 성적 내용이 담긴 PDF 파일을 업로드하셨습니다.
+                      </h4>
+                      <p className="text-[10.5px] text-slate-450 font-medium">
+                        파일명: {item.pdfFileName || '전체_수행평가_합산_결과.pdf'}
+                      </p>
+                    </div>
+
+                    <a
+                      href={item.pdfBase64}
+                      download={item.pdfFileName || `${item.subject}_${item.round}차_성적결과.pdf`}
+                      className="px-4 py-2.5 bg-slate-900 hover:bg-indigo-900 text-white rounded-xl text-xs font-extrabold transition-all duration-205 flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto text-center shadow-xs shrink-0 self-center"
+                    >
+                      <Download size={14} className="stroke-[2.5]" />
+                      전체 성적 PDF 다운로드
+                    </a>
+                  </div>
+
+                  {/* Browser embedded iframe viewer for seamless desktop previews! */}
+                  {item.pdfBase64 && (
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-100 h-[420px] hidden md:block relative">
+                      <iframe
+                        src={`${item.pdfBase64}#toolbar=0&navpanes=0`}
+                        className="w-full h-full"
+                        title="PDF 성적표 뷰어"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
           const { headers, row, evaluationTitle, subject, round, evaluationDetailName, maxScore } = item;
           
           const studentIdKey = findStudentIdKey(headers);

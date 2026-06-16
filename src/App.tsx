@@ -177,6 +177,10 @@ export default function App() {
           headers: data.headers || [],
           rows: data.rows || [],
           uploadedAt: data.uploadedAt || null,
+          uploadType: data.uploadType || 'excel',
+          pdfBase64: data.pdfBase64 || '',
+          pdfFileName: data.pdfFileName || '',
+          targetGradeClass: data.targetGradeClass || '',
         });
       });
       setAllEvaluations(list);

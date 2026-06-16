@@ -134,6 +134,12 @@ export default function AdminDashboard({
   const [maxScoreInput, setMaxScoreInput] = useState('');
   const [reflectRateInput, setReflectRateInput] = useState('100');
   
+  // PDF target fields
+  const [uploadType, setUploadType] = useState<'excel' | 'pdf'>('excel');
+  const [pdfBase64, setPdfBase64] = useState('');
+  const [pdfFileName, setPdfFileName] = useState('');
+  const [targetGradeClass, setTargetGradeClass] = useState('');
+
   const [searchTerm, setSearchTerm] = useState('');
   const [localScores, setLocalScores] = useState<Record<string, string>>({});
 
@@ -145,17 +151,25 @@ export default function AdminDashboard({
       setDetailNameInput(activeEval.evaluationDetailName || '');
       setMaxScoreInput(activeEval.maxScore || '');
       setReflectRateInput(activeEval.reflectRate || '100');
+      setUploadType(activeEval.uploadType || 'excel');
+      setPdfBase64(activeEval.pdfBase64 || '');
+      setPdfFileName(activeEval.pdfFileName || '');
+      setTargetGradeClass(activeEval.targetGradeClass || '');
     } else {
       setSubjectInput('');
       setRoundInput('');
       setDetailNameInput('');
       setMaxScoreInput('');
       setReflectRateInput('100');
+      setUploadType('excel');
+      setPdfBase64('');
+      setPdfFileName('');
+      setTargetGradeClass('');
     }
     setErrorMsg('');
   }, [activeEvaluationId, activeEval]);
 
-  const propagateSplitChanges = (subject: string, round: string, detail: string, maxS: string, reflectR: string) => {
+  const propagateSplitChanges = (subject: string, round: string, detail: string, maxS: string, reflectR: string, tgtGC: string = '') => {
     if (!activeEval || !activeEvaluationId) return;
 
     let combinedTitle = '';
@@ -164,17 +178,22 @@ export default function AdminDashboard({
     const cleanDet = detail.trim();
     const cleanMax = maxS.trim();
     const cleanRef = reflectR.trim();
+    const cleanTgtGC = tgtGC.trim();
 
-    if (cleanSub && cleanRnd && cleanDet) {
-      combinedTitle = `${cleanSub} (${cleanRnd}차) 수행평가: ${cleanDet}`;
-    } else if (cleanSub || cleanRnd || cleanDet) {
-      const parts = [];
-      if (cleanSub) parts.push(cleanSub);
-      if (cleanRnd) parts.push(`(${cleanRnd}차)`);
-      if (cleanDet) parts.push(cleanDet);
-      combinedTitle = parts.join(' ');
+    if (activeEval.uploadType === 'pdf') {
+      combinedTitle = `📂 [PDF 전체점수] ${cleanSub} (${cleanRnd}차) ${cleanDet}`;
     } else {
-      combinedTitle = '수행평가 결과';
+      if (cleanSub && cleanRnd && cleanDet) {
+        combinedTitle = `${cleanSub} (${cleanRnd}차) 수행평가: ${cleanDet}`;
+      } else if (cleanSub || cleanRnd || cleanDet) {
+        const parts = [];
+        if (cleanSub) parts.push(cleanSub);
+        if (cleanRnd) parts.push(`(${cleanRnd}차)`);
+        if (cleanDet) parts.push(cleanDet);
+        combinedTitle = parts.join(' ');
+      } else {
+        combinedTitle = '수행평가 결과';
+      }
     }
 
     onUpdateEvaluation(activeEvaluationId, {
@@ -184,8 +203,62 @@ export default function AdminDashboard({
       evaluationDetailName: cleanDet,
       maxScore: cleanMax,
       reflectRate: cleanRef,
-      title: combinedTitle
+      title: combinedTitle,
+      targetGradeClass: cleanTgtGC
     });
+  };
+
+  const processPdfFile = async (file: File) => {
+    setErrorMsg('');
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const base64Data = e.target?.result as string;
+        if (!base64Data) {
+          setErrorMsg('PDF 데이터를 성상적으로 디코딩하지 못했습니다.');
+          return;
+        }
+
+        const cleanTgtGC = targetGradeClass.trim();
+        if (!cleanTgtGC) {
+          setErrorMsg(
+            '⚠️ 대상 학년반 정보를 먼저 입력하십시오.\n' +
+            '예: 1학년 1반 전체를 대상으로 하려면 "101"을 입력해야 매칭 조회가 가능합니다.'
+          );
+          return;
+        }
+
+        // Initialize state for new PDF evaluation
+        const defaultSubject = subjectInput.trim() || '정보';
+        const defaultRound = roundInput.trim() || '1';
+        const defaultDetail = detailNameInput.trim() || '수행평가 결과안내';
+        const initialTitle = `📂 [PDF 전체점수] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
+
+        const newEvalMetadata: EvaluationState = {
+          title: initialTitle,
+          subject: defaultSubject,
+          round: defaultRound,
+          evaluationDetailName: defaultDetail,
+          maxScore: '100', // Summary score has nominal max 100
+          reflectRate: '100',
+          headers: [],
+          rows: [],
+          uploadedAt: new Date().toLocaleString('ko-KR'),
+          uploadType: 'pdf',
+          pdfBase64: base64Data,
+          pdfFileName: file.name,
+          targetGradeClass: cleanTgtGC
+        };
+
+        const newId = await onCreateEvaluation(newEvalMetadata);
+        onSelectEvaluationId(newId);
+        setErrorMsg('');
+      } catch (err) {
+        console.error(err);
+        setErrorMsg('PDF 파일 업로드 중 예기치 못한 에러가 발생했습니다.');
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const processExcelFile = async (file: File) => {
@@ -210,9 +283,9 @@ export default function AdminDashboard({
         const studentIdKey = findStudentIdKey(cleanHeaders);
         const birthdateKey = findBirthdateKey(cleanHeaders);
 
-        if (!studentIdKey || !birthdateKey) {
+        if (!studentIdKey) {
           setErrorMsg(
-            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번'과 '생년월일' 문항이 들어간 열이 반드시 필요합니다.\n\n` + 
+            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 문항이 포함된 열이 반드시 필요합니다.\n\n` + 
             `감지된 열 목록: [${cleanHeaders.join(', ')}]`
           );
           return;
@@ -235,7 +308,8 @@ export default function AdminDashboard({
           reflectRate: defaultReflect,
           headers: cleanHeaders,
           rows: rawRows,
-          uploadedAt: new Date().toLocaleString('ko-KR')
+          uploadedAt: new Date().toLocaleString('ko-KR'),
+          uploadType: 'excel'
         };
 
         const newId = await onCreateEvaluation(newEvalMetadata);
@@ -252,7 +326,11 @@ export default function AdminDashboard({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      processExcelFile(file);
+      if (uploadType === 'pdf') {
+        processPdfFile(file);
+      } else {
+        processExcelFile(file);
+      }
     }
   };
 
@@ -271,7 +349,12 @@ export default function AdminDashboard({
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processExcelFile(e.dataTransfer.files[0]);
+      const file = e.dataTransfer.files[0];
+      if (uploadType === 'pdf') {
+        processPdfFile(file);
+      } else {
+        processExcelFile(file);
+      }
     }
   };
 
@@ -470,11 +553,50 @@ export default function AdminDashboard({
           {activeEvaluationId === '' || !activeEval ? (
             /* Upload layout state for entering new sheet */
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-              <div className="border-b border-slate-100 pb-2">
-                <span className="bg-indigo-50 text-indigo-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">Step 1</span>
-                <h3 className="text-sm font-black text-slate-900 mt-2">새로운 엑셀 파일 업로드</h3>
+              
+              {/* Type Switcher tabs */}
+              <div className="border-b border-slate-100 pb-3">
+                <span className="bg-indigo-50 text-indigo-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">수행평가 입력 방식</span>
+                <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadType('excel');
+                      setErrorMsg('');
+                    }}
+                    className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                      uploadType === 'excel' 
+                        ? 'bg-white text-indigo-950 shadow-xs' 
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    📊 1. 영역별 업로드 (엑셀파일)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadType('pdf');
+                      setErrorMsg('');
+                    }}
+                    className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                      uploadType === 'pdf' 
+                        ? 'bg-white text-indigo-950 shadow-xs' 
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    📄 2. 전체 수행점수 업로드 (PDF파일)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-black text-slate-900">
+                  {uploadType === 'excel' ? '📊 영역별 수행평가 엑셀 파일 업로드' : '📄 전체 수행평가 결과 요약 PDF 파일 업로드'}
+                </h3>
                 <p className="text-[11px] text-slate-450 leading-normal mt-0.5">
-                  수행평가 점수가 입력된 엑셀 파일을 아래에 업로드하세요.
+                  {uploadType === 'excel' 
+                    ? '수행영역 1개에 대해 학생별 점수와 서술형 피드백을 한 번에 입력하는 템플릿입니다.'
+                    : '전체 수행평가에 대해 각 영역별 점수와 총점 결과가 조합된 PDF 파일을 안내용으로 전달합니다.'}
                 </p>
               </div>
 
@@ -500,44 +622,66 @@ export default function AdminDashboard({
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
                   />
                 </div>
-                <div className="sm:col-span-2">
+                <div className={uploadType === 'pdf' ? "sm:col-span-1" : "sm:col-span-2"}>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 상세 이름</label>
                   <input 
                     type="text"
                     value={detailNameInput}
                     onChange={(e) => setDetailNameInput(e.target.value)}
-                    placeholder="예: 빅데이터 분석 프로젝트"
+                    placeholder={uploadType === 'pdf' ? "예: 전체 결과안내" : "예: 빅데이터 분석 프로젝트"}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
                   />
                 </div>
+                {uploadType === 'pdf' && (
+                  <div className="sm:col-span-1">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">👥 대상 학년반 지정</label>
+                    <input 
+                      type="text"
+                      value={targetGradeClass}
+                      onChange={(e) => setTargetGradeClass(e.target.value)}
+                      placeholder="예: 101, 102"
+                      className="w-full px-3 py-2 border border-indigo-300 bg-indigo-50/20 text-indigo-950 font-bold rounded-xl text-xs focus:outline-none placeholder:text-slate-400 text-center"
+                    />
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 총 만점</label>
-                  <input 
-                    type="text"
-                    value={maxScoreInput}
-                    onChange={(e) => setMaxScoreInput(e.target.value.replace(/\D/g, ''))}
-                    placeholder="예: 20"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
-                  />
+              {uploadType === 'excel' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 총 만점</label>
+                    <input 
+                      type="text"
+                      value={maxScoreInput}
+                      onChange={(e) => setMaxScoreInput(e.target.value.replace(/\D/g, ''))}
+                      placeholder="예: 20"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">실제 반영 비율 (%)</label>
+                    <input 
+                      type="text"
+                      value={reflectRateInput}
+                      onChange={(e) => setReflectRateInput(e.target.value.replace(/\D/g, ''))}
+                      placeholder="예: 30"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none bg-indigo-50/55 text-indigo-950 font-bold"
+                    />
+                  </div>
+                  <div className="sm:col-span-2 bg-slate-50 border border-slate-150 p-2 text-[10px] text-slate-505 rounded-lg flex items-start gap-1 mt-1 leading-normal">
+                    <Info size={13} className="text-slate-600 shrink-0 mt-0.5" />
+                    <span>설정하고 아래 드래그 공간에 엑셀을 업로드하면 실제 반영 비율이 함께 기록 보존됩니다!</span>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">실제 반영 비율 (%)</label>
-                  <input 
-                    type="text"
-                    value={reflectRateInput}
-                    onChange={(e) => setReflectRateInput(e.target.value.replace(/\D/g, ''))}
-                    placeholder="예: 30"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none bg-indigo-50/55 text-indigo-950 font-bold"
-                  />
+              ) : (
+                <div className="bg-indigo-50/80 border border-indigo-200 p-3 rounded-xl flex items-start gap-2 text-[10px] text-slate-700 leading-normal">
+                  <Info size={14} className="text-indigo-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-extrabold text-indigo-950 block">💡 PDF 업로드 전 사전 정보 기입</span>
+                    <span>학생 학번대조를 위해 우측 상단 **"대상 학년반 지정"** 공간에 3자리 코드(예: 1학년 1반의 경우 101, 복수 반인 경우 101, 102 등 쉼표 구분)를 수동 등록 후 PDF 파일을 올려 주십시오.</span>
+                  </div>
                 </div>
-                <div className="sm:col-span-2 bg-slate-50 border border-slate-150 p-2 text-[10px] text-slate-505 rounded-lg flex items-start gap-1 mt-1 leading-normal">
-                  <Info size={13} className="text-slate-600 shrink-0 mt-0.5" />
-                  <span>설정하고 아래 드래그 공간에 엑셀을 업로드하면 실제 반영 비율이 함께 기록 보존됩니다!</span>
-                </div>
-              </div>
+              )}
 
               {/* Upload Drop area */}
               <div 
@@ -555,15 +699,17 @@ export default function AdminDashboard({
                 <input 
                   ref={fileInputRef}
                   type="file" 
-                  accept=".xlsx, .xls"
+                  accept={uploadType === 'pdf' ? '.pdf' : '.xlsx, .xls'}
                   onChange={handleFileChange}
                   className="hidden" 
                 />
                 <div className="p-2.5 bg-indigo-50 rounded-full mb-2.5 text-indigo-900">
                   <Upload size={20} className="stroke-[2.5]" />
                 </div>
-                <p className="text-xs font-black text-slate-700">여기에 엑셀 파일을 드래그하여 드롭하거나 마우스 클릭하세요</p>
-                <p className="text-[10px] text-slate-400 mt-1">.xlsx, .xls 파일 형식만 처리 가능합니다.</p>
+                <p className="text-xs font-black text-slate-700">여기에 {uploadType === 'pdf' ? 'PDF' : '엑셀'} 파일을 드래그하여 드롭하거나 마우스 클릭하세요</p>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {uploadType === 'pdf' ? '.pdf 파일 형식만 처리 가능합니다.' : '.xlsx, .xls 파일 형식만 처리 가능합니다.'}
+                </p>
               </div>
 
               {errorMsg && (
@@ -581,7 +727,7 @@ export default function AdminDashboard({
               <div className="md:col-span-1 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-4">
                 <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
                   <BookOpen size={14} className="text-slate-500" />
-                  수행평가 등록
+                  {activeEval.uploadType === 'pdf' ? '📄 PDF 평가 정보 편집' : '수행평가 등록 정보'}
                 </h3>
 
                 <div className="space-y-3">
@@ -596,7 +742,7 @@ export default function AdminDashboard({
                       onChange={(e) => {
                         const val = e.target.value;
                         setSubjectInput(val);
-                        propagateSplitChanges(val, roundInput, detailNameInput, maxScoreInput, reflectRateInput);
+                        propagateSplitChanges(val, roundInput, detailNameInput, maxScoreInput, reflectRateInput, targetGradeClass);
                       }}
                       placeholder="예: 정보 과학"
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-slate-800 bg-slate-50"
@@ -615,7 +761,7 @@ export default function AdminDashboard({
                         const raw = e.target.value;
                         const val = raw.replace(/차$/, '').trim();
                         setRoundInput(val);
-                        propagateSplitChanges(subjectInput, val, detailNameInput, maxScoreInput, reflectRateInput);
+                        propagateSplitChanges(subjectInput, val, detailNameInput, maxScoreInput, reflectRateInput, targetGradeClass);
                       }}
                       placeholder="예: 1"
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-center font-mono text-slate-800 bg-slate-50"
@@ -633,61 +779,96 @@ export default function AdminDashboard({
                       onChange={(e) => {
                         const val = e.target.value;
                         setDetailNameInput(val);
-                        propagateSplitChanges(subjectInput, roundInput, val, maxScoreInput, reflectRateInput);
+                        propagateSplitChanges(subjectInput, roundInput, val, maxScoreInput, reflectRateInput, targetGradeClass);
                       }}
                       placeholder="예: 알고리즘 설계"
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-slate-800 bg-slate-50"
                     />
                   </div>
 
-                  {/* Max Score entry requested */}
-                  <div>
-                    <label htmlFor="eval-maxscore-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
-                      4. 수행평가 만점
-                    </label>
-                    <input 
-                      id="eval-maxscore-txt"
-                      type="text"
-                      value={maxScoreInput}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '');
-                        setMaxScoreInput(val);
-                        propagateSplitChanges(subjectInput, roundInput, detailNameInput, val, reflectRateInput);
-                      }}
-                      placeholder="예: 20"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-center font-mono text-indigo-950 bg-indigo-50/40 border-indigo-250"
-                    />
-                  </div>
+                  {activeEval.uploadType === 'pdf' ? (
+                    <div>
+                      <label htmlFor="eval-target-gc" className="block text-[10px] font-extrabold text-slate-500 mb-1">
+                        4. 👥 대상 학년반 지정 (조회용)
+                      </label>
+                      <input 
+                        id="eval-target-gc"
+                        type="text"
+                        value={targetGradeClass}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setTargetGradeClass(val);
+                          propagateSplitChanges(subjectInput, roundInput, detailNameInput, maxScoreInput, reflectRateInput, val);
+                        }}
+                        placeholder="예: 101, 102"
+                        className="w-full px-3 py-2 border border-indigo-200 rounded-xl text-xs focus:outline-none font-bold text-center text-slate-800 bg-indigo-50/40"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label htmlFor="eval-maxscore-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
+                          4. 수행평가 만점
+                        </label>
+                        <input 
+                          id="eval-maxscore-txt"
+                          type="text"
+                          value={maxScoreInput}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            setMaxScoreInput(val);
+                            propagateSplitChanges(subjectInput, roundInput, detailNameInput, val, reflectRateInput, targetGradeClass);
+                          }}
+                          placeholder="예: 20"
+                          className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-center font-mono text-indigo-950 bg-indigo-50/40 border-indigo-250"
+                        />
+                      </div>
 
-                  {/* Reflection rate entry */}
-                  <div>
-                    <label htmlFor="eval-reflectrate-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
-                      5. 실제 반영 비율 (%)
-                    </label>
-                    <input 
-                      id="eval-reflectrate-txt"
-                      type="text"
-                      value={reflectRateInput}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '');
-                        setReflectRateInput(val);
-                        propagateSplitChanges(subjectInput, roundInput, detailNameInput, maxScoreInput, val);
-                      }}
-                      placeholder="예: 30"
-                      className="w-full px-3 py-2 border border-indigo-200 rounded-xl text-xs focus:outline-none font-bold text-center font-mono text-indigo-950 bg-indigo-50/55"
-                    />
-                  </div>
+                      <div>
+                        <label htmlFor="eval-reflectrate-txt" className="block text-[10px] font-extrabold text-slate-500 mb-1">
+                          5. 실제 반영 비율 (%)
+                        </label>
+                        <input 
+                          id="eval-reflectrate-txt"
+                          type="text"
+                          value={reflectRateInput}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            setReflectRateInput(val);
+                            propagateSplitChanges(subjectInput, roundInput, detailNameInput, maxScoreInput, val, targetGradeClass);
+                          }}
+                          placeholder="예: 30"
+                          className="w-full px-3 py-2 border border-indigo-200 rounded-xl text-xs focus:outline-none font-bold text-center font-mono text-indigo-950 bg-indigo-50/55"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="pt-3 border-t border-slate-100 text-[10px] text-slate-450 space-y-1">
-                  <div className="flex justify-between">
-                    <span>학생 인원수:</span>
-                    <strong className="text-slate-800 font-bold">{activeEval.rows.length}명</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>칼럼 정보:</span>
-                    <strong className="text-slate-800 font-bold">{activeEval.headers.length}개</strong>
-                  </div>
+                  {activeEval.uploadType === 'pdf' ? (
+                    <>
+                      <div className="flex justify-between">
+                        <span>파일 형식:</span>
+                        <strong className="text-amber-700 font-bold">📄 PDF 요약 결과지</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>허용 반 목록:</span>
+                        <strong className="text-indigo-950 font-extrabold">{activeEval.targetGradeClass || '없음'}</strong>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span>학생 인원수:</span>
+                        <strong className="text-slate-800 font-bold">{activeEval.rows.length}명</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>칼럼 정보:</span>
+                        <strong className="text-slate-800 font-bold">{activeEval.headers.length}개</strong>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between">
                     <span>최종 업로드:</span>
                     <span className="font-mono text-slate-800 text-[9px] truncate max-w-[125px]">{activeEval.uploadedAt || '없음'}</span>
@@ -707,25 +888,70 @@ export default function AdminDashboard({
                   </span>
                 </div>
 
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-650 leading-relaxed font-semibold">
-                  <p className="text-slate-800 font-bold flex items-center gap-1 text-xs mb-1">
-                    <Info size={14} className="text-indigo-600" />
-                    안내: 다중 데이터 운영원칙
-                  </p>
-                  <span>
-                    엑셀을 업로드할 때 지정하신 교과 메타정보는 즉시 클라우드 Firestore에 별도의 고유 성적표 셋으로 기록 보존됩니다. 학생은 본인의 학과 선생님 아래로 개설된 모든 수행평가 결과 목록들을 1:1 드롭다운으로 실시간 조회할 권한을 가집니다.
-                  </span>
-                </div>
+                {activeEval.uploadType === 'pdf' ? (
+                  <div className="space-y-4">
+                    <div className="bg-amber-50/60 p-3.5 rounded-xl border border-amber-200 text-[11px] text-slate-700 leading-relaxed font-semibold">
+                      <p className="text-amber-955 font-bold flex items-center gap-1 text-xs mb-1">
+                        <CheckCircle2 size={14} className="text-amber-700" />
+                        안내: 전체 성적 PDF 문서 보존
+                      </p>
+                      <span>
+                        이 평가는 요약성적 PDF 업로드 방식으로 제공됩니다. 지정한 학년반 코드와 일치하는 학생들은 로그인 시 엑셀 점수 대신 이 PDF 파일을 모바일 및 PC 브라우저에서 편리하게 즉시 조회하거나 내려받을 수 있습니다.
+                      </span>
+                    </div>
 
-                <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-250 rounded-xl flex items-start gap-1.5 text-[11px] leading-relaxed">
-                  <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-700" />
-                  <div className="text-emerald-950 font-semibold">
-                    <span className="font-bold block text-emerald-900">클라우드 파싱 완료</span>
-                    성공적으로 학생 식별자{' '}
-                    (<span className="font-bold underline text-indigo-950">학번: {studentIdKey || '없음'}</span>,{' '}
-                    <span className="font-bold underline text-indigo-950">생년월일: {birthdateKey || '없음'}</span>)가 활성화되어 있습니다.
+                    <div className="border border-slate-200/80 rounded-xl p-4 bg-slate-50 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-3 bg-red-100 text-red-700 rounded-xl">
+                          <BookOpen size={24} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black text-slate-800 truncate max-w-[200px] sm:max-w-xs" title={activeEval.pdfFileName}>
+                            {activeEval.pdfFileName || '성적_결과통지표.pdf'}
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-mono">대상 학년반: {activeEval.targetGradeClass || '미지정'}</p>
+                        </div>
+                      </div>
+                      <a
+                        href={activeEval.pdfBase64}
+                        download={activeEval.pdfFileName || 'result.pdf'}
+                        className="px-3.5 py-1.5 bg-indigo-900 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                      >
+                        📥 파일 다운로드
+                      </a>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-650 leading-relaxed font-semibold">
+                      <p className="text-slate-800 font-bold flex items-center gap-1 text-xs mb-1">
+                        <Info size={14} className="text-indigo-600" />
+                        안내: 다중 데이터 운영원칙
+                      </p>
+                      <span>
+                        엑셀을 업로드할 때 지정하신 교과 메타정보는 즉시 클라우드 Firestore에 별도의 고유 성적표 셋으로 기록 보존됩니다. 학생은 본인의 학과 선생님 아래로 개설된 모든 수행평가 결과 목록들을 1:1 드롭다운으로 실시간 조회할 권한을 가집니다.
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-250 rounded-xl flex items-start gap-1.5 text-[11px] leading-relaxed">
+                      <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-700" />
+                      <div className="text-emerald-950 font-semibold">
+                        <span className="font-bold block text-emerald-900">클라우드 파싱 완료</span>
+                        성공적으로 학생 식별자{' '}
+                        (<span className="font-bold underline text-indigo-950">학번: {studentIdKey || '없음'}</span>
+                        {birthdateKey ? (
+                          <>
+                            , <span className="font-bold underline text-indigo-950">생년월일: {birthdateKey}</span>
+                          </>
+                        ) : (
+                          <>
+                            , <span className="bg-indigo-100 text-indigo-950 px-1.5 py-0.5 rounded font-bold ml-1 text-[10px]">생년월일 불필요 (관리자 교적명부 연동 완료)</span>
+                          </>
+                        )})가 활성화되어 설정되었습니다.
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
