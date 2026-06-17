@@ -60,5 +60,10 @@ service cloud.firestore {
     match /students/{studentId} {
       allow read, write: if true;
     }
+
+    // 8. Excel Uploads metadata
+    match /excelUploads/{uploadId} {
+      allow read, write: if true;
+    }
   }
 }

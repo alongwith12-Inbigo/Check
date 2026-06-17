@@ -136,9 +136,37 @@
         "birthdate": {
           "type": "string",
           "description": "8-digit birthdate string"
+        },
+        "password": {
+          "type": "string",
+          "description": "Student-configured custom password"
         }
       },
       "required": ["studentId", "name", "birthdate"]
+    },
+    "ExcelUpload": {
+      "title": "ExcelUpload",
+      "description": "Metadata for uploaded excel file rosters",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique ID / Type (e.g. students or teachers)"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "The name of the uploaded Excel file"
+        },
+        "uploadedAt": {
+          "type": "string",
+          "description": "ISO timestamp of when it was uploaded"
+        },
+        "recordCount": {
+          "type": "number",
+          "description": "Amount of records imported"
+        }
+      },
+      "required": ["id", "fileName", "uploadedAt", "recordCount"]
     }
   },
   "firestore": {
@@ -165,6 +193,10 @@
     "/students/{studentId}": {
       "schema": "RegisteredStudent",
       "description": "School-wide student registry for verification and authentication details"
+    },
+    "/excelUploads/{uploadId}": {
+      "schema": "ExcelUpload",
+      "description": "Metadata recording the active/latest excel roster file uploaded by admin"
     }
   }
 }

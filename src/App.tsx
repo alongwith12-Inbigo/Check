@@ -10,8 +10,8 @@ import LoginCard from './components/LoginCard';
 import ResultCard from './components/ResultCard';
 import AdminDashboard from './components/AdminDashboard';
 import AdminManager from './components/AdminManager';
-import { EvaluationState, Teacher, StudentSession, RegisteredStudent } from './types';
-import { doc, onSnapshot, setDoc, collection, deleteDoc } from 'firebase/firestore';
+import { EvaluationState, Teacher, StudentSession, RegisteredStudent, ExcelUpload } from './types';
+import { doc, onSnapshot, setDoc, collection, deleteDoc, deleteField, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { 
   Smile, 
@@ -32,6 +32,9 @@ export default function App() {
 
   // Registered students roster managed by administration
   const [allStudents, setAllStudents] = useState<RegisteredStudent[]>([]);
+
+  // Metadata of uploaded Excel roster files
+  const [excelUploads, setExcelUploads] = useState<ExcelUpload[]>([]);
 
   // Subject-level final max score configurations
   const [subjectMaxScores, setSubjectMaxScores] = useState<Record<string, string>>({});
@@ -147,12 +150,35 @@ export default function App() {
           studentId: d.id,
           name: data.name || '',
           birthdate: data.birthdate || '',
+          password: data.password || '',
         });
       });
       list.sort((a, b) => a.studentId.localeCompare(b.studentId));
       setAllStudents(list);
     }, (error) => {
       console.warn("Firestore students subscription failed: ", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // 1.6. Subscribe to Excel Uploads metadata in real-time
+  useEffect(() => {
+    const collRef = collection(db, 'excelUploads');
+    const unsubscribe = onSnapshot(collRef, (snap) => {
+      const list: ExcelUpload[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        list.push({
+          id: d.id,
+          fileName: data.fileName || '',
+          uploadedAt: data.uploadedAt || '',
+          recordCount: data.recordCount || 0
+        });
+      });
+      setExcelUploads(list);
+    }, (error) => {
+      console.warn("Firestore excelUploads subscription failed: ", error);
     });
 
     return () => unsubscribe();
@@ -367,16 +393,29 @@ export default function App() {
 
   // Bulk update teachers roster (Admin view)
   const handleUpdateTeachers = async (newTeachers: Teacher[]) => {
+    const changed = newTeachers.filter(nt => {
+      const old = teachers.find(ot => ot.code === nt.code);
+      if (!old) return true;
+      const oldPassword = old.password || '';
+      const ntPassword = nt.password || '';
+      return old.name !== nt.name || oldPassword !== ntPassword;
+    });
+
     setTeachers(newTeachers);
+
+    if (changed.length === 0) return;
+
     try {
-      for (const t of newTeachers) {
+      const batch = writeBatch(db);
+      for (const t of changed) {
         const docRef = doc(db, 'teachers', t.code);
-        await setDoc(docRef, {
+        batch.set(docRef, {
           code: t.code,
           name: t.name,
           password: t.password || ''
-        });
+        }, { merge: true });
       }
+      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'teachers');
     }
@@ -411,16 +450,35 @@ export default function App() {
 
   // Bulk update student roster (Admin view)
   const handleUpdateStudents = async (newStudents: RegisteredStudent[]) => {
+    const changed = newStudents.filter(ns => {
+      const old = allStudents.find(os => os.studentId === ns.studentId);
+      if (!old) return true;
+      const oldPassword = old.password || '';
+      const nsPassword = ns.password || '';
+      return old.name !== ns.name || old.birthdate !== ns.birthdate || oldPassword !== nsPassword;
+    });
+
     setAllStudents(newStudents);
+
+    if (changed.length === 0) return;
+
     try {
-      for (const s of newStudents) {
+      const batch = writeBatch(db);
+      for (const s of changed) {
         const docRef = doc(db, 'students', s.studentId);
-        await setDoc(docRef, {
+        const payload: any = {
           studentId: s.studentId,
           name: s.name,
           birthdate: s.birthdate
-        });
+        };
+        if (s.password) {
+          payload.password = s.password;
+        } else {
+          payload.password = deleteField();
+        }
+        batch.set(docRef, payload, { merge: true });
       }
+      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'students');
     }
@@ -504,6 +562,20 @@ export default function App() {
     setIsAdminLoggedIn(false);
   };
 
+  const handleSaveExcelUpload = async (id: string, fileName: string, recordCount: number) => {
+    try {
+      const docRef = doc(db, 'excelUploads', id);
+      await setDoc(docRef, {
+        id,
+        fileName,
+        uploadedAt: new Date().toISOString(),
+        recordCount
+      });
+    } catch (error) {
+      console.error("Failed to save excel upload metadata:", error);
+    }
+  };
+
   const handleTeacherLogout = () => {
     setLoggedTeacher(null);
   };
@@ -544,6 +616,8 @@ export default function App() {
                   allStudents={allStudents}
                   onUpdateStudents={handleUpdateStudents}
                   onDeleteStudent={handleDeleteStudent}
+                  excelUploads={excelUploads}
+                  onSaveExcelUpload={handleSaveExcelUpload}
                 />
               </motion.div>
             ) : loggedTeacher ? (

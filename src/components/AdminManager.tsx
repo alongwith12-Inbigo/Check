@@ -12,10 +12,11 @@ import {
   Edit,
   UserPlus,
   ArrowRight,
-  GraduationCap
+  GraduationCap,
+  RotateCcw
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Teacher, RegisteredStudent } from '../types';
+import { Teacher, RegisteredStudent, ExcelUpload } from '../types';
 import { 
   findTeacherCodeKey, 
   findTeacherNameKey, 
@@ -32,6 +33,8 @@ interface AdminManagerProps {
   allStudents: RegisteredStudent[];
   onUpdateStudents: (newStudents: RegisteredStudent[]) => void;
   onDeleteStudent: (studentId: string, name: string) => void;
+  excelUploads: ExcelUpload[];
+  onSaveExcelUpload: (id: string, fileName: string, recordCount: number) => Promise<void>;
 }
 
 export default function AdminManager({ 
@@ -41,7 +44,9 @@ export default function AdminManager({
   onLogout,
   allStudents,
   onUpdateStudents,
-  onDeleteStudent
+  onDeleteStudent,
+  excelUploads,
+  onSaveExcelUpload
 }: AdminManagerProps) {
   // Navigation state
   const [activeTab, setActiveTab] = useState<'teachers' | 'students'>('teachers');
@@ -152,6 +157,7 @@ export default function AdminManager({
         });
 
         onUpdateTeachers(updatedTeachers);
+        onSaveExcelUpload('teachers', file.name, addedCount);
         setSuccessMsg(
           `교사 엑셀 등록 성공: 총 ${addedCount}명의 선생님 계정이 분석, 반영되었습니다.` +
           (skippedCount > 0 ? ` (교사코드 3자리 누락 등 부적합 형태 ${skippedCount}줄 무시 처리)` : '')
@@ -236,13 +242,16 @@ export default function AdminManager({
 
           const finalName = rawName || `학생 (${formattedId})`;
 
+          const idx = updatedStudents.findIndex(s => s.studentId === formattedId);
+          const existingS = idx >= 0 ? updatedStudents[idx] : null;
+
           const item: RegisteredStudent = {
             studentId: formattedId,
             name: finalName,
-            birthdate: formattedBirth
+            birthdate: formattedBirth,
+            ...(existingS && existingS.password ? { password: existingS.password } : {})
           };
 
-          const idx = updatedStudents.findIndex(s => s.studentId === formattedId);
           if (idx >= 0) {
             updatedStudents[idx] = item;
           } else {
@@ -253,6 +262,7 @@ export default function AdminManager({
 
         updatedStudents.sort((a, b) => a.studentId.localeCompare(b.studentId));
         onUpdateStudents(updatedStudents);
+        onSaveExcelUpload('students', file.name, successCount);
 
         setSuccessMsg(
           `학생 엑셀 조회 등록 완료: 총 ${successCount}명의 교적 정보가 연동되었습니다.` +
@@ -391,11 +401,13 @@ export default function AdminManager({
 
     const updatedStudents = [...allStudents];
     const idx = updatedStudents.findIndex(s => s.studentId === cleanId);
+    const existingS = idx >= 0 ? updatedStudents[idx] : null;
 
     const studentData: RegisteredStudent = {
       studentId: cleanId,
       name: cleanName,
-      birthdate: cleanBirth
+      birthdate: cleanBirth,
+      ...(existingS && existingS.password ? { password: existingS.password } : {})
     };
 
     if (idx >= 0) {
@@ -474,6 +486,26 @@ export default function AdminManager({
     if (window.confirm(`학번 ${studentId} "${name}" 학생의 계정 정보를 데이터베이스에서 정말로 제거하시겠습니까?`)) {
       onDeleteStudent(studentId, name);
       setSuccessMsg(`학번 ${studentId} "${name}" 학생의 교적 정보 삭제가 실시간 클라우드 DB에 동기화되었습니다.`);
+    }
+  };
+
+  const handleResetStudentPassword = (stud: RegisteredStudent) => {
+    if (window.confirm(`학번 ${stud.studentId} "${stud.name}" 학생의 비밀번호를 생년월일로 로그인하도록 초기화하시겠습니까?\n(설정되어 있는 개별 비밀번호가 삭제되고 초기 상태로 소거됩니다)`)) {
+      const updatedStudents = allStudents.map(s => {
+        if (s.studentId === stud.studentId) {
+          // Completely clear the custom password property
+          const { password, ...rest } = s;
+          return rest;
+        }
+        return s;
+      });
+      const successText = `학번 ${stud.studentId} "${stud.name}" 학생의 비밀번호가 원래 생년월일(${stud.birthdate}) 로그인 방식으로 성공적으로 초기화되었습니다!`;
+      setSuccessMsg(successText);
+      onUpdateStudents(updatedStudents);
+      
+      // Bulletproof localized popup & smooth scrolling to header banner
+      window.alert(successText);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -593,6 +625,68 @@ export default function AdminManager({
                 )}
               </p>
             </div>
+
+            {/* Active File Info display */}
+            {(() => {
+              const activeUpload = excelUploads.find(u => u.id === activeTab);
+              const itemsCount = activeTab === 'teachers' ? teachers.length : allStudents.length;
+
+              if (activeUpload) {
+                return (
+                  <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl space-y-1">
+                    <span className="text-[10px] text-indigo-900 font-extrabold flex items-center gap-1">
+                      📊 최근 연동된 교적 엑셀 파일
+                    </span>
+                    <p className="text-xs font-bold text-slate-800 break-all">{activeUpload.fileName}</p>
+                    <div className="flex justify-between items-center text-[10px] text-slate-500 font-semibold pt-1">
+                      <span>가져온 데이터: {activeUpload.recordCount}건</span>
+                      <span>연동 일시: {new Date(activeUpload.uploadedAt).toLocaleString('ko-KR', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                      })}</span>
+                    </div>
+                  </div>
+                );
+              } else if (itemsCount > 0) {
+                return (
+                  <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl space-y-1">
+                    <span className="text-[10px] text-emerald-800 font-extrabold flex items-center gap-1">
+                      📊 기존 연동 데이터 감지됨
+                    </span>
+                    <p className="text-xs font-bold text-slate-800 font-sans">
+                      {activeTab === 'teachers' 
+                        ? `총 ${teachers.length}명의 교사 계정이 활성화 중` 
+                        : `총 ${allStudents.length}명의 학생 교적이 활성화 중`
+                      }
+                    </p>
+                    <p className="text-[10px] text-slate-500 font-semibold pt-0.5 leading-normal">
+                      ※ 새로 엑셀(.xlsx) 파일을 업로드하시면 해당 파일명과 연동 이력이 기록됩니다.
+                    </p>
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="p-3.5 bg-pink-50/50 border border-pink-100 rounded-xl space-y-1">
+                    <span className="text-[10px] text-pink-700 font-extrabold flex items-center gap-1">
+                      ⚠️ 등록된 명부 데이터 없음
+                    </span>
+                    <p className="text-[11px] font-bold text-pink-900">
+                      {activeTab === 'teachers'
+                        ? '등록된 선생님 정보가 존재하지 않습니다.'
+                        : '등록된 학생 학적 정보가 존재하지 않습니다.'
+                      }
+                    </p>
+                    <p className="text-[10px] text-pink-600 leading-normal font-medium">
+                      준비한 엑셀 파일을 위 영역에 얹거나 클릭하여 업로드해 주세요!
+                    </p>
+                  </div>
+                );
+              }
+            })()}
           </div>
 
           {/* Individual Form */}
@@ -928,13 +1022,14 @@ export default function AdminManager({
                       <th className="py-2.5 px-4 font-bold border-r border-slate-200 text-indigo-900">학번 (ID)</th>
                       <th className="py-2.5 px-4 font-semibold border-r border-slate-200">학생 성명</th>
                       <th className="py-2.5 px-4 font-semibold border-r border-slate-200">생년월일</th>
-                      <th className="py-2.5 px-4 font-semibold text-center w-32">관리 작업</th>
+                      <th className="py-2.5 px-4 font-semibold border-r border-slate-200">개별 설정 비밀번호</th>
+                      <th className="py-2.5 px-4 font-semibold text-center w-36">관리 작업</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-150">
                     {filteredStudents.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="text-center py-12 text-slate-400 italic">
+                        <td colSpan={6} className="text-center py-12 text-slate-400 italic">
                           {allStudents.length === 0 
                              ? '현재 등록된 전교생 학번 명부가 없습니다. 학적부 엑셀 파일(.xlsx)을 업로드하여 일괄 연동해 주십시오.'
                              : '검색 조건에 맞는 학생 정보를 찾을 수 없습니다.'}
@@ -953,6 +1048,15 @@ export default function AdminManager({
                           </td>
                           <td className="py-2.5 px-4 border-r border-slate-200 font-bold text-indigo-950 text-[11.5px]">{stud.name}</td>
                           <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-600 font-extrabold text-[11.5px]">{stud.birthdate}</td>
+                          <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-[11.5px]">
+                            {stud.password ? (
+                              <span className="text-indigo-800 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded font-black">
+                                {stud.password}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-medium italic">미설정 (생년월일로 로그인)</span>
+                            )}
+                          </td>
                           <td className="py-2.5 px-4 text-center">
                             <div className="inline-flex items-center gap-1.5">
                               <button 
@@ -961,6 +1065,14 @@ export default function AdminManager({
                                  className="p-1 px-2 border border-amber-200 text-amber-800 bg-amber-50/50 hover:bg-amber-100 hover:border-amber-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
                               >
                                 <Edit size={10} /> 수정
+                              </button>
+                              <button 
+                                 type="button"
+                                 onClick={() => handleResetStudentPassword(stud)}
+                                 className="p-1 px-2 border border-sky-100 text-sky-850 hover:bg-sky-50 bg-sky-50/20 hover:border-sky-350 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
+                                 title="이 학생의 비밀번호를 원래 생년월일(8자리)로 강제 초기화합니다."
+                              >
+                                <RotateCcw size={10} /> 비번초기화
                               </button>
                               <button 
                                  type="button"

@@ -43,20 +43,42 @@ export default function LoginCard({
     }
 
     // Find matching registered student from the Admin's master student registry
-    const matchedRegisteredStudent = allStudents.find(student => 
-      matchesStudentId(studentId, student.studentId) && matchesBirthdate(birthdate, student.birthdate)
+    const studentInRoster = allStudents.find(student => 
+      matchesStudentId(studentId, student.studentId)
     );
 
+    let matchedRegisteredStudent: RegisteredStudent | undefined = undefined;
     let detectedStudentName = '';
 
     // If master registry exists, strictly enforce verification against it
     if (allStudents.length > 0) {
-      if (!matchedRegisteredStudent) {
+      if (!studentInRoster) {
         setErrorMsg(
-          '입력하신 학번과 생년월일이 일치하는 학생 정보를 찾을 수 없습니다.\n' +
+          '입력하신 학번의 학생 정보를 찾을 수 없습니다.\n' +
           '학교 관리자가 등록한 교적 정보와 다르면 담임선생님 혹은 학교 관리자에게 연락 바랍니다.'
         );
         return;
+      }
+
+      // Check password if set; otherwise check birthdate
+      const hasCustomPassword = studentInRoster.password && studentInRoster.password.trim() !== '';
+      if (hasCustomPassword) {
+        if (studentInRoster.password === birthdate.trim()) {
+          matchedRegisteredStudent = studentInRoster;
+        } else {
+          setErrorMsg('비밀번호가 일치하지 않습니다. 비밀번호를 분실한 경우 학교 관리자에게 재설정을 요청하세요.');
+          return;
+        }
+      } else {
+        if (matchesBirthdate(birthdate, studentInRoster.birthdate)) {
+          matchedRegisteredStudent = studentInRoster;
+        } else {
+          setErrorMsg(
+            '입력하신 학번과 생년월일이 일치하는 학생 정보를 찾을 수 없습니다.\n' +
+            '학교 관리자가 등록한 교적 정보와 다르면 담임선생님 혹은 학교 관리자에게 연락 바랍니다.'
+          );
+          return;
+        }
       }
     } else {
       // If master registry is empty, fall back to checking raw rows in allEvaluations 
@@ -94,7 +116,7 @@ export default function LoginCard({
     
     onLoginSuccess({
       studentId: studentId.trim(),
-      birthdate: birthdate.trim(),
+      birthdate: matchedRegisteredStudent ? matchedRegisteredStudent.birthdate : birthdate.trim(),
       studentName: finalName,
       teacherName: '',
       results: [],
@@ -144,15 +166,15 @@ export default function LoginCard({
               />
             </div>
 
-            {/* Birthdate Inputs (8 digits requested) */}
+            {/* Birthdate / Password Inputs */}
             <div>
               <label className="block text-xs font-bold text-slate-705 mb-1.5 tracking-tight" htmlFor="birth-date">
-                생년월일(8자리) 입력
+                생년월일(8자리) 또는 설정한 비밀번호 입력
               </label>
               <input 
                 id="birth-date"
                 type="password" 
-                placeholder="예: 20081231"
+                placeholder="예: 20081231 또는 설정한 비밀번호"
                 value={birthdate}
                 onChange={(e) => setBirthdate(e.target.value)}
                 className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800 tracking-widest"

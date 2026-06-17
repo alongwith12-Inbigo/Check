@@ -11,11 +11,15 @@ import {
   Percent,
   Info,
   FileText,
-  Download
+  Download,
+  Key,
+  Lock
 } from 'lucide-react';
 import { StudentSession, EvaluationState, Teacher, StudentResultItem, RegisteredStudent } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId } from '../utils';
 import SignatureCanvas from './SignatureCanvas';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface ResultCardProps {
   sessionData: StudentSession;
@@ -45,6 +49,14 @@ export default function ResultCard({
   const { studentId } = sessionData;
   const [isSavingSig, setIsSavingSig] = useState(false);
 
+  // States for password changing
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false);
+
   // Robust student name resolution
   const resolvedStudent = allStudents.find(s => matchesStudentId(studentId, s.studentId));
   
@@ -68,6 +80,47 @@ export default function ResultCard({
   const studentName = resolvedStudent 
     ? resolvedStudent.name 
     : (evaluationMatchedName || sessionData.studentName || `학생 (${studentId})`);
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    const cleanPassword = newPassword.trim();
+    if (!cleanPassword) {
+      setPasswordError('새 비밀번호를 입력해 주세요.');
+      return;
+    }
+
+    if (cleanPassword !== confirmPassword.trim()) {
+      setPasswordError('새 비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+      return;
+    }
+
+    setIsPasswordSubmitting(true);
+    try {
+      const docRef = doc(db, 'students', studentId);
+      await setDoc(docRef, {
+        studentId: studentId,
+        name: studentName,
+        birthdate: sessionData.birthdate,
+        password: cleanPassword
+      }, { merge: true });
+
+      setPasswordSuccess('비밀번호가 성공적으로 변경되었습니다. 다음 로그인부터는 설정한 비밀번호를 사용해 주세요.');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        setIsChangePasswordOpen(false);
+        setPasswordSuccess('');
+      }, 2500);
+    } catch (err) {
+      setPasswordError('비밀번호 변경 중 에러가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      console.error(err);
+    } finally {
+      setIsPasswordSubmitting(false);
+    }
+  };
 
   const studentGradeClass = studentId.replace(/\D/g, '').slice(0, 3);
 
@@ -247,12 +300,21 @@ export default function ResultCard({
       
       {/* Top action bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center print:hidden gap-3 px-2 bg-white/70 backdrop-blur-md p-4 rounded-2xl border border-slate-200">
-        <button 
-          onClick={onBack}
-          className="group flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-950 transition cursor-pointer shrink-0"
-        >
-          <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition" /> 뒤로 가기
-        </button>
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={onBack}
+            className="group flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-950 transition cursor-pointer shrink-0"
+          >
+            <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition" /> 뒤로 가기
+          </button>
+
+          <button 
+            onClick={() => setIsChangePasswordOpen(true)}
+            className="flex items-center gap-1.5 text-xs font-bold text-indigo-755 hover:text-indigo-900 transition-all cursor-pointer shrink-0 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-full hover:bg-indigo-100"
+          >
+            <Key size={14} /> 비밀번호 변경
+          </button>
+        </div>
 
         {matchedTeachers.length > 0 ? (
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -720,6 +782,105 @@ export default function ResultCard({
       <div className="bg-white rounded-2xl border border-slate-200 p-5 text-center text-[11px] text-slate-400 flex flex-col sm:flex-row justify-between items-center gap-3 print:hidden">
         <span>※ 본 조회 서비스의 성적 데이터 소유권과 관리 권한은 담당 교과 선생님께 있습니다.</span>        
       </div>
+
+      {isChangePasswordOpen && (
+        <div id="password-change-modal" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn print:hidden">
+          <div className="bg-white border border-slate-200 shadow-xl rounded-2xl max-w-sm w-full overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-indigo-900 text-white px-5 py-4 flex items-center justify-between">
+              <span className="text-sm font-extrabold flex items-center gap-1.5">
+                <Key size={16} className="text-amber-400" /> 비밀번호 변경
+              </span>
+              <button 
+                type="button"
+                onClick={() => {
+                  setIsChangePasswordOpen(false);
+                  setPasswordError('');
+                  setPasswordSuccess('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+                className="text-white/70 hover:text-white cursor-pointer text-xs font-bold"
+              >
+                닫기
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <form onSubmit={handlePasswordChange} className="p-5 space-y-4">
+              <div className="bg-slate-50 border border-slate-150 p-3 rounded-xl space-y-1">
+                <span className="text-[10px] text-indigo-900 font-extrabold block">로그인 중인 학생</span>
+                <p className="text-xs font-bold text-slate-800">
+                  {studentName} ({studentId})
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-black text-slate-700 mb-1" htmlFor="new-password">
+                  새 비밀번호 입력
+                </label>
+                <input 
+                  id="new-password"
+                  type="password"
+                  placeholder="새로운 비밀번호"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-black text-slate-700 mb-1" htmlFor="confirm-password">
+                  새 비밀번호 확인
+                </label>
+                <input 
+                  id="confirm-password"
+                  type="password"
+                  placeholder="새 비밀번호 다시 입력"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800"
+                />
+              </div>
+
+              {passwordError && (
+                <p className="text-xs font-semibold text-red-600 bg-red-50 p-2.5 rounded-xl border border-red-150 whitespace-pre-line leading-relaxed">
+                  ⚠️ {passwordError}
+                </p>
+              )}
+
+              {passwordSuccess && (
+                <p className="text-xs font-semibold text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-150 leading-relaxed">
+                  ✅ {passwordSuccess}
+                </p>
+              )}
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setIsChangePasswordOpen(false);
+                    setPasswordError('');
+                    setPasswordSuccess('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                  }}
+                  className="px-4 py-2 border border-slate-200 text-slate-650 hover:bg-slate-50 rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  취소
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isPasswordSubmitting}
+                  className="px-4 py-2 bg-indigo-900 border border-indigo-900 text-white hover:bg-indigo-950 rounded-xl text-xs font-bold shadow-xs hover:shadow-sm transition cursor-pointer disabled:opacity-50"
+                >
+                  {isPasswordSubmitting ? '변경 중...' : '변경하기'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

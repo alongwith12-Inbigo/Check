@@ -39,6 +39,7 @@ export interface RegisteredStudent {
   studentId: string;
   name: string;
   birthdate: string;
+  password?: string;
 }
 
 export interface StudentResultItem {
@@ -65,4 +66,11 @@ export interface StudentSession {
   teacherName: string;
   results: StudentResultItem[];
   teacherCode?: string;
+}
+
+export interface ExcelUpload {
+  id: string;
+  fileName: string;
+  uploadedAt: string;
+  recordCount: number;
 }
