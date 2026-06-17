@@ -290,9 +290,7 @@ export default function ResultPrintPortal({
                       const customSettingKey = `${loggedTeacher.code.trim()}_${selectedSubject.trim()}`;
                       const customMaxStr = subjectMaxScores[customSettingKey] || '';
                       
-                      const displayedReflectedObtained = customMaxStr 
-                        ? Number(((reflectedObtainedSum / (totalReflectedMax || 1)) * (parseFloat(customMaxStr) || 100)).toFixed(2)).toString()
-                        : Number(reflectedObtainedSum.toFixed(2)).toString();
+                      const displayedReflectedObtained = Number(reflectedObtainedSum.toFixed(2)).toString();
 
                       const courseMaxScore = customMaxStr ? parseFloat(customMaxStr) : totalReflectedMax;
 

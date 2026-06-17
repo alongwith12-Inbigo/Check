@@ -128,6 +128,7 @@ export default function App() {
           code: d.id,
           name: data.name || '',
           password: data.password || '',
+          isPasswordChanged: data.isPasswordChanged || false,
         });
       });
       list.sort((a, b) => a.code.localeCompare(b.code));
@@ -151,6 +152,7 @@ export default function App() {
           name: data.name || '',
           birthdate: data.birthdate || '',
           password: data.password || '',
+          isPasswordChanged: data.isPasswordChanged || false,
         });
       });
       list.sort((a, b) => a.studentId.localeCompare(b.studentId));
@@ -398,7 +400,9 @@ export default function App() {
       if (!old) return true;
       const oldPassword = old.password || '';
       const ntPassword = nt.password || '';
-      return old.name !== nt.name || oldPassword !== ntPassword;
+      const oldChanged = !!old.isPasswordChanged;
+      const ntChanged = !!nt.isPasswordChanged;
+      return old.name !== nt.name || oldPassword !== ntPassword || oldChanged !== ntChanged;
     });
 
     setTeachers(newTeachers);
@@ -409,11 +413,17 @@ export default function App() {
       const batch = writeBatch(db);
       for (const t of changed) {
         const docRef = doc(db, 'teachers', t.code);
-        batch.set(docRef, {
+        const payload: any = {
           code: t.code,
           name: t.name,
-          password: t.password || ''
-        }, { merge: true });
+          isPasswordChanged: !!t.isPasswordChanged
+        };
+        if (t.password) {
+          payload.password = t.password;
+        } else {
+          payload.password = deleteField();
+        }
+        batch.set(docRef, payload, { merge: true });
       }
       await batch.commit();
     } catch (error) {
@@ -455,7 +465,9 @@ export default function App() {
       if (!old) return true;
       const oldPassword = old.password || '';
       const nsPassword = ns.password || '';
-      return old.name !== ns.name || old.birthdate !== ns.birthdate || oldPassword !== nsPassword;
+      const oldChanged = !!old.isPasswordChanged;
+      const nsChanged = !!ns.isPasswordChanged;
+      return old.name !== ns.name || old.birthdate !== ns.birthdate || oldPassword !== nsPassword || oldChanged !== nsChanged;
     });
 
     setAllStudents(newStudents);
@@ -475,6 +487,11 @@ export default function App() {
           payload.password = s.password;
         } else {
           payload.password = deleteField();
+        }
+        if (s.isPasswordChanged) {
+          payload.isPasswordChanged = true;
+        } else {
+          payload.isPasswordChanged = deleteField();
         }
         batch.set(docRef, payload, { merge: true });
       }

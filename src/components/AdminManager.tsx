@@ -74,6 +74,14 @@ export default function AdminManager({
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Dialog Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    title: string;
+    message: string;
+    actionText?: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   // Bulk Teachers XLSX processing
   const processTeachersExcel = (file: File) => {
     setErrorMsg('');
@@ -343,11 +351,32 @@ export default function AdminManager({
 
     const updatedTeachers = [...teachers];
     const idx = updatedTeachers.findIndex(t => t.code === formattedCode);
+    const existingT = idx >= 0 ? updatedTeachers[idx] : null;
+
+    let resolvedPassword = cleanPassword;
+    let newIsPasswordChanged = existingT?.isPasswordChanged || false;
+
+    if (editingTeacherCode !== null) {
+      if (existingT?.isPasswordChanged) {
+        if (cleanPassword === '') {
+          resolvedPassword = existingT.password || '';
+        } else {
+          resolvedPassword = cleanPassword;
+          newIsPasswordChanged = false;
+        }
+      } else {
+        resolvedPassword = cleanPassword || existingT?.password || '1004';
+      }
+    } else {
+      resolvedPassword = cleanPassword || '1004';
+      newIsPasswordChanged = false;
+    }
 
     const teaData: Teacher = {
       code: formattedCode,
       name: cleanName,
-      password: cleanPassword || '1004'
+      password: resolvedPassword,
+      isPasswordChanged: newIsPasswordChanged
     };
 
     if (idx >= 0) {
@@ -433,7 +462,7 @@ export default function AdminManager({
     setEditingTeacherCode(teacher.code);
     setNewCode(teacher.code);
     setNewName(teacher.name);
-    setNewPassword(teacher.password || '1004');
+    setNewPassword(teacher.isPasswordChanged ? '' : (teacher.password || '1004'));
     setErrorMsg('');
     setSuccessMsg('');
     
@@ -476,37 +505,75 @@ export default function AdminManager({
   };
 
   const handleDelete = (code: string, name: string) => {
-    if (window.confirm(`"${name}" 선생님(코드: ${code}) 계정을 목록에서 정말 삭제하시겠습니까?\n삭제할 경우 해당 교사로 업로드된 평가 성적도 동시 자동 소멸 삭제처리 됩니다.`)) {
-      onDeleteTeacher(code, name);
-      setSuccessMsg(`"${name}" 선생님 계정 및 등록한 수행평가가 파이어베이스에서 완전 삭제되었습니다.`);
-    }
+    setConfirmModal({
+      title: '교사 계정 삭제 확인 ⚠️',
+      message: `"${name}" 선생님(코드: ${code}) 계정을 목록에서 정말 삭제하시겠습니까?\n삭제할 경우 해당 교사로 업로드된 평가 성적도 동시 자동 소멸 삭제처리 됩니다.`,
+      actionText: '계정 및 성적 삭제하기',
+      onConfirm: () => {
+        onDeleteTeacher(code, name);
+        setSuccessMsg(`"${name}" 선생님 계정 및 등록한 수행평가가 파이어베이스에서 완전 삭제되었습니다.`);
+        setConfirmModal(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
   };
 
   const handleDeleteStudentRow = (studentId: string, name: string) => {
-    if (window.confirm(`학번 ${studentId} "${name}" 학생의 계정 정보를 데이터베이스에서 정말로 제거하시겠습니까?`)) {
-      onDeleteStudent(studentId, name);
-      setSuccessMsg(`학번 ${studentId} "${name}" 학생의 교적 정보 삭제가 실시간 클라우드 DB에 동기화되었습니다.`);
-    }
+    setConfirmModal({
+      title: '학생 정보 삭제 확인 ⚠️',
+      message: `학번 ${studentId} "${name}" 학생의 계정 정보를 데이터베이스에서 정말로 제거하시겠습니까?`,
+      actionText: '교적 정보 삭제하기',
+      onConfirm: () => {
+        onDeleteStudent(studentId, name);
+        setSuccessMsg(`학번 ${studentId} "${name}" 학생의 교적 정보 삭제가 실시간 클라우드 DB에 동기화되었습니다.`);
+        setConfirmModal(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
   };
 
   const handleResetStudentPassword = (stud: RegisteredStudent) => {
-    if (window.confirm(`학번 ${stud.studentId} "${stud.name}" 학생의 비밀번호를 생년월일로 로그인하도록 초기화하시겠습니까?\n(설정되어 있는 개별 비밀번호가 삭제되고 초기 상태로 소거됩니다)`)) {
-      const updatedStudents = allStudents.map(s => {
-        if (s.studentId === stud.studentId) {
-          // Completely clear the custom password property
-          const { password, ...rest } = s;
-          return rest;
-        }
-        return s;
-      });
-      const successText = `학번 ${stud.studentId} "${stud.name}" 학생의 비밀번호가 원래 생년월일(${stud.birthdate}) 로그인 방식으로 성공적으로 초기화되었습니다!`;
-      setSuccessMsg(successText);
-      onUpdateStudents(updatedStudents);
-      
-      // Bulletproof localized popup & smooth scrolling to header banner
-      window.alert(successText);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+    setConfirmModal({
+      title: '학생 비밀번호 초기화 🔑',
+      message: `학번 ${stud.studentId} "${stud.name}" 학생의 개별 설정을 제거하고 원래 생년월일(${stud.birthdate}) 입력 방식으로 로그인하도록 원복하시겠습니까?`,
+      actionText: '생년월일 로그인으로 초기화',
+      onConfirm: () => {
+        const updatedStudents = allStudents.map(s => {
+          if (s.studentId === stud.studentId) {
+            const { password, isPasswordChanged, ...rest } = s;
+            return rest;
+          }
+          return s;
+        });
+        const successText = `학번 ${stud.studentId} "${stud.name}" 학생의 비밀번호가 원래 생년월일(${stud.birthdate}) 로그인 방식으로 성공적으로 초기화되었습니다!`;
+        setSuccessMsg(successText);
+        onUpdateStudents(updatedStudents);
+        setConfirmModal(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+  };
+
+  const handleResetTeacherPassword = (tea: Teacher) => {
+    setConfirmModal({
+      title: '교사 비밀번호 초기화 🔑',
+      message: `"${tea.name}" 선생님(교사코드: ${tea.code})의 비밀번호를 기본 로그인 암호인 "1004" 방식으로 초기화하시겠습니까?\n(설정되어 있는 개별 비밀번호가 삭제되고 일반 초기 상태로 되돌아갑니다)`,
+      actionText: '기본 암호(1004)로 초기화',
+      onConfirm: () => {
+        const updatedTeachers = teachers.map(t => {
+          if (t.code === tea.code) {
+            const { password, isPasswordChanged, ...rest } = t;
+            return rest;
+          }
+          return t;
+        });
+        const successText = `"${tea.name}" 선생님의 비밀번호가 기본 암호 "1004" 로그인 방식으로 성공적으로 초기화되었습니다!`;
+        setSuccessMsg(successText);
+        onUpdateTeachers(updatedTeachers);
+        setConfirmModal(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
   };
 
   // Search filter computes
@@ -535,7 +602,7 @@ export default function AdminManager({
         </div>
         <button 
           onClick={onLogout}
-          className="flex items-center gap-1.5 px-4 py-2 border border-slate-350 rounded-xl text-xs font-bold text-red-650 bg-white hover:bg-red-50 hover:border-red-200 hover:shadow-xs transition cursor-pointer"
+          className="flex items-center gap-1.5 px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-red-600 bg-white hover:bg-red-50 hover:border-red-200 hover:shadow-xs transition cursor-pointer"
         >
           <LogOut size={13} /> 관리자 로그아웃
         </button>
@@ -732,7 +799,7 @@ export default function AdminManager({
                     className={`w-full text-xs px-3 py-2 border rounded-xl focus:outline-none focus:ring-1 font-mono ${
                       editingTeacherCode !== null
                         ? 'bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed select-none'
-                        : 'border-slate-300 focus:ring-indigo-350 focus:border-indigo-500'
+                        : 'border-slate-300 focus:ring-indigo-300 focus:border-indigo-500'
                     }`}
                     disabled={editingTeacherCode !== null}
                     required
@@ -761,10 +828,16 @@ export default function AdminManager({
                   <input 
                     id="t-password"
                     type="text" 
-                    placeholder="미입력시 기본 비밀번호 1004"
+                    placeholder={
+                      editingTeacherCode !== null
+                        ? teachers.find(t => t.code === editingTeacherCode)?.isPasswordChanged
+                          ? "🔒 교사 개별 로그인용 비밀번호 유지 중 (입력시 새 비번 변경)"
+                          : "미설정시 기존 초기 설정 비밀번호 유지"
+                        : "미입력시 기본 비밀번호 1004"
+                    }
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500 font-mono"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500 font-mono text-slate-800"
                   />
                 </div>
 
@@ -838,7 +911,7 @@ export default function AdminManager({
                     className={`w-full text-xs px-3 py-2 border rounded-xl focus:outline-none focus:ring-1 font-mono ${
                       editingStudentId !== null
                         ? 'bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed select-none'
-                        : 'border-slate-300 focus:ring-indigo-350 focus:border-indigo-500'
+                        : 'border-slate-300 focus:ring-indigo-300 focus:border-indigo-500'
                     }`}
                     disabled={editingStudentId !== null}
                     required
@@ -949,7 +1022,7 @@ export default function AdminManager({
                   placeholder={activeTab === 'teachers' ? "교사명 또는 코드(3자리) 검색" : "학번, 이름, 생년월일 검색..."}
                   value={activeTab === 'teachers' ? searchTerm : studentSearchTerm}
                   onChange={(e) => activeTab === 'teachers' ? setSearchTerm(e.target.value) : setStudentSearchTerm(e.target.value)}
-                  className="w-full text-xs pl-8 pr-4 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-350 focus:border-indigo-400"
+                  className="w-full text-xs pl-8 pr-4 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-400"
                 />
               </div>
             </div>
@@ -963,8 +1036,8 @@ export default function AdminManager({
                       <th className="py-2.5 px-3 font-semibold text-center w-14 border-r border-slate-200">순서</th>
                       <th className="py-2.5 px-4 font-bold border-r border-slate-200 text-indigo-900">교사코드</th>
                       <th className="py-2.5 px-4 font-semibold border-r border-slate-200">담당 선생님 성함</th>
-                      <th className="py-2.5 px-4 font-semibold border-r border-slate-200">비밀번호</th>
-                      <th className="py-2.5 px-4 font-semibold text-center w-32">관리 작업</th>
+                      <th className="py-2.5 px-4 font-semibold border-r border-slate-200 font-sans">비밀번호 상태</th>
+                      <th className="py-2.5 px-4 font-semibold text-center whitespace-nowrap min-w-[245px]">관리 작업</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-150">
@@ -988,22 +1061,49 @@ export default function AdminManager({
                             </span>
                           </td>
                           <td className="py-2.5 px-4 border-r border-slate-200 font-bold text-slate-800 text-[12px]">{tea.name} 선생님</td>
-                          <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-600 font-extrabold text-[11.5px]">{tea.password || '1004'}</td>
-                          <td className="py-2.5 px-4 text-center">
-                            <div className="inline-flex items-center gap-1.5">
+                          <td className="py-2.5 px-4 border-r border-slate-200">
+                            <div className="flex items-center">
+                              {tea.isPasswordChanged ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 shadow-2xs font-sans">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                                  🔒 개별 변경함 (●●●●)
+                                </span>
+                              ) : tea.password && tea.password !== '1004' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-50 text-sky-700 border border-sky-200 shadow-2xs font-sans">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-sky-450 bg-sky-400"></span>
+                                  🔑 초기 비밀번호 (●●●●)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-normal bg-slate-50 text-slate-400 border border-slate-200 shadow-2xs font-sans">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-350 bg-slate-300"></span>
+                                  기본 비밀번호 (1004)
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-4 text-center whitespace-nowrap">
+                            <div className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
                               <button 
                                  type="button"
                                  onClick={() => handleStartEdit(tea)}
-                                 className="p-1 px-2 border border-amber-200 text-amber-800 bg-amber-50/50 hover:bg-amber-100 hover:border-amber-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
+                                 className="p-1.5 px-2.5 border border-amber-200 text-amber-800 bg-amber-50/50 hover:bg-amber-100 hover:border-amber-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-1 text-[10px] font-extrabold whitespace-nowrap shadow-2xs hover:scale-[1.02] active:scale-[0.98]"
                               >
-                                <Edit size={10} /> 수정
+                                <Edit size={11} /> 수정
+                              </button>
+                              <button 
+                                 type="button"
+                                 onClick={() => handleResetTeacherPassword(tea)}
+                                 className="p-1.5 px-2.5 border border-sky-200 text-sky-700 bg-sky-50 shadow-2xs hover:bg-sky-100 hover:border-sky-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-1 text-[10px] font-extrabold whitespace-nowrap hover:scale-[1.02] active:scale-[0.98]"
+                                 title="이 선생님의 비밀번호를 기본 '1004'로 강제 초기화합니다."
+                              >
+                                <RotateCcw size={11} /> 비번초기화
                               </button>
                               <button 
                                  type="button"
                                  onClick={() => handleDelete(tea.code, tea.name)}
-                                 className="p-1 px-2 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-205 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
+                                 className="p-1.5 px-2.5 border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 hover:border-red-250 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-1 text-[10px] font-extrabold whitespace-nowrap shadow-2xs hover:scale-[1.02] active:scale-[0.98]"
                               >
-                                <Trash2 size={10} /> 삭제
+                                <Trash2 size={11} /> 삭제
                               </button>
                             </div>
                           </td>
@@ -1023,7 +1123,7 @@ export default function AdminManager({
                       <th className="py-2.5 px-4 font-semibold border-r border-slate-200">학생 성명</th>
                       <th className="py-2.5 px-4 font-semibold border-r border-slate-200">생년월일</th>
                       <th className="py-2.5 px-4 font-semibold border-r border-slate-200">개별 설정 비밀번호</th>
-                      <th className="py-2.5 px-4 font-semibold text-center w-36">관리 작업</th>
+                      <th className="py-2.5 px-4 font-semibold text-center whitespace-nowrap min-w-[245px]">관리 작업</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-150">
@@ -1047,39 +1147,50 @@ export default function AdminManager({
                             </span>
                           </td>
                           <td className="py-2.5 px-4 border-r border-slate-200 font-bold text-indigo-950 text-[11.5px]">{stud.name}</td>
-                          <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-600 font-extrabold text-[11.5px]">{stud.birthdate}</td>
-                          <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-[11.5px]">
-                            {stud.password ? (
-                              <span className="text-indigo-800 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded font-black">
-                                {stud.password}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 font-medium italic">미설정 (생년월일로 로그인)</span>
-                            )}
+                          <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-600 font-bold text-[11.5px]">{stud.birthdate}</td>
+                          <td className="py-2.5 px-4 border-r border-slate-200">
+                            <div className="flex items-center">
+                              {stud.isPasswordChanged ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 shadow-2xs font-sans">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                                  🔒 개별 설정됨 (●●●●)
+                                </span>
+                              ) : stud.password ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-50 text-sky-700 border border-sky-200 shadow-2xs font-sans">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
+                                  🔑 초기 비밀번호 (●●●●)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-normal bg-slate-50 text-slate-400 border border-slate-200 shadow-2xs font-sans">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                                  미설정 (생년월일 로그인)
+                                </span>
+                              )}
+                            </div>
                           </td>
-                          <td className="py-2.5 px-4 text-center">
-                            <div className="inline-flex items-center gap-1.5">
+                          <td className="py-2.5 px-4 text-center whitespace-nowrap">
+                            <div className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
                               <button 
                                  type="button"
                                  onClick={() => handleStartEditStudent(stud)}
-                                 className="p-1 px-2 border border-amber-200 text-amber-800 bg-amber-50/50 hover:bg-amber-100 hover:border-amber-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
+                                 className="p-1.5 px-2.5 border border-amber-200 text-amber-800 bg-amber-50/50 hover:bg-amber-100 hover:border-amber-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-1 text-[10px] font-extrabold whitespace-nowrap shadow-2xs hover:scale-[1.02] active:scale-[0.98]"
                               >
-                                <Edit size={10} /> 수정
+                                <Edit size={11} /> 수정
                               </button>
                               <button 
                                  type="button"
                                  onClick={() => handleResetStudentPassword(stud)}
-                                 className="p-1 px-2 border border-sky-100 text-sky-850 hover:bg-sky-50 bg-sky-50/20 hover:border-sky-350 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
+                                 className="p-1.5 px-2.5 border border-sky-200 text-sky-700 bg-sky-50 shadow-2xs hover:bg-sky-100 hover:border-sky-300 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-1 text-[10px] font-extrabold whitespace-nowrap hover:scale-[1.02] active:scale-[0.98]"
                                  title="이 학생의 비밀번호를 원래 생년월일(8자리)로 강제 초기화합니다."
                               >
-                                <RotateCcw size={10} /> 비번초기화
+                                <RotateCcw size={11} /> 비번초기화
                               </button>
                               <button 
                                  type="button"
                                  onClick={() => handleDeleteStudentRow(stud.studentId, stud.name)}
-                                 className="p-1 px-2 border border-red-100 text-red-650 hover:bg-red-50 hover:border-red-205 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-0.5 text-[10px] font-bold"
+                                 className="p-1.5 px-2.5 border border-red-200 text-red-650 hover:bg-red-50 hover:border-red-250 rounded-lg transition duration-150 cursor-pointer inline-flex items-center gap-1 text-[10px] font-extrabold whitespace-nowrap shadow-2xs hover:scale-[1.02] active:scale-[0.98]"
                               >
-                                <Trash2 size={10} /> 삭제
+                                <Trash2 size={11} /> 삭제
                               </button>
                             </div>
                           </td>
@@ -1096,6 +1207,41 @@ export default function AdminManager({
         </div>
 
       </div>
+
+      {/* Beautiful React Custom Confirmation Modal (Iframe-safe & Responsive) */}
+      {confirmModal && (
+        <div id="admin-confirm-popup" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn select-none">
+          <div className="bg-white border border-slate-200 shadow-2xl rounded-2xl max-w-sm w-full overflow-hidden animate-scaleIn">
+            <div className="bg-indigo-900 text-white px-5 py-4 flex items-center gap-2">
+              <AlertCircle size={18} className="text-amber-400 shrink-0" />
+              <span className="text-xs font-black tracking-tight">{confirmModal.title}</span>
+            </div>
+            
+            <div className="p-5">
+              <p className="text-xs text-slate-600 font-bold leading-relaxed whitespace-pre-wrap">
+                {confirmModal.message}
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-150 flex items-center justify-end gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setConfirmModal(null)}
+                className="px-3.5 py-2 bg-white border border-slate-250 hover:bg-slate-50 text-slate-700 font-extrabold rounded-xl transition duration-150 cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={confirmModal.onConfirm}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 border border-rose-500 text-white font-extrabold rounded-xl transition duration-150 cursor-pointer shadow-xs hover:scale-[1.02]"
+              >
+                {confirmModal.actionText || '확인'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

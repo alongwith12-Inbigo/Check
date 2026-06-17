@@ -28,6 +28,7 @@ export interface Teacher {
   code: string;
   name: string;
   password?: string;
+  isPasswordChanged?: boolean;
 }
 
 export interface StudentCredentials {
@@ -40,6 +41,7 @@ export interface RegisteredStudent {
   name: string;
   birthdate: string;
   password?: string;
+  isPasswordChanged?: boolean;
 }
 
 export interface StudentResultItem {

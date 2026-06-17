@@ -12,11 +12,14 @@ import {
   Plus,
   Layers,
   Sparkles,
-  CalendarDays
+  CalendarDays,
+  Key
 } from 'lucide-react';
 import { EvaluationState, Teacher, RegisteredStudent } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey } from '../utils';
 import ResultPrintPortal from './ResultPrintPortal';
+import { db } from '../firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
 interface AdminDashboardProps {
   myEvaluations: EvaluationState[];
@@ -123,13 +126,41 @@ export default function AdminDashboard({
 }: AdminDashboardProps) {
   const [errorMsg, setErrorMsg] = useState('');
   const [isPrintOpen, setIsPrintOpen] = useState(false);
+
+  // 엑셀 독립 등록 상태
+  const [excelSubject, setExcelSubject] = useState('');
+  const [excelRound, setExcelRound] = useState('');
+  const [excelDetailName, setExcelDetailName] = useState('');
+  const [excelMaxScore, setExcelMaxScore] = useState('');
+  const [excelReflectRate, setExcelReflectRate] = useState('100');
+  const [excelDragActive, setExcelDragActive] = useState(false);
+  const [excelErrorMsg, setExcelErrorMsg] = useState('');
+  const excelFileInputRef = useRef<HTMLInputElement>(null);
+
+  // PDF 독립 등록 상태
+  const [pdfSubject, setPdfSubject] = useState('');
+  const [pdfRound, setPdfRound] = useState('');
+  const [pdfDetailName, setPdfDetailName] = useState('');
+  const [pdfTargetGradeClass, setPdfTargetGradeClass] = useState('');
+  const [pdfDragActive, setPdfDragActive] = useState(false);
+  const [pdfErrorMsg, setPdfErrorMsg] = useState('');
+  const pdfFileInputRef = useRef<HTMLInputElement>(null);
+
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // States for Teacher's custom password change modal
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false);
 
   // Active evaluation being edited
   const activeEval = myEvaluations.find(e => e.id === activeEvaluationId);
 
-  // Text inputs
+  // Text inputs (for editing activeEval)
   const [subjectInput, setSubjectInput] = useState('');
   const [roundInput, setRoundInput] = useState('');
   const [detailNameInput, setDetailNameInput] = useState('');
@@ -171,6 +202,47 @@ export default function AdminDashboard({
     setErrorMsg('');
   }, [activeEvaluationId, activeEval]);
 
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    const cleanPassword = newPassword.trim();
+    if (!cleanPassword) {
+      setPasswordError('새 비밀번호를 입력해 주세요.');
+      return;
+    }
+
+    if (cleanPassword !== confirmPassword.trim()) {
+      setPasswordError('새 비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+      return;
+    }
+
+    setIsPasswordSubmitting(true);
+    try {
+      const docRef = doc(db, 'teachers', loggedTeacher.code);
+      await setDoc(docRef, {
+        code: loggedTeacher.code,
+        name: loggedTeacher.name,
+        password: cleanPassword,
+        isPasswordChanged: true
+      }, { merge: true });
+
+      setPasswordSuccess('비밀번호가 성공적으로 변경되었습니다. 다음 로그인부터는 설정한 비밀번호를 사용해 주세요.');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        setIsChangePasswordOpen(false);
+        setPasswordSuccess('');
+      }, 2500);
+    } catch (err) {
+      setPasswordError('비밀번호 변경 중 에러가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      console.error(err);
+    } finally {
+      setIsPasswordSubmitting(false);
+    }
+  };
+
   const propagateSplitChanges = (subject: string, round: string, detail: string, maxS: string, reflectR: string, tgtGC: string = '') => {
     if (!activeEval || !activeEvaluationId) return;
 
@@ -211,29 +283,32 @@ export default function AdminDashboard({
   };
 
   const processPdfFile = async (file: File) => {
-    setErrorMsg('');
+    setPdfErrorMsg('');
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
         const base64Data = e.target?.result as string;
         if (!base64Data) {
-          setErrorMsg('PDF 데이터를 성상적으로 디코딩하지 못했습니다.');
+          setPdfErrorMsg('PDF 데이터를 정상적으로 디코딩하지 못했습니다.');
           return;
         }
 
-        const cleanTgtGC = targetGradeClass.trim();
+        const cleanTgtGC = pdfTargetGradeClass.trim();
         if (!cleanTgtGC) {
-          setErrorMsg(
+          setPdfErrorMsg(
             '⚠️ 대상 학년반 정보를 먼저 입력하십시오.\n' +
             '예: 1학년 1반 전체를 대상으로 하려면 "101"을 입력해야 매칭 조회가 가능합니다.'
           );
           return;
         }
 
-        // Initialize state for new PDF evaluation
-        const defaultSubject = subjectInput.trim() || '정보';
-        const defaultRound = roundInput.trim() || '1';
-        const defaultDetail = detailNameInput.trim() || '수행평가 결과안내';
+        const defaultSubject = pdfSubject.trim();
+        if (!defaultSubject) {
+          setPdfErrorMsg('⚠️ 평가 과목명을 먼저 입력하십시오.');
+          return;
+        }
+        const defaultRound = pdfRound.trim() || '1';
+        const defaultDetail = pdfDetailName.trim() || '수행평가 결과안내';
         const initialTitle = `📂 [PDF 전체점수] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
 
         const newEvalMetadata: EvaluationState = {
@@ -254,17 +329,17 @@ export default function AdminDashboard({
 
         const newId = await onCreateEvaluation(newEvalMetadata);
         onSelectEvaluationId(newId);
-        setErrorMsg('');
+        setPdfErrorMsg('');
       } catch (err) {
         console.error(err);
-        setErrorMsg('PDF 파일 업로드 중 예기치 못한 에러가 발생했습니다.');
+        setPdfErrorMsg('PDF 파일 업로드 중 예기치 못한 에러가 발생했습니다.');
       }
     };
     reader.readAsDataURL(file);
   };
 
   const processExcelFile = async (file: File) => {
-    setErrorMsg('');
+    setExcelErrorMsg('');
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -278,27 +353,29 @@ export default function AdminDashboard({
         const cleanHeaders = (headersJson || []).filter(h => h && String(h).trim() !== "");
 
         if (cleanHeaders.length === 0 || rawRows.length === 0) {
-          setErrorMsg('엑셀 파일에 유효한 데이터가 존재하지 않습니다.');
+          setExcelErrorMsg('엑셀 파일에 유효한 데이터가 존재하지 않습니다.');
           return;
         }
 
         const studentIdKey = findStudentIdKey(cleanHeaders);
-        const birthdateKey = findBirthdateKey(cleanHeaders);
 
         if (!studentIdKey) {
-          setErrorMsg(
+          setExcelErrorMsg(
             `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 문항이 포함된 열이 반드시 필요합니다.\n\n` + 
             `감지된 열 목록: [${cleanHeaders.join(', ')}]`
           );
           return;
         }
 
-        // Initialize state for new evaluation
-        const defaultSubject = subjectInput.trim() || '정보';
-        const defaultRound = roundInput.trim() || '1';
-        const defaultDetail = detailNameInput.trim() || '수행평가';
-        const defaultMax = maxScoreInput.trim() || '20';
-        const defaultReflect = reflectRateInput.trim() || '100';
+        const defaultSubject = excelSubject.trim();
+        if (!defaultSubject) {
+          setExcelErrorMsg('⚠️ 평가 과목명을 먼저 입력하십시오.');
+          return;
+        }
+        const defaultRound = excelRound.trim() || '1';
+        const defaultDetail = excelDetailName.trim() || '수행평가';
+        const defaultMax = excelMaxScore.trim() || '20';
+        const defaultReflect = excelReflectRate.trim() || '100';
         const initialTitle = `${defaultSubject} (${defaultRound}차) 수행평가: ${defaultDetail}`;
 
         const newEvalMetadata: EvaluationState = {
@@ -316,52 +393,73 @@ export default function AdminDashboard({
 
         const newId = await onCreateEvaluation(newEvalMetadata);
         onSelectEvaluationId(newId);
-        setErrorMsg('');
+        setExcelErrorMsg('');
       } catch (err) {
         console.error(err);
-        setErrorMsg('엑셀 파일을 파싱하는 과정에서 에러가 발생했습니다. 파일 형식을 다시 점검해 주십시오.');
+        setExcelErrorMsg('엑셀 파일을 파싱하는 과정에서 에러가 발생했습니다. 파일 형식을 다시 점검해 주십시오.');
       }
     };
     reader.readAsArrayBuffer(file);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleExcelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (uploadType === 'pdf') {
-        processPdfFile(file);
-      } else {
-        processExcelFile(file);
-      }
+      processExcelFile(file);
     }
   };
 
-  const handleDrag = (e: React.DragEvent) => {
+  const handlePdfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processPdfFile(file);
+    }
+  };
+
+  const handleExcelDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
+      setExcelDragActive(true);
     } else if (e.type === "dragleave") {
-      setDragActive(false);
+      setExcelDragActive(false);
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handlePdfDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      if (uploadType === 'pdf') {
-        processPdfFile(file);
-      } else {
-        processExcelFile(file);
-      }
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setPdfDragActive(true);
+    } else if (e.type === "dragleave") {
+      setPdfDragActive(false);
     }
   };
 
-  const triggerFileInput = () => {
-    fileInputRef.current?.click();
+  const handleExcelDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setExcelDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processExcelFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handlePdfDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPdfDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processPdfFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const triggerExcelFileInput = () => {
+    excelFileInputRef.current?.click();
+  };
+
+  const triggerPdfFileInput = () => {
+    pdfFileInputRef.current?.click();
   };
 
   const handleDeleteActive = async (idToDelete: string) => {
@@ -394,6 +492,13 @@ export default function AdminDashboard({
           <h1 className="text-xl sm:text-2xl font-black font-sans tracking-tight text-slate-900">수행평가 다중 파일 관리 시스템</h1>
         </div>
         <div className="flex items-center gap-2">
+          <button 
+            type="button"
+            onClick={() => setIsChangePasswordOpen(true)}
+            className="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-amber-970 rounded-xl text-xs font-black shadow-xs transition hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center gap-1 shrink-0"
+          >
+            <Key size={12} className="text-amber-950 animate-pulse" /> 비밀번호 변경하기 🔑
+          </button>
           <button 
             onClick={() => setIsPrintOpen(true)}
             className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black shadow-sm transition cursor-pointer flex items-center gap-1.5"
@@ -518,33 +623,28 @@ export default function AdminDashboard({
             );
           })()}
 
-          {/* Student Signature Configuration Card */}
+          {/* Student Signature Configuration Card -> Replaced with Dual Registration Info Card */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
             <h3 className="text-xs font-black text-slate-850 flex items-center gap-1.5 pb-2 border-b border-indigo-100 uppercase tracking-tight">
-              ✍️ 학생 서명 기능 활성화
+              ✍️ 이중 등록 및 서명 제출 안내
             </h3>
-            <p className="text-[10px] text-slate-450 leading-normal">
-              학생들이 자신의 수행평가 점수 조회 결과 화면 최하단에서 직접 자율 서명 후 저장할 수 있도록 기능을 활성화합니다.
+            <p className="text-[10px] text-slate-500 leading-normal">
+              본 시스템은 <strong>서명 대장 출력</strong>을 위해 세분화된 영역별 자료와 최종 나이스 점수 자료를 모두 처리하는 <strong>이중 등록 방식</strong>으로 작동합니다:
             </p>
-            <div className="flex items-center justify-between bg-slate-50 border border-slate-150 rounded-xl p-3">
-              <span className="text-xs font-bold text-slate-700">학생 서명 활성화</span>
-              <label className="relative inline-flex items-center cursor-pointer select-none">
-                <input 
-                  type="checkbox" 
-                  checked={!!teacherSettings[loggedTeacher.code]}
-                  onChange={(e) => onToggleSignature(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-900"></div>
-              </label>
+            <div className="space-y-1.5 my-1 bg-slate-50 border border-slate-150 rounded-xl p-3">
+              <div className="flex items-start gap-1.5 text-[10px] text-slate-700 leading-relaxed">
+                <span className="text-indigo-600 font-bold shrink-0">1단계</span>
+                <span><strong>영역별 세부 점수:</strong> 소영역 세분 점수 및 서술 피드백이 입력된 <strong>엑셀 템플릿 파일</strong>을 업로드합니다.</span>
+              </div>
+              <div className="border-t border-slate-200/60 my-1"></div>
+              <div className="flex items-start gap-1.5 text-[10px] text-slate-700 leading-relaxed">
+                <span className="text-rose-600 font-bold shrink-0">2단계</span>
+                <span><strong>나이스 최종 PDF:</strong> 성적 반영 비율이 가공된 전체 점수가 종합 표기된 <strong>나이스 성적 PDF 파일</strong>을 업로드합니다.</span>
+              </div>
             </div>
-            <div className="text-[10px] text-slate-400 font-medium">
-              상태: {!!teacherSettings[loggedTeacher.code] ? (
-                <span className="text-emerald-600 font-bold">🟢 활성화됨 (학생 조회 시 서명란 표시)</span>
-              ) : (
-                <span className="text-slate-500 font-bold">⚪ 비활성화됨 (점수만 단순 조회)</span>
-              )}
-            </div>
+            <p className="text-[10px] text-slate-450 leading-relaxed">
+              💡 별도의 온/오프 스위치 조작 필요 없이 **평가 성적이 업로드되는 순간 학생 화면에서 서술형 피드백 확인 후 자율 서명 패드가 자동 활성화**됩니다. 학생들이 서명을 마친 결과는 상단의 <strong>'인쇄 대장 출력'</strong> 버튼을 클릭하여 최종 1장에 가로형 전산 서명이 합산 보관된 확인 문서로 출력 가능합니다.
+            </p>
           </div>
         </div>
 
@@ -553,173 +653,235 @@ export default function AdminDashboard({
           
           {/* New uploads or selected settings block */}
           {activeEvaluationId === '' || !activeEval ? (
-            /* Upload layout state for entering new sheet */
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            /* Upload layout state for entering new sheet -> 2-Column Responsive Layout */
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               
-              {/* Type Switcher tabs */}
-              <div className="border-b border-slate-100 pb-3">
-                <span className="bg-indigo-50 text-indigo-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">수행평가 입력 방식</span>
-                <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl mt-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUploadType('excel');
-                      setErrorMsg('');
-                    }}
-                    className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
-                      uploadType === 'excel' 
-                        ? 'bg-white text-indigo-950 shadow-xs' 
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    📊 1. 영역별 업로드 (엑셀파일)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUploadType('pdf');
-                      setErrorMsg('');
-                    }}
-                    className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
-                      uploadType === 'pdf' 
-                        ? 'bg-white text-indigo-950 shadow-xs' 
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    📄 2. 전체 수행점수 업로드 (PDF파일)
-                  </button>
-                </div>
-              </div>
+              {/* Card 1: Excel Upload (영역별 세부 성적 및 피드백) */}
+              <div id="excel-upload-container" className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-4">
+                <div className="space-y-4">
+                  <div className="border-b border-indigo-100 pb-3 flex items-center justify-between">
+                    <span className="bg-indigo-50 text-indigo-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">수행 영역별 등록 단계</span>
+                    <span className="text-[10px] text-slate-450 font-bold">1단계 (수행평가 상세기록)</span>
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                      📊 영역별 수행평가 엑셀 등록
+                    </h3>
+                    <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
+                      수행영역별 학생 점수 및 서술형 피드백을 한번에 입력하는 엑셀 파일을 업로드합니다.
+                    </p>
+                  </div>
 
-              <div>
-                <h3 className="text-sm font-black text-slate-900">
-                  {uploadType === 'excel' ? '📊 영역별 수행평가 엑셀 파일 업로드' : '📄 전체 수행평가 결과 요약 PDF 파일 업로드'}
-                </h3>
-                <p className="text-[11px] text-slate-450 leading-normal mt-0.5">
-                  {uploadType === 'excel' 
-                    ? '수행영역 1개에 대해 학생별 점수와 서술형 피드백을 한 번에 입력하는 템플릿입니다.'
-                    : '전체 수행평가에 대해 각 영역별 점수와 총점 결과가 조합된 PDF 파일을 안내용으로 전달합니다.'}
-                </p>
-              </div>
+                  {/* Excel Specific Metadata Fields */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="excel-subject-input" className="block text-[11px] font-bold text-slate-700 mb-1">평가 과목명</label>
+                      <input 
+                        id="excel-subject-input"
+                        type="text"
+                        value={excelSubject}
+                        onChange={(e) => setExcelSubject(e.target.value)}
+                        placeholder="예: 정보"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="excel-round-input" className="block text-[11px] font-bold text-slate-700 mb-1">평가 차시 (차)</label>
+                      <input 
+                        id="excel-round-input"
+                        type="text"
+                        value={excelRound}
+                        onChange={(e) => setExcelRound(e.target.value)}
+                        placeholder="예: 1"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
+                      />
+                    </div>
+                  </div>
 
-              {/* Setting default metadata details BEFORE files uploads to speed metadata configuration */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">평가 과목명</label>
-                  <input 
-                    type="text"
-                    value={subjectInput}
-                    onChange={(e) => setSubjectInput(e.target.value)}
-                    placeholder="예: 정보"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">평가 차시 (차)</label>
-                  <input 
-                    type="text"
-                    value={roundInput}
-                    onChange={(e) => setRoundInput(e.target.value)}
-                    placeholder="예: 1"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
-                  />
-                </div>
-                <div className={uploadType === 'pdf' ? "sm:col-span-1" : "sm:col-span-2"}>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 상세 이름</label>
-                  <input 
-                    type="text"
-                    value={detailNameInput}
-                    onChange={(e) => setDetailNameInput(e.target.value)}
-                    placeholder={uploadType === 'pdf' ? "예: 전체 결과안내" : "예: 빅데이터 분석 프로젝트"}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
-                  />
-                </div>
-                {uploadType === 'pdf' && (
-                  <div className="sm:col-span-1">
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">👥 대상 학년반 지정</label>
+                  <div>
+                    <label htmlFor="excel-detail-name-input" className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 영역 상세명</label>
                     <input 
+                      id="excel-detail-name-input"
                       type="text"
-                      value={targetGradeClass}
-                      onChange={(e) => setTargetGradeClass(e.target.value)}
-                      placeholder="예: 101, 102"
-                      className="w-full px-3 py-2 border border-indigo-300 bg-indigo-50/20 text-indigo-950 font-bold rounded-xl text-xs focus:outline-none placeholder:text-slate-400 text-center"
+                      value={excelDetailName}
+                      onChange={(e) => setExcelDetailName(e.target.value)}
+                      placeholder="예: 빅데이터 분석 프로젝트"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
                     />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="excel-max-score-input" className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 만점</label>
+                      <input 
+                        id="excel-max-score-input"
+                        type="text"
+                        value={excelMaxScore}
+                        onChange={(e) => setExcelMaxScore(e.target.value.replace(/\D/g, ''))}
+                        placeholder="예: 20"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="excel-reflect-rate-input" className="block text-[11px] font-bold text-slate-700 mb-1">반영 비율 (%)</label>
+                      <input 
+                        id="excel-reflect-rate-input"
+                        type="text"
+                        value={excelReflectRate}
+                        onChange={(e) => setExcelReflectRate(e.target.value.replace(/\D/g, ''))}
+                        placeholder="예: 30"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none bg-indigo-50/55 text-indigo-950 font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Excel File Drop Area */}
+                  <div 
+                    id="excel-drop-zone"
+                    onDragEnter={handleExcelDrag}
+                    onDragOver={handleExcelDrag}
+                    onDragLeave={handleExcelDrag}
+                    onDrop={handleExcelDrop}
+                    onClick={triggerExcelFileInput}
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[140px] ${
+                      excelDragActive 
+                        ? 'border-indigo-600 bg-indigo-50/40' 
+                        : 'border-slate-300 hover:border-indigo-500 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <input 
+                      ref={excelFileInputRef}
+                      type="file" 
+                      accept=".xlsx, .xls"
+                      onChange={handleExcelFileChange}
+                      className="hidden" 
+                    />
+                    <div className="p-2 bg-indigo-50 rounded-full mb-2 text-indigo-900">
+                      <Upload size={16} className="stroke-[2.5]" />
+                    </div>
+                    <p className="text-xs font-black text-slate-700">여기에 엑셀 파일을 드래그하거나 클릭하세요</p>
+                    <p className="text-[10px] text-slate-450 mt-1">.xlsx, .xls 확장자만 업로드 가능합니다.</p>
+                  </div>
+                </div>
+
+                {excelErrorMsg && (
+                  <div id="excel-error-panel" className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold mt-2">
+                    <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                    <span className="whitespace-pre-line">{excelErrorMsg}</span>
                   </div>
                 )}
               </div>
 
-              {uploadType === 'excel' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              {/* Card 2: PDF Upload (나이스 종합 성적 & 학생 서명 확정) */}
+              <div id="pdf-upload-container" className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-4">
+                <div className="space-y-4">
+                  <div className="border-b border-rose-100 pb-3 flex items-center justify-between">
+                    <span className="bg-rose-50 text-rose-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">최종 확인 및 서명 제출 단계</span>
+                    <span className="text-[10px] text-rose-400 font-bold">2단계 (나이스 PDF 자료)</span>
+                  </div>
+                  
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 총 만점</label>
-                    <input 
-                      type="text"
-                      value={maxScoreInput}
-                      onChange={(e) => setMaxScoreInput(e.target.value.replace(/\D/g, ''))}
-                      placeholder="예: 20"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
-                    />
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                      📄 나이스 최종 종합 PDF 등록
+                    </h3>
+                    <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
+                      최종 전체 종합 결과가 표기된 나이스 성적 PDF 파일을 업로드합니다. **(업로드 시 자동으로 학생 서명 제출 활성화)**
+                    </p>
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">실제 반영 비율 (%)</label>
-                    <input 
-                      type="text"
-                      value={reflectRateInput}
-                      onChange={(e) => setReflectRateInput(e.target.value.replace(/\D/g, ''))}
-                      placeholder="예: 30"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none bg-indigo-50/55 text-indigo-950 font-bold"
-                    />
-                  </div>
-                  <div className="sm:col-span-2 bg-slate-50 border border-slate-150 p-2 text-[10px] text-slate-505 rounded-lg flex items-start gap-1 mt-1 leading-normal">
-                    <Info size={13} className="text-slate-600 shrink-0 mt-0.5" />
-                    <span>설정하고 아래 드래그 공간에 엑셀을 업로드하면 실제 반영 비율이 함께 기록 보존됩니다!</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-indigo-50/80 border border-indigo-200 p-3 rounded-xl flex items-start gap-2 text-[10px] text-slate-700 leading-normal">
-                  <Info size={14} className="text-indigo-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-extrabold text-indigo-950 block">💡 PDF 업로드 전 사전 정보 기입</span>
-                    <span>학생 학번대조를 위해 우측 상단 **"대상 학년반 지정"** 공간에 3자리 코드(예: 1학년 1반의 경우 101, 복수 반인 경우 101, 102 등 쉼표 구분)를 수동 등록 후 PDF 파일을 올려 주십시오.</span>
-                  </div>
-                </div>
-              )}
 
-              {/* Upload Drop area */}
-              <div 
-                onDragEnter={handleDrag}
-                onDragOver={handleDrag}
-                onDragLeave={handleDrag}
-                onDrop={handleDrop}
-                onClick={triggerFileInput}
-                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[160px] ${
-                  dragActive 
-                    ? 'border-indigo-600 bg-indigo-50/40' 
-                    : 'border-slate-300 hover:border-indigo-500 hover:bg-slate-50/50'
-                }`}
-              >
-                <input 
-                  ref={fileInputRef}
-                  type="file" 
-                  accept={uploadType === 'pdf' ? '.pdf' : '.xlsx, .xls'}
-                  onChange={handleFileChange}
-                  className="hidden" 
-                />
-                <div className="p-2.5 bg-indigo-50 rounded-full mb-2.5 text-indigo-900">
-                  <Upload size={20} className="stroke-[2.5]" />
+                  {/* PDF Specific Metadata Fields */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="pdf-subject-input" className="block text-[11px] font-bold text-slate-700 mb-1">평가 과목명</label>
+                      <input 
+                        id="pdf-subject-input"
+                        type="text"
+                        value={pdfSubject}
+                        onChange={(e) => setPdfSubject(e.target.value)}
+                        placeholder="예: 정보"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="pdf-round-input" className="block text-[11px] font-bold text-slate-700 mb-1">평가 차시 (차)</label>
+                      <input 
+                        id="pdf-round-input"
+                        type="text"
+                        value={pdfRound}
+                        onChange={(e) => setPdfRound(e.target.value)}
+                        placeholder="예: 1"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <label htmlFor="pdf-detail-name-input" className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 상세 타이틀</label>
+                      <input 
+                        id="pdf-detail-name-input"
+                        type="text"
+                        value={pdfDetailName}
+                        onChange={(e) => setPdfDetailName(e.target.value)}
+                        placeholder="예: 전체 결과안내"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
+                      />
+                    </div>
+                    <div className="sm:col-span-1">
+                      <label htmlFor="pdf-target-grade-class-input" className="block text-[11px] font-bold text-indigo-950 mb-1">👥 대상 학년반</label>
+                      <input 
+                        id="pdf-target-grade-class-input"
+                        type="text"
+                        value={pdfTargetGradeClass}
+                        onChange={(e) => setPdfTargetGradeClass(e.target.value)}
+                        placeholder="예: 101, 102"
+                        className="w-full px-3 py-2 border border-indigo-200 bg-indigo-50/10 text-indigo-950 font-black rounded-xl text-xs focus:outline-none text-center"
+                      />
+                    </div>
+                  </div>
+
+                  <div id="pdf-notifying-banner" className="bg-indigo-50/50 border border-indigo-100 p-2.5 rounded-lg text-[10px] text-slate-600 leading-normal">
+                    <span>💡 <strong>필독:</strong> 학번 대조를 위해 <strong>대상 학년반</strong>(예: 1학년 1반은 101, 복수 반은 101, 102 쉼표 구분)을 정확히 입력한 뒤 PDF 파일을 드롭하십시오.</span>
+                  </div>
+
+                  {/* PDF File Drop Area */}
+                  <div 
+                    id="pdf-drop-zone"
+                    onDragEnter={handlePdfDrag}
+                    onDragOver={handlePdfDrag}
+                    onDragLeave={handlePdfDrag}
+                    onDrop={handlePdfDrop}
+                    onClick={triggerPdfFileInput}
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[140px] ${
+                      pdfDragActive 
+                        ? 'border-rose-600 bg-rose-50/40' 
+                        : 'border-slate-300 hover:border-rose-500 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <input 
+                      ref={pdfFileInputRef}
+                      type="file" 
+                      accept=".pdf"
+                      onChange={handlePdfFileChange}
+                      className="hidden" 
+                    />
+                    <div className="p-2 bg-rose-50 rounded-full mb-2 text-rose-900">
+                      <Upload size={16} className="stroke-[2.5]" />
+                    </div>
+                    <p className="text-xs font-black text-rose-950">여기에 피디에프 파일을 드래그하거나 클릭하세요</p>
+                    <p className="text-[10px] text-slate-450 mt-1">.pdf 확장자만 업로드 가능합니다.</p>
+                  </div>
                 </div>
-                <p className="text-xs font-black text-slate-700">여기에 {uploadType === 'pdf' ? 'PDF' : '엑셀'} 파일을 드래그하여 드롭하거나 마우스 클릭하세요</p>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  {uploadType === 'pdf' ? '.pdf 파일 형식만 처리 가능합니다.' : '.xlsx, .xls 파일 형식만 처리 가능합니다.'}
-                </p>
+
+                {pdfErrorMsg && (
+                  <div id="pdf-error-panel" className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold mt-2">
+                    <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                    <span className="whitespace-pre-line">{pdfErrorMsg}</span>
+                  </div>
+                )}
               </div>
 
-              {errorMsg && (
-                <div className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold">
-                  <AlertCircle size={15} className="shrink-0 mt-0.5" />
-                  <span className="whitespace-pre-line">{errorMsg}</span>
-                </div>
-              )}
             </div>
           ) : (
             /* Selected evaluation active configurations panel */
@@ -1059,6 +1221,94 @@ export default function AdminDashboard({
           onClose={() => setIsPrintOpen(false)}
           allStudents={allStudents}
         />
+      )}
+
+      {isChangePasswordOpen && (
+        <div id="teacher-password-change-modal" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn print:hidden">
+          <div className="bg-white border border-slate-200 shadow-xl rounded-2xl max-w-sm w-full overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-indigo-900 text-white px-5 py-4 flex items-center justify-between">
+              <span className="text-sm font-extrabold flex items-center gap-1.5">
+                <Key size={16} className="text-amber-400" /> 교사용 비밀번호 변경
+              </span>
+              <button 
+                type="button"
+                onClick={() => {
+                  setIsChangePasswordOpen(false);
+                  setPasswordError('');
+                  setPasswordSuccess('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+                className="text-white/70 hover:text-white cursor-pointer text-xs font-bold"
+              >
+                닫기
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <form onSubmit={handlePasswordChange} className="p-5 space-y-4">
+              <div className="bg-slate-50 border border-slate-150 p-3 rounded-xl space-y-1">
+                <span className="text-[10px] text-indigo-900 font-extrabold block">로그인 중인 선생님</span>
+                <p className="text-xs font-bold text-slate-800">
+                  {loggedTeacher.name} 선생님 (코드: {loggedTeacher.code})
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-black text-slate-700 mb-1" htmlFor="teacher-new-password">
+                  새 비밀번호 입력
+                </label>
+                <input 
+                  id="teacher-new-password"
+                  type="password"
+                  placeholder="새로운 비밀번호"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-black text-slate-700 mb-1" htmlFor="teacher-confirm-password">
+                  새 비밀번호 확인
+                </label>
+                <input 
+                  id="teacher-confirm-password"
+                  type="password"
+                  placeholder="새 비밀번호 다시 입력"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800"
+                />
+              </div>
+
+              {passwordError && (
+                <p className="text-xs font-semibold text-red-650 bg-red-50 p-2.5 rounded-xl border border-red-150 whitespace-pre-line leading-relaxed">
+                  ⚠️ {passwordError}
+                </p>
+              )}
+
+              {passwordSuccess && (
+                <p className="text-xs font-semibold text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-150 leading-relaxed">
+                  ✅ {passwordSuccess}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={isPasswordSubmitting}
+                className={`w-full py-2.5 rounded-xl text-xs font-black shadow-sm transition-all focus:outline-none flex items-center justify-center gap-1 cursor-pointer ${
+                  isPasswordSubmitting 
+                    ? 'bg-slate-100 text-slate-400 border border-slate-200' 
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-500'
+                }`}
+              >
+                {isPasswordSubmitting ? '변경 처리 중...' : '확인 및 변경 완료'}
+              </button>
+            </form>
+          </div>
+        </div>
       )}
 
     </div>

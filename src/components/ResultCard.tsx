@@ -104,7 +104,8 @@ export default function ResultCard({
         studentId: studentId,
         name: studentName,
         birthdate: sessionData.birthdate,
-        password: cleanPassword
+        password: cleanPassword,
+        isPasswordChanged: true
       }, { merge: true });
 
       setPasswordSuccess('비밀번호가 성공적으로 변경되었습니다. 다음 로그인부터는 설정한 비밀번호를 사용해 주세요.');
@@ -167,10 +168,11 @@ export default function ResultCard({
   const activeTeacher = matchedTeachers.find(t => t.code === selectedTeacherCode);
   const teacherName = activeTeacher ? activeTeacher.name : '교과 담당';
   const teacherCode = selectedTeacherCode;
-  const signatureEnabled = !!teacherSettings[selectedTeacherCode];
 
   // Dynamically compute the results for this student from the chosen teacher
   const activeTeacherEvaluations = allEvaluations.filter(e => e.teacherCode === selectedTeacherCode);
+  
+  const signatureEnabled = activeTeacherEvaluations.some(e => e.uploadType === 'pdf');
   
   const results: StudentResultItem[] = [];
   activeTeacherEvaluations.forEach(evalItem => {
@@ -310,9 +312,9 @@ export default function ResultCard({
 
           <button 
             onClick={() => setIsChangePasswordOpen(true)}
-            className="flex items-center gap-1.5 text-xs font-bold text-indigo-755 hover:text-indigo-900 transition-all cursor-pointer shrink-0 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-full hover:bg-indigo-100"
+            className="flex items-center gap-1.5 text-xs font-black text-amber-970 hover:text-amber-950 transition-all shrink-0 bg-amber-400 hover:bg-amber-500 border border-amber-300 px-4 py-2.5 rounded-xl hover:scale-[1.02] shadow-sm cursor-pointer"
           >
-            <Key size={14} /> 비밀번호 변경
+            <Key size={14} className="text-amber-950 animate-pulse" /> 비밀번호 변경하기 🔑
           </button>
         </div>
 
@@ -580,6 +582,33 @@ export default function ResultCard({
 
                   const formattedReflectedValue = Number(reflectedValue.toFixed(2)).toString();
                   const formattedReflectedMaxScore = Number(reflectedMaxScore.toFixed(2)).toString();
+
+                  if (rateNum === 100) {
+                    return (
+                      <div className="space-y-3">
+                        <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex justify-between items-center print:bg-white print:border-slate-350">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] bg-indigo-100 border border-indigo-200 rounded font-black px-2 py-0.5 text-indigo-900">
+                                수행평가 반영 점수 (100% 반영)
+                              </span>
+                            </div>
+                            <h4 className="text-xs font-black text-slate-800 mt-1">
+                              {subject} {String(round).endsWith('차') ? round : `${round}차`} 최종 취득 점수
+                            </h4>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-2xl sm:text-3xl font-black text-indigo-950 font-sans tracking-tight">
+                              {computedTotalScore}
+                            </span>
+                            <span className="text-xs text-slate-400 font-bold ml-1">
+                              / {maxScoreNum} 점 만점
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
 
                   return (
                     <div className="space-y-3">
