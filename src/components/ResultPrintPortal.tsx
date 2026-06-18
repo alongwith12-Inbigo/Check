@@ -247,8 +247,13 @@ export default function ResultPrintPortal({
                         return (
                           <th key={ev.id || idx} className="border border-slate-800 px-2 py-2 text-center">
                             <div className="leading-tight">
-                              <span className="block font-black">{ev.round || `${idx + 1}차`}</span>
-                              <span className="block text-[8px] text-slate-500 font-normal">반영{rateNum}%</span>
+                              <span className="block font-black">평가 {idx + 1}</span>
+                              {ev.evaluationDetailName && (
+                                <span className="block text-[8px] text-slate-500 font-bold max-w-[80px] truncate mx-auto" title={ev.evaluationDetailName}>
+                                  {ev.evaluationDetailName}
+                                </span>
+                              )}
+                              <span className="block text-[8px] text-slate-400 font-normal mt-0.5">반영{rateNum}%</span>
                               <span className="block text-[9px] text-indigo-900 font-bold mt-0.5">
                                 만점 {reflectedMax}점
                               </span>

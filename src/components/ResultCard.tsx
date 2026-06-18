@@ -399,7 +399,7 @@ export default function ResultCard({
                         요약 성적 통지
                       </span>
                       <h2 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
-                        {item.subject} ({item.round}차) 종합 수행평가 성적안내표 (PDF)
+                        {item.subject} 종합 수행평가 성적안내표 (PDF)
                       </h2>
                     </div>
                   </div>
@@ -425,7 +425,7 @@ export default function ResultCard({
 
                     <a
                       href={item.pdfBase64}
-                      download={item.pdfFileName || `${item.subject}_${item.round}차_성적결과.pdf`}
+                      download={item.pdfFileName || `${item.subject}_성적결과.pdf`}
                       className="px-4 py-2.5 bg-slate-900 hover:bg-indigo-900 text-white rounded-xl text-xs font-extrabold transition-all duration-205 flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto text-center shadow-xs shrink-0 self-center"
                     >
                       <Download size={14} className="stroke-[2.5]" />
@@ -491,7 +491,7 @@ export default function ResultCard({
                       평가 {index + 1}
                     </span>
                     <h2 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
-                      {subject} ({round}차) 수행평가 : {evaluationDetailName}
+                      {subject} 수행평가 : {evaluationDetailName}
                     </h2>
                   </div>
                 </div>
@@ -531,10 +531,16 @@ export default function ResultCard({
 
                         const { title, scoreLimit } = formatKey(key);
 
+                        const itemWidthClass = 
+                          subScoreKeys.length === 1 ? "w-full" :
+                          subScoreKeys.length === 2 ? "w-[calc(50%-4px)] sm:w-[calc(50%-6px)]" :
+                          subScoreKeys.length === 3 ? "w-[calc(50%-4px)] sm:w-[calc(33.33%-7px)]" :
+                          "w-[calc(50%-4px)] sm:w-[calc(25%-8px)]";
+
                         return (
                           <div 
                             key={key} 
-                            className="w-[calc(50%-4px)] sm:w-[calc(25%-8px)] min-w-[100px] bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl p-2.5 sm:p-3.5 text-center transition-colors hover:border-slate-300 print:bg-white print:border-slate-200 flex flex-col justify-between shadow-xs shrink-0"
+                            className={`${itemWidthClass} min-w-[100px] bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl p-2.5 sm:p-3.5 text-center transition-colors hover:border-slate-300 print:bg-white print:border-slate-200 flex flex-col justify-between shadow-xs shrink-0 grow`}
                           >
                             <div>
                               <span className="block text-[9.5px] sm:text-[10.5px] font-bold text-slate-500 leading-tight break-keep" title={key}>
@@ -581,7 +587,7 @@ export default function ResultCard({
                               </span>
                             </div>
                             <h4 className="text-xs font-black text-slate-800 mt-1">
-                              {subject} {String(round).endsWith('차') ? round : `${round}차`} 최종 취득 점수
+                              {subject} 최종 취득 점수
                             </h4>
                           </div>
                           <div className="text-right">
@@ -608,7 +614,7 @@ export default function ResultCard({
                             </span>
                           </div>
                           <h4 className="text-xs font-black text-slate-800 mt-1">
-                            {subject} {String(round).endsWith('차') ? round : `${round}차`} 취득 원점수
+                            {subject} 취득 원점수
                           </h4>
                         </div>
                         <div className="text-right">
