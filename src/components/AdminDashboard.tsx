@@ -29,6 +29,7 @@ import {
 import ResultPrintPortal from './ResultPrintPortal';
 import { db } from '../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { extractDataFromPdf } from '../utils/pdfExtractor';
 
 interface AdminDashboardProps {
   myEvaluations: EvaluationState[];
@@ -298,6 +299,51 @@ export default function AdminDashboard({
     setErrorMsg('');
   }, [activeEvaluationId, activeEval]);
 
+  const [isExtractingPdf, setIsExtractingPdf] = useState(false);
+  const [pdfExtractError, setPdfExtractError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (
+      activeEval && 
+      activeEval.uploadType === 'pdf' && 
+      (!activeEval.rows || activeEval.rows.length === 0) && 
+      activeEval.pdfBase64
+    ) {
+      let active = true;
+      const autoExtract = async () => {
+        setIsExtractingPdf(true);
+        setPdfExtractError(null);
+        try {
+          const extractedPdf = await extractDataFromPdf(activeEval.pdfBase64!, activeEval.targetGradeClass || '');
+          if (active) {
+            if (extractedPdf && extractedPdf.rows.length > 0) {
+              await onUpdateEvaluation(activeEval.id!, {
+                ...activeEval,
+                headers: extractedPdf.headers,
+                rows: extractedPdf.rows
+              });
+            } else {
+              setPdfExtractError('PDF 파일에서 학생별 성적 자료(반, 번호, 이름 및 각 평가항목)를 자동으로 분석하고 매칭하지 못했습니다. PDF 양식 및 문형 텍스트 구조를 확인하십시오.');
+            }
+          }
+        } catch (err: any) {
+          console.error('Dynamic on-the-fly PDF extraction failed:', err);
+          if (active) {
+            setPdfExtractError('PDF 추출 도중 분석 엔진에 에러가 발생했습니다: ' + (err.message || err));
+          }
+        } finally {
+          if (active) {
+            setIsExtractingPdf(false);
+          }
+        }
+      };
+      autoExtract();
+      return () => {
+        active = false;
+      };
+    }
+  }, [activeEvaluationId, activeEval?.rows?.length]);
+
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError('');
@@ -468,15 +514,29 @@ export default function AdminDashboard({
           const defaultDetail = pdfDetailName.trim() || '수행평가 결과안내';
           const initialTitle = `📂 [PDF 전체점수] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
 
+          let extractedHeaders: string[] = [];
+          let extractedRows: any[] = [];
+          try {
+            const extractedPdf = await extractDataFromPdf(base64Data, cleanTgtGC);
+            if (extractedPdf && extractedPdf.rows.length > 0) {
+              extractedHeaders = extractedPdf.headers;
+              extractedRows = extractedPdf.rows;
+            } else {
+              console.warn('Could not extract any rows immediately during PDF upload. Will retry on selection.');
+            }
+          } catch (pdfErr) {
+            console.error('Immediate PDF extraction failed:', pdfErr);
+          }
+
           const newEvalMetadata: EvaluationState = {
             title: initialTitle,
             subject: defaultSubject,
             round: defaultRound,
             evaluationDetailName: defaultDetail,
             maxScore: '100',
-            reflectRate: '100',
-            headers: [],
-            rows: [],
+            reflectRate: '105', // Default reflection placeholder
+            headers: extractedHeaders,
+            rows: extractedRows,
             uploadedAt: new Date().toLocaleString('ko-KR'),
             uploadType: 'pdf',
             pdfBase64: base64Data,
@@ -1079,38 +1139,13 @@ export default function AdminDashboard({
                       />
                     </div>
                     <div>
-                      <label htmlFor="pdf-round-input" className="block text-[11px] font-bold text-slate-700 mb-1">평가 차시 (차)</label>
-                      <input 
-                        id="pdf-round-input"
-                        type="text"
-                        value={pdfRound}
-                        onChange={(e) => setPdfRound(e.target.value)}
-                        placeholder="예: 1"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-center font-mono focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="sm:col-span-2">
-                      <label htmlFor="pdf-detail-name-input" className="block text-[11px] font-bold text-slate-700 mb-1">수행평가 상세 타이틀</label>
-                      <input 
-                        id="pdf-detail-name-input"
-                        type="text"
-                        value={pdfDetailName}
-                        onChange={(e) => setPdfDetailName(e.target.value)}
-                        placeholder="예: 전체 결과안내"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
-                      />
-                    </div>
-                    <div className="sm:col-span-1">
                       <label htmlFor="pdf-target-grade-class-input" className="block text-[11px] font-bold text-indigo-950 mb-1">👥 대상 학년반</label>
                       <input 
                         id="pdf-target-grade-class-input"
                         type="text"
                         value={pdfTargetGradeClass}
                         onChange={(e) => setPdfTargetGradeClass(e.target.value)}
-                        placeholder="예: 101, 102"
+                        placeholder="예: 107"
                         className="w-full px-3 py-2 border border-indigo-200 bg-indigo-50/10 text-indigo-950 font-black rounded-xl text-xs focus:outline-none text-center"
                       />
                     </div>
@@ -1359,6 +1394,35 @@ export default function AdminDashboard({
                         📥 파일 다운로드
                       </a>
                     </div>
+
+                    {isExtractingPdf && (
+                      <div className="p-3 bg-indigo-50 text-indigo-900 border border-indigo-150 rounded-xl flex items-center gap-2.5 text-[11px] font-bold animate-pulse">
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-ping" />
+                        <span>PDF에서 학급별 학생들의 개별 수행평가 성적 데이터를 정밀 추출 및 가배열하는 중입니다...</span>
+                      </div>
+                    )}
+
+                    {pdfExtractError && !isExtractingPdf && (
+                      <div className="p-4 bg-rose-50 border border-rose-150 rounded-xl flex items-start gap-2.5 text-[11px] text-rose-850 font-semibold leading-relaxed">
+                        <AlertCircle size={15} className="shrink-0 mt-0.5 text-rose-600" />
+                        <div className="space-y-1">
+                          <p className="font-extrabold">{pdfExtractError}</p>
+                          <p className="text-[9.5px] text-slate-500 font-medium leading-normal pt-1 border-t border-rose-100/35">
+                            참고: PDF의 본문 텍스트가 식별 가능한 구조여야 학번 및 평가항목 점수를 자동으로 파싱할 수 있습니다.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {activeEval.rows && activeEval.rows.length > 0 && !isExtractingPdf && (
+                      <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-250 rounded-xl flex items-start gap-1.5 text-[11px] leading-relaxed">
+                        <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-700" />
+                        <div className="text-emerald-950 font-semibold">
+                          <span className="font-bold block text-emerald-900">클라우드 PDF 자동 동기화 완료</span>
+                          성공적으로 학급 일람표에서 <strong className="text-indigo-950 underline">{activeEval.rows.length}명</strong>의 학생 데이터를 자동 추출하여 하단 검증 대조 테이블에 적재 완료했습니다!
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>

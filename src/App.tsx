@@ -292,7 +292,7 @@ export default function App() {
         ...newState,
         id: id,
         teacherCode: loggedTeacher?.code || '',
-      });
+      }, { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `evaluation/${id}`);
     }
