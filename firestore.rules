@@ -65,5 +65,10 @@ service cloud.firestore {
     match /excelUploads/{uploadId} {
       allow read, write: if true;
     }
+
+    // 9. System Config documents (such as uploaded excel templates)
+    match /systemConfig/{configId} {
+      allow read, write: if true;
+    }
   }
 }

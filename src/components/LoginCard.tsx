@@ -154,12 +154,12 @@ export default function LoginCard({
             {/* Student ID Inputs */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 tracking-tight" htmlFor="student-id">
-                학번(5자리) 입력
+                학번 입력
               </label>
               <input 
                 id="student-id"
                 type="text" 
-                placeholder="예: 10101"
+                placeholder="예: 10305"
                 value={studentId}
                 onChange={(e) => setStudentId(e.target.value)}
                 className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800"

@@ -469,10 +469,9 @@ export default function AdminDashboard({
             const nVal = String(row[numberKey] || '').replace(/\D/g, '');
             
             if (gVal && cVal && nVal) {
-              // 5-digit Student ID: Grade (1-digit) + Class (2-digit) + Number (2-digit)
-              const formattedClass = cVal.padStart(2, '0');
+              // Exact user formula: Grade (1-digit) + Separator "0" + Class + Number (2-digit padded)
               const formattedNum = nVal.padStart(2, '0');
-              const calculatedId = `${gVal}${formattedClass}${formattedNum}`;
+              const calculatedId = `${gVal}0${cVal}${formattedNum}`;
               return {
                 ...row,
                 [studentIdKey!]: calculatedId

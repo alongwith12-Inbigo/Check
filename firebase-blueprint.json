@@ -167,6 +167,26 @@
         }
       },
       "required": ["id", "fileName", "uploadedAt", "recordCount"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "General system configuration and document templates",
+      "type": "object",
+      "properties": {
+        "fileName": {
+          "type": "string",
+          "description": "File name of the uploaded excel template"
+        },
+        "fileBase64": {
+          "type": "string",
+          "description": "Base64 representation of the excel template"
+        },
+        "uploadedAt": {
+          "type": "string",
+          "description": "Local date string of the upload"
+        }
+      },
+      "required": ["fileName", "fileBase64", "uploadedAt"]
     }
   },
   "firestore": {
@@ -197,6 +217,10 @@
     "/excelUploads/{uploadId}": {
       "schema": "ExcelUpload",
       "description": "Metadata recording the active/latest excel roster file uploaded by admin"
+    },
+    "/systemConfig/{configId}": {
+      "schema": "SystemConfig",
+      "description": "System configs and shared file templates like Excel forms"
     }
   }
 }

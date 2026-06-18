@@ -16,7 +16,7 @@ import {
   Lock
 } from 'lucide-react';
 import { StudentSession, EvaluationState, Teacher, StudentResultItem, RegisteredStudent } from '../types';
-import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, findNameKey } from '../utils';
+import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, findNameKey, findGradeKey, findClassKey, findNumberKey } from '../utils';
 import SignatureCanvas from './SignatureCanvas';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';

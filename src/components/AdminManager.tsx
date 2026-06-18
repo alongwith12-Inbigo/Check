@@ -22,7 +22,10 @@ import {
   findTeacherNameKey, 
   findTeacherPasswordKey,
   findStudentIdKey,
-  findBirthdateKey
+  findBirthdateKey,
+  findGradeKey,
+  findClassKey,
+  findNumberKey
 } from '../utils';
 
 interface AdminManagerProps {
@@ -200,9 +203,34 @@ export default function AdminManager({
           return;
         }
 
-        const studentIdKey = findStudentIdKey(cleanHeaders);
+        let studentIdKey = findStudentIdKey(cleanHeaders);
         const birthdateKey = findBirthdateKey(cleanHeaders);
         
+        const gradeKey = findGradeKey(cleanHeaders);
+        const classKey = findClassKey(cleanHeaders);
+        const numberKey = findNumberKey(cleanHeaders);
+
+        let processedRows = [...rawRows];
+
+        // Dynamically compile "학번" from "학년", "반", "번호" columns if present
+        if (!studentIdKey && gradeKey && classKey && numberKey) {
+          studentIdKey = '학번';
+          processedRows = rawRows.map(row => {
+            const gVal = String(row[gradeKey] || '').replace(/\D/g, '');
+            const cVal = String(row[classKey] || '').replace(/\D/g, '');
+            const nVal = String(row[numberKey] || '').replace(/\D/g, '');
+            if (gVal && cVal && nVal) {
+              const formattedNum = nVal.padStart(2, '0');
+              const calculatedId = `${gVal}0${cVal}${formattedNum}`;
+              return {
+                ...row,
+                [studentIdKey!]: calculatedId
+              };
+            }
+            return row;
+          });
+        }
+
         // Find name key using standard korean keywords
         const nameKey = cleanHeaders.find(h => {
           const norm = String(h).replace(/\s+/g, '').toLowerCase();
@@ -211,7 +239,7 @@ export default function AdminManager({
 
         if (!studentIdKey || !birthdateKey) {
           setErrorMsg(
-            `필수 컬럼 판단 실패: 업로드한 엑셀에 '학번(5자리)'과 '생년월일(8자리)'이 매핑되는 컬럼이 필요합니다.\n` +
+            `필수 컬럼 판단 실패: 업로드한 엑셀에 '학번' 혹은 '학년', '반', '번호' 전체와 '생년월일(8자리)'이 매핑되는 컬럼이 필요합니다.\n` +
             `감지된 헤더 속성: [${cleanHeaders.join(', ')}]`
           );
           return;
@@ -221,7 +249,7 @@ export default function AdminManager({
         let skippedCount = 0;
         const updatedStudents = [...allStudents];
 
-        for (const row of rawRows) {
+        for (const row of processedRows) {
           const rawId = String(row[studentIdKey]).replace(/\s+/g, '');
           const rawBirth = String(row[birthdateKey]).replace(/\s+/g, '').replace(/\D/g, '');
           const rawName = nameKey ? String(row[nameKey]).trim() : '';
@@ -232,7 +260,8 @@ export default function AdminManager({
           }
 
           const formattedId = rawId.replace(/\D/g, '').trim();
-          if (formattedId.length !== 5) {
+          // The formatted ID should be supported if it's dynamic
+          if (formattedId.length < 4) {
             skippedCount++;
             continue;
           }
