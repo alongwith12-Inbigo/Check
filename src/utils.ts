@@ -3,16 +3,24 @@
  */
 
 export function findStudentIdKey(headers: string[]): string | undefined {
+  // 1. First priority: exact '학번' or headers containing '학번' or '학생번호' / '학적번호'
+  const primaryKey = headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized === '학번' || normalized.includes('학번') || normalized.includes('학적번호') || normalized.includes('학생번호');
+  });
+  if (primaryKey) return primaryKey;
+
+  // 2. Second priority: headers containing 'student' or 'id'
+  const secondaryKey = headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized.includes('student') || normalized === 'id';
+  });
+  if (secondaryKey) return secondaryKey;
+
+  // 3. Fallback: headers containing '번호' or 'no' or 'num'
   return headers.find(h => {
     const normalized = String(h).replace(/\s+/g, '').toLowerCase();
-    return normalized.includes('학번') || 
-           normalized.includes('학생번호') || 
-           normalized.includes('학적번호') || 
-           normalized.includes('번호') || 
-           normalized.includes('student') || 
-           normalized === 'id' ||
-           normalized === 'no' ||
-           normalized === 'num';
+    return normalized.includes('번호') || normalized === 'no' || normalized === 'num';
   });
 }
 

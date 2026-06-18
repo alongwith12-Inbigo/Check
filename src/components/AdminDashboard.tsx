@@ -24,10 +24,7 @@ import {
   findClassKey, 
   findNumberKey, 
   findNameKey,
-  findTotalScoreKey,
-  findClassNumberKey,
-  extractGradeFromTarget,
-  parseClassNumber
+  findTotalScoreKey
 } from '../utils';
 import ResultPrintPortal from './ResultPrintPortal';
 import { db } from '../firebase';
@@ -418,63 +415,13 @@ export default function AdminDashboard({
             return;
           }
 
-          const gradeKey = findGradeKey(cleanHeaders);
-          const classKey = findClassKey(cleanHeaders);
-          const numberKey = findNumberKey(cleanHeaders);
-          const classNumberKey = findClassNumberKey(cleanHeaders);
-          
           let processedHeaders = [...cleanHeaders];
           let processedRows = [...rawRows];
           let studentIdKey = findStudentIdKey(cleanHeaders);
 
-          const gradeVal = extractGradeFromTarget(cleanTgtGC);
-
-          if (classNumberKey) {
-            if (!studentIdKey) {
-              processedHeaders.unshift('학번');
-              studentIdKey = '학번';
-            }
-            
-            processedRows = rawRows.map(row => {
-              const classNumRaw = row[classNumberKey];
-              const parsed = parseClassNumber(classNumRaw);
-              if (parsed) {
-                const { classVal, numberVal } = parsed;
-                const formattedNum = numberVal.padStart(2, '0');
-                const calculatedId = `${gradeVal}0${classVal}${formattedNum}`;
-                return {
-                  ...row,
-                  [studentIdKey!]: calculatedId
-                };
-              }
-              return row;
-            });
-          } else if (gradeKey && classKey && numberKey) {
-            if (!studentIdKey) {
-              processedHeaders.unshift('학번');
-              studentIdKey = '학번';
-            }
-            
-            processedRows = rawRows.map(row => {
-              const gVal = String(row[gradeKey] || '').replace(/\D/g, '') || gradeVal;
-              const cVal = String(row[classKey] || '').replace(/\D/g, '');
-              const nVal = String(row[numberKey] || '').replace(/\D/g, '');
-              
-              if (gVal && cVal && nVal) {
-                const formattedNum = nVal.padStart(2, '0');
-                const calculatedId = `${gVal}0${cVal}${formattedNum}`;
-                return {
-                  ...row,
-                  [studentIdKey!]: calculatedId
-                };
-              }
-              return row;
-            });
-          }
-
           if (!studentIdKey) {
             setPdfErrorMsg(
-              `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번', '반/번호' 혹은 '학년', '반', '번호' 열이 포함되어야 합니다.`
+              `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 열이 포함되어야 합니다.`
             );
             return;
           }
@@ -568,43 +515,13 @@ export default function AdminDashboard({
           return;
         }
 
-        // Dynamically compile "학번" from "학년", "반", "번호" columns if present
-        const gradeKey = findGradeKey(cleanHeaders);
-        const classKey = findClassKey(cleanHeaders);
-        const numberKey = findNumberKey(cleanHeaders);
-        
         let processedHeaders = [...cleanHeaders];
         let processedRows = [...rawRows];
         let studentIdKey = findStudentIdKey(cleanHeaders);
 
-        if (gradeKey && classKey && numberKey) {
-          // If "학번" is not in there, let's inject it explicitly so matches can work smoothly
-          if (!studentIdKey) {
-            processedHeaders.unshift('학번');
-            studentIdKey = '학번';
-          }
-          
-          processedRows = rawRows.map(row => {
-            const gVal = String(row[gradeKey] || '').replace(/\D/g, '');
-            const cVal = String(row[classKey] || '').replace(/\D/g, '');
-            const nVal = String(row[numberKey] || '').replace(/\D/g, '');
-            
-            if (gVal && cVal && nVal) {
-              // Exact user formula: Grade (1-digit) + Separator "0" + Class + Number (2-digit padded)
-              const formattedNum = nVal.padStart(2, '0');
-              const calculatedId = `${gVal}0${cVal}${formattedNum}`;
-              return {
-                ...row,
-                [studentIdKey!]: calculatedId
-              };
-            }
-            return row;
-          });
-        }
-
         if (!studentIdKey) {
           setExcelErrorMsg(
-            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 열 혹은 '학년', '반', '번호' 열이 모두 포함되어야 합니다.\n\n` + 
+            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 열이 포함되어야 합니다.\n\n` + 
             `감지된 열 목록: [${cleanHeaders.join(', ')}]`
           );
           return;

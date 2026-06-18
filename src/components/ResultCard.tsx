@@ -85,7 +85,7 @@ export default function ResultCard({
 
   const studentName = resolvedStudent 
     ? resolvedStudent.name 
-    : (evaluationMatchedName || sessionData.studentName || `학생 (${studentId})`);
+    : (sessionData.studentName || evaluationMatchedName || `학생 (${studentId})`);
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -400,38 +400,40 @@ export default function ResultCard({
               const feedbackKeys = findFeedbackKey(headers);
 
               const scoreHeaders = headers.filter(h => {
-                if (h === studentIdKey || h === nameKey || h === classNumberKey) return false;
-                if (feedbackKeys.includes(h)) return false;
+                const hStr = String(h);
+                if (hStr === studentIdKey || hStr === nameKey || hStr === classNumberKey) return false;
+                if (feedbackKeys.includes(hStr)) return false;
                 
                 const gKey = findGradeKey(headers);
                 const cKey = findClassKey(headers);
                 const nKey = findNumberKey(headers);
-                if (h === gKey || h === cKey || h === nKey) return false;
+                if (hStr === gKey || hStr === cKey || hStr === nKey) return false;
 
-                const normalized = h.replace(/\s+/g, '').toLowerCase();
+                const normalized = hStr.replace(/\s+/g, '').toLowerCase();
                 if (normalized === '합계' || normalized === '총점' || normalized === '총합' || normalized === '합' || normalized === 'total') return false;
 
-                return isScoreColumn(h, row[h]) || normalized.includes('만점');
+                return isScoreColumn(hStr, row[hStr]) || normalized.includes('만점');
               });
 
               const totalKey = headers.find(h => {
-                const normalized = h.replace(/\s+/g, '').toLowerCase();
+                const normalized = String(h).replace(/\s+/g, '').toLowerCase();
                 return normalized === '합계' || normalized === '총점' || normalized === '총합' || normalized === '합' || normalized === 'total';
               });
 
               let calculatedMaxTotal = 0;
               const displayItems = scoreHeaders.map(h => {
+                const hStr = String(h);
                 let parsedMax = 0;
-                const maxMatch = h.match(/만점\s*([\d.]+)/) || h.match(/만점\s*(\d+)/);
+                const maxMatch = hStr.match(/만점\s*([\d.]+)/) || hStr.match(/만점\s*(\d+)/);
                 if (maxMatch && maxMatch[1]) {
                   parsedMax = parseFloat(maxMatch[1]);
                 }
                 calculatedMaxTotal += parsedMax;
                 
                 return {
-                  originalHeader: h,
-                  displayName: h.replace(/\s*\(.*\)/g, '').trim(),
-                  score: row[h],
+                  originalHeader: hStr,
+                  displayName: hStr.replace(/\s*\(.*\)/g, '').trim(),
+                  score: row[hStr],
                   maxScore: parsedMax
                 };
               });
@@ -670,7 +672,8 @@ export default function ResultCard({
                         const val = row[key];
                         
                         // Parse brackets or parentheses at the end of the key (e.g. "함수 활용 (6점)" or "함수 활용[6점]")
-                        const formatKey = (str: string) => {
+                        const formatKey = (val: any) => {
+                          const str = String(val || '');
                           const match = str.match(/^([\s\S]+?)\s*([\(\[][^()\[\]]+[\)\]])$/);
                           if (match) {
                             return {

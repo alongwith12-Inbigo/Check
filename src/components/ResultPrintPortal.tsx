@@ -137,7 +137,7 @@ export default function ResultPrintPortal({
       return a.studentId.localeCompare(b.studentId, undefined, { numeric: true, sensitivity: 'base' });
     });
     setStudents(sortedList);
-  }, [selectedSubject, selectedClass, myEvaluations]);
+  }, [selectedSubject, selectedClass, myEvaluations, allStudents]);
 
   const handlePrint = () => {
     window.print();
