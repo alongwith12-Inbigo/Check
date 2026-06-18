@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, FileSpreadsheet, Check } from 'lucide-react';
 import { EvaluationState, Teacher, RegisteredStudent } from '../types';
-import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId } from '../utils';
+import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey } from '../utils';
 
 interface ResultPrintPortalProps {
   myEvaluations: EvaluationState[];
@@ -91,18 +91,8 @@ export default function ResultPrintPortal({
     });
     if (!r) return null;
 
-    const birthdateKey = findBirthdateKey(ev.headers);
     const feedbackKeys = findFeedbackKey(ev.headers);
-    const scoreKeys = ev.headers.filter(h => {
-      if (h === sIdKey || h === birthdateKey || feedbackKeys.includes(h)) return false;
-      if (String(h).includes('이름') || String(h).includes('성명')) return false;
-      return isScoreColumn(h, r[h]);
-    });
-
-    const totalScoreKey = scoreKeys.find(h => {
-      const norm = String(h).replace(/\s+/g, '').toLowerCase();
-      return norm.includes('합계') || norm.includes('총점') || norm.includes('총합') || norm.includes('최종') || norm.includes('합산');
-    }) || scoreKeys[scoreKeys.length - 1];
+    const totalScoreKey = findTotalScoreKey(ev.headers, r, feedbackKeys);
 
     if (!totalScoreKey) return null;
     const rawVal = parseFloat(String(r[totalScoreKey] || '0').trim());

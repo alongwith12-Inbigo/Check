@@ -16,7 +16,7 @@ import {
   Lock
 } from 'lucide-react';
 import { StudentSession, EvaluationState, Teacher, StudentResultItem, RegisteredStudent } from '../types';
-import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId } from '../utils';
+import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, findNameKey } from '../utils';
 import SignatureCanvas from './SignatureCanvas';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -172,8 +172,6 @@ export default function ResultCard({
   // Dynamically compute the results for this student from the chosen teacher
   const activeTeacherEvaluations = allEvaluations.filter(e => e.teacherCode === selectedTeacherCode);
   
-  const signatureEnabled = activeTeacherEvaluations.some(e => e.uploadType === 'pdf');
-  
   const results: StudentResultItem[] = [];
   activeTeacherEvaluations.forEach(evalItem => {
     // If it's PDF Summary Type
@@ -229,6 +227,8 @@ export default function ResultCard({
     }
   });
 
+  const signatureEnabled = results.some(r => r.uploadType === 'pdf');
+
   const handlePrint = () => {
     window.print();
   };
@@ -254,20 +254,8 @@ export default function ResultCard({
   sortedResults.forEach(item => {
     if (item.uploadType === 'pdf') return;
 
-    const studentIdKey = findStudentIdKey(item.headers);
-    const birthdateKey = findBirthdateKey(item.headers);
     const feedbackKeys = findFeedbackKey(item.headers);
-
-    const scoreKeys = item.headers.filter(h => {
-      if (h === studentIdKey || h === birthdateKey || feedbackKeys.includes(h)) return false;
-      if (String(h).includes('이름') || String(h).includes('성명')) return false;
-      return isScoreColumn(h, item.row[h]);
-    });
-
-    const totalScoreKey = scoreKeys.find(h => {
-      const norm = String(h).replace(/\s+/g, '').toLowerCase();
-      return norm.includes('합계') || norm.includes('총점') || norm.includes('총합') || norm.includes('최종') || norm.includes('합산');
-    }) || scoreKeys[scoreKeys.length - 1];
+    const totalScoreKey = findTotalScoreKey(item.headers, item.row, feedbackKeys);
 
     if (totalScoreKey) {
       const rawScoreVal = parseFloat(String(item.row[totalScoreKey] || '0').trim());
@@ -462,22 +450,21 @@ export default function ResultCard({
 
           const { headers, row, evaluationTitle, subject, round, evaluationDetailName, maxScore } = item;
           
+          const feedbackKeys = findFeedbackKey(headers);
+          const totalScoreKey = findTotalScoreKey(headers, row, feedbackKeys);
+          
           const studentIdKey = findStudentIdKey(headers);
           const birthdateKey = findBirthdateKey(headers);
-          const feedbackKeys = findFeedbackKey(headers);
+          const nameKey = findNameKey(headers);
+          const gradeKey = findGradeKey(headers);
+          const classKey = findClassKey(headers);
+          const numberKey = findNumberKey(headers);
 
           // Score metrics (sub-scores)
           const scoreKeys = headers.filter(h => {
-            if (h === studentIdKey || h === birthdateKey || feedbackKeys.includes(h)) return false;
-            if (String(h).includes('이름') || String(h).includes('성명')) return false;
+            if (h === studentIdKey || h === birthdateKey || h === nameKey || h === gradeKey || h === classKey || h === numberKey || feedbackKeys.includes(h)) return false;
             return isScoreColumn(h, row[h]);
           });
-
-          // Identify total score column (e.g. 합계, 총점)
-          const totalScoreKey = scoreKeys.find(h => {
-            const norm = String(h).replace(/\s+/g, '').toLowerCase();
-            return norm.includes('합계') || norm.includes('총점') || norm.includes('총합') || norm.includes('최종') || norm.includes('합산');
-          }) || scoreKeys[scoreKeys.length - 1]; // defaults to last score column if not found
 
           // Score keys for the list, excluding the total score key to avoid duplicate columns
           const subScoreKeys = scoreKeys.filter(k => k !== totalScoreKey);
@@ -526,7 +513,7 @@ export default function ResultCard({
                       영역별 세부 점수
                     </span>
                     
-                    <div className="flex flex-row flex-nowrap gap-1.5 sm:gap-2 justify-stretch items-center w-full overflow-x-auto pb-1 scrollbar-none">
+                    <div className="flex flex-wrap gap-2 sm:gap-2.5 w-full justify-start items-stretch">
                       {subScoreKeys.map(key => {
                         const val = row[key];
                         
@@ -547,7 +534,7 @@ export default function ResultCard({
                         return (
                           <div 
                             key={key} 
-                            className="flex-1 min-w-[65px] sm:min-w-[80px] bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl p-2 sm:p-3 text-center transition-colors hover:border-slate-300 print:bg-white print:border-slate-200 flex flex-col justify-between"
+                            className="w-[calc(50%-4px)] sm:w-[calc(25%-8px)] min-w-[100px] bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl p-2.5 sm:p-3.5 text-center transition-colors hover:border-slate-300 print:bg-white print:border-slate-200 flex flex-col justify-between shadow-xs shrink-0"
                           >
                             <div>
                               <span className="block text-[9.5px] sm:text-[10.5px] font-bold text-slate-500 leading-tight break-keep" title={key}>

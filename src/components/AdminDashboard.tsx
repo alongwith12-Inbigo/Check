@@ -16,10 +16,19 @@ import {
   Key
 } from 'lucide-react';
 import { EvaluationState, Teacher, RegisteredStudent } from '../types';
-import { findStudentIdKey, findBirthdateKey, findFeedbackKey } from '../utils';
+import { 
+  findStudentIdKey, 
+  findBirthdateKey, 
+  findFeedbackKey, 
+  findGradeKey, 
+  findClassKey, 
+  findNumberKey, 
+  findNameKey,
+  findTotalScoreKey
+} from '../utils';
 import ResultPrintPortal from './ResultPrintPortal';
 import { db } from '../firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 interface AdminDashboardProps {
   myEvaluations: EvaluationState[];
@@ -126,6 +135,87 @@ export default function AdminDashboard({
 }: AdminDashboardProps) {
   const [errorMsg, setErrorMsg] = useState('');
   const [isPrintOpen, setIsPrintOpen] = useState(false);
+
+  // 엑셀 샘플 템플릿 관리 상태
+  const [sampleTemplate, setSampleTemplate] = useState<{ fileName: string; fileBase64: string; uploadedAt: string } | null>(null);
+  const [isUploadingTemplate, setIsUploadingTemplate] = useState(false);
+  const templateFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Firestore에서 엑셀 샘플 파일 템플릿 로드
+  useEffect(() => {
+    const loadTemplate = async () => {
+      try {
+        const docRef = doc(db, 'systemConfig', 'excelTemplate');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setSampleTemplate(docSnap.data() as any);
+        }
+      } catch (err) {
+        console.error('Failed to load sample template:', err);
+      }
+    };
+    loadTemplate();
+  }, []);
+
+  // 관리자가 새로운 엑셀 템플릿 업로드 처리
+  const handleTemplateUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingTemplate(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const fileBase64 = event.target?.result as string;
+        const templateData = {
+          fileName: file.name,
+          fileBase64,
+          uploadedAt: new Date().toLocaleString('ko-KR')
+        };
+
+        const docRef = doc(db, 'systemConfig', 'excelTemplate');
+        await setDoc(docRef, templateData, { merge: true });
+        setSampleTemplate(templateData);
+        alert('엑셀 샘플 파일 템플릿이 성공적으로 업로드 및 갱신되었습니다!');
+      } catch (err) {
+        console.error(err);
+        alert('템플릿 업로드 중 에러가 발생했습니다.');
+      } finally {
+        setIsUploadingTemplate(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // 엑셀 양식 샘플 파일 다운로드
+  const downloadSampleTemplate = () => {
+    if (sampleTemplate && sampleTemplate.fileBase64) {
+      const link = document.createElement('a');
+      link.href = sampleTemplate.fileBase64;
+      link.download = sampleTemplate.fileName || '수행평가_등록용_엑셀샘플.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      // Fallback: XLS로 기본 형식 엑셀 빌드하고 내리는 대단히 안전한 백업 로직!
+      try {
+        const headers = ['학년', '반', '번호', '이름', '수행체크(확인용)', '세부수치(확인용)', '해당영역 최종점수', '피드백내용'];
+        const exampleRows = [
+          { '학년': 1, '반': 3, '번호': 1, '이름': '홍길동', '수행체크(확인용)': 10, '세부수치(확인용)': 5, '해당영역 최종점수': 15, '피드백내용': '프로젝트 계획이 구체적이며 함수식을 이용한 빅데이터 분석 구성이 뛰어남.' },
+          { '학년': 1, '반': 3, '번호': 2, '이름': '김철수', '수행체크(확인용)': 8, '세부수치(확인용)': 4, '해당영역 최종점수': 12, '피드백내용': '데이터 정제의 기초를 명확히 이해하고 있으나 시각화 분석 보충이 필요함.' }
+        ];
+        
+        const ws = XLSX.utils.json_to_sheet(exampleRows, { header: headers });
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '수행평가양식');
+        
+        XLSX.writeFile(wb, '수행평가_등록_권장양식_샘플.xlsx');
+      } catch (err) {
+        console.error('Fallback template download failed:', err);
+        alert('샘플 파일 다운로드 중에 실패했습니다.');
+      }
+    }
+  };
 
   // 엑셀 독립 등록 상태
   const [excelSubject, setExcelSubject] = useState('');
@@ -357,11 +447,44 @@ export default function AdminDashboard({
           return;
         }
 
-        const studentIdKey = findStudentIdKey(cleanHeaders);
+        // Dynamically compile "학번" from "학년", "반", "번호" columns if present
+        const gradeKey = findGradeKey(cleanHeaders);
+        const classKey = findClassKey(cleanHeaders);
+        const numberKey = findNumberKey(cleanHeaders);
+        
+        let processedHeaders = [...cleanHeaders];
+        let processedRows = [...rawRows];
+        let studentIdKey = findStudentIdKey(cleanHeaders);
+
+        if (gradeKey && classKey && numberKey) {
+          // If "학번" is not in there, let's inject it explicitly so matches can work smoothly
+          if (!studentIdKey) {
+            processedHeaders.unshift('학번');
+            studentIdKey = '학번';
+          }
+          
+          processedRows = rawRows.map(row => {
+            const gVal = String(row[gradeKey] || '').replace(/\D/g, '');
+            const cVal = String(row[classKey] || '').replace(/\D/g, '');
+            const nVal = String(row[numberKey] || '').replace(/\D/g, '');
+            
+            if (gVal && cVal && nVal) {
+              // 5-digit Student ID: Grade (1-digit) + Class (2-digit) + Number (2-digit)
+              const formattedClass = cVal.padStart(2, '0');
+              const formattedNum = nVal.padStart(2, '0');
+              const calculatedId = `${gVal}${formattedClass}${formattedNum}`;
+              return {
+                ...row,
+                [studentIdKey!]: calculatedId
+              };
+            }
+            return row;
+          });
+        }
 
         if (!studentIdKey) {
           setExcelErrorMsg(
-            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 문항이 포함된 열이 반드시 필요합니다.\n\n` + 
+            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 열 혹은 '학년', '반', '번호' 열이 모두 포함되어야 합니다.\n\n` + 
             `감지된 열 목록: [${cleanHeaders.join(', ')}]`
           );
           return;
@@ -385,8 +508,8 @@ export default function AdminDashboard({
           evaluationDetailName: defaultDetail,
           maxScore: defaultMax,
           reflectRate: defaultReflect,
-          headers: cleanHeaders,
-          rows: rawRows,
+          headers: processedHeaders,
+          rows: processedRows,
           uploadedAt: new Date().toLocaleString('ko-KR'),
           uploadType: 'excel'
         };
@@ -671,6 +794,47 @@ export default function AdminDashboard({
                     <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
                       수행영역별 학생 점수 및 서술형 피드백을 한번에 입력하는 엑셀 파일을 업로드합니다.
                     </p>
+                  </div>
+
+                  {/* 엑셀 샘플 파일 다운로드 및 관리자 업로드 바 */}
+                  <div className="bg-amber-50/50 border border-amber-200/80 rounded-2xl p-4.5 space-y-3.5 my-2.5 animate-fadeIn">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/70 p-3.5 rounded-xl border border-amber-100">
+                      <div className="space-y-1">
+                        <span className="text-[9px] font-black text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-md uppercase tracking-wider">교사용 필수 양식</span>
+                        <p className="text-xs font-black text-slate-800 leading-tight">선생님들이 보실 엑셀 샘플 파일 양식</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={downloadSampleTemplate}
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 border border-amber-400 text-white rounded-xl text-xs font-black transition-all hover:scale-[1.02] cursor-pointer self-start sm:self-center shrink-0 shadow-sm"
+                      >
+                        <FileSpreadsheet size={13} /> {sampleTemplate ? '최신 샘플 다운로드' : '기본 샘플 다운로드'} 📥
+                      </button>
+                    </div>
+                    
+                    {/* 관리자를 위한 새로운 샘플 업로드 폼 (Base64) */}
+                    <div className="pt-1.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-slate-600">
+                      <span className="text-[10px] font-bold text-slate-500 leading-normal truncate max-w-[250px]">
+                        {sampleTemplate ? `🔔 등록됨: ${sampleTemplate.fileName} (${sampleTemplate.uploadedAt})` : '📌 기본 샘플 권장 서류 세팅 상태'}
+                      </span>
+                      <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+                        <input
+                          ref={templateFileInputRef}
+                          type="file"
+                          accept=".xlsx, .xls"
+                          onChange={handleTemplateUpload}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => templateFileInputRef.current?.click()}
+                          disabled={isUploadingTemplate}
+                          className="text-[10px] font-black text-indigo-900 bg-white/90 hover:bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-1.5 transition-all shadow-xxs cursor-pointer"
+                        >
+                          {isUploadingTemplate ? '⌛ 반영 설정 중...' : '⚙️ 관리자 양식 파일 교체'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Excel Specific Metadata Fields */}

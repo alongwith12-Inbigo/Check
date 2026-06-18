@@ -126,6 +126,61 @@ export function findFeedbackKey(headers: string[]): string[] {
   });
 }
 
+export function findGradeKey(headers: string[]): string | undefined {
+  return headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized === '학년' || normalized.includes('grade') || normalized === '학';
+  });
+}
+
+export function findClassKey(headers: string[]): string | undefined {
+  return headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized === '반' || normalized.includes('class') || normalized === '학급';
+  });
+}
+
+export function findNumberKey(headers: string[]): string | undefined {
+  return headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized === '번호' || normalized === 'no' || normalized.includes('number') || normalized === '번';
+  });
+}
+
+export function findNameKey(headers: string[]): string | undefined {
+  return headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized === '이름' || normalized === '성명' || normalized.includes('name') || normalized.includes('학생명');
+  });
+}
+
+/**
+  * Finds the total score key (the last score-bearing column, excluding feedback and student identifiers)
+  */
+export function findTotalScoreKey(headers: string[], row: Record<string, any>, feedbackKeys: string[]): string | undefined {
+  const studentIdKey = findStudentIdKey(headers);
+  const birthdateKey = findBirthdateKey(headers);
+  const nameKey = findNameKey(headers);
+  const gradeKey = findGradeKey(headers);
+  const classKey = findClassKey(headers);
+  const numberKey = findNumberKey(headers);
+
+  // Filter out identifiers and feedback rows
+  const potentialScoreKeys = headers.filter(h => {
+    if (h === studentIdKey || h === birthdateKey || h === nameKey || h === gradeKey || h === classKey || h === numberKey) return false;
+    if (feedbackKeys.includes(h)) return false;
+    
+    // Check if the column exists in isScoreColumn
+    return isScoreColumn(h, row[h]);
+  });
+
+  if (potentialScoreKeys.length === 0) return undefined;
+  
+  // The user specifies: "최종 계산하는 점수는 숫자의 마지막 열 (피드백 제외)만 숫자로 해서 수행평가 점수"
+  // So we strictly take the absolute LAST potential score column
+  return potentialScoreKeys[potentialScoreKeys.length - 1];
+}
+
 /**
  * Checks if a column represents a numeric score value
  * A score column is something like "점수", "총점", "1차", "태도", "수행", "평가"
