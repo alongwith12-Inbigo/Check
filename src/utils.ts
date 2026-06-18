@@ -133,6 +133,53 @@ export function findGradeKey(headers: string[]): string | undefined {
   });
 }
 
+export function findClassNumberKey(headers: string[]): string | undefined {
+  return headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized === '반/번호' || 
+           normalized === '반번호' || 
+           normalized === '반_번호' || 
+           normalized === '반-번호' || 
+           normalized === '반번' || 
+           normalized.includes('학적') ||
+           (normalized.includes('반') && normalized.includes('번호'));
+  });
+}
+
+export function parseClassNumber(value: any): { classVal: string; numberVal: string } | null {
+  if (value === undefined || value === null || value === '') return null;
+  const cleaned = String(value).trim();
+  
+  if (cleaned.includes('/')) {
+    const parts = cleaned.split('/');
+    const c = parts[0].replace(/\D/g, '');
+    const n = parts[1].replace(/\D/g, '');
+    if (c && n) return { classVal: c, numberVal: n };
+  }
+  
+  if (cleaned.includes('-')) {
+    const parts = cleaned.split('-');
+    const c = parts[0].replace(/\D/g, '');
+    const n = parts[1].replace(/\D/g, '');
+    if (c && n) return { classVal: c, numberVal: n };
+  }
+
+  const matches = cleaned.match(/(\d+)[^\d]+(\d+)/);
+  if (matches && matches[1] && matches[2]) {
+    return { classVal: matches[1], numberVal: matches[2] };
+  }
+
+  return null;
+}
+
+export function extractGradeFromTarget(targetGradeClass: string): string {
+  const digits = String(targetGradeClass).replace(/\D/g, '');
+  if (digits.length > 0) {
+    return digits.charAt(0);
+  }
+  return '1';
+}
+
 export function findClassKey(headers: string[]): string | undefined {
   return headers.find(h => {
     const normalized = String(h).replace(/\s+/g, '').toLowerCase();

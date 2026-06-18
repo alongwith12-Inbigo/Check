@@ -24,7 +24,10 @@ import {
   findClassKey, 
   findNumberKey, 
   findNameKey,
-  findTotalScoreKey
+  findTotalScoreKey,
+  findClassNumberKey,
+  extractGradeFromTarget,
+  parseClassNumber
 } from '../utils';
 import ResultPrintPortal from './ResultPrintPortal';
 import { db } from '../firebase';
@@ -247,6 +250,12 @@ export default function AdminDashboard({
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false);
 
+  // Custom State for confirm deletion inside iframe safely
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+
   // Active evaluation being edited
   const activeEval = myEvaluations.find(e => e.id === activeEvaluationId);
 
@@ -374,58 +383,170 @@ export default function AdminDashboard({
 
   const processPdfFile = async (file: File) => {
     setPdfErrorMsg('');
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const base64Data = e.target?.result as string;
-        if (!base64Data) {
-          setPdfErrorMsg('PDF 데이터를 정상적으로 디코딩하지 못했습니다.');
-          return;
+    const cleanTgtGC = pdfTargetGradeClass.trim();
+    if (!cleanTgtGC) {
+      setPdfErrorMsg(
+        '⚠️ 대상 학년반 정보를 먼저 입력하십시오.\n' +
+        '예: 1학년 1반 전체를 대상으로 하려면 "101"을 입력해야 매칭 조회가 가능합니다.'
+      );
+      return;
+    }
+
+    const defaultSubject = pdfSubject.trim();
+    if (!defaultSubject) {
+      setPdfErrorMsg('⚠️ 평가 과목명을 먼저 입력하십시오.');
+      return;
+    }
+
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
+    if (isExcel) {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const data = e.target?.result;
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          
+          const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' }) as Record<string, any>[];
+          const headersJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as string[];
+          const cleanHeaders = (headersJson || []).filter(h => h && String(h).trim() !== "");
+
+          if (cleanHeaders.length === 0 || rawRows.length === 0) {
+            setPdfErrorMsg('엑셀 파일에 유효한 데이터가 존재하지 않습니다.');
+            return;
+          }
+
+          const gradeKey = findGradeKey(cleanHeaders);
+          const classKey = findClassKey(cleanHeaders);
+          const numberKey = findNumberKey(cleanHeaders);
+          const classNumberKey = findClassNumberKey(cleanHeaders);
+          
+          let processedHeaders = [...cleanHeaders];
+          let processedRows = [...rawRows];
+          let studentIdKey = findStudentIdKey(cleanHeaders);
+
+          const gradeVal = extractGradeFromTarget(cleanTgtGC);
+
+          if (classNumberKey) {
+            if (!studentIdKey) {
+              processedHeaders.unshift('학번');
+              studentIdKey = '학번';
+            }
+            
+            processedRows = rawRows.map(row => {
+              const classNumRaw = row[classNumberKey];
+              const parsed = parseClassNumber(classNumRaw);
+              if (parsed) {
+                const { classVal, numberVal } = parsed;
+                const formattedNum = numberVal.padStart(2, '0');
+                const calculatedId = `${gradeVal}0${classVal}${formattedNum}`;
+                return {
+                  ...row,
+                  [studentIdKey!]: calculatedId
+                };
+              }
+              return row;
+            });
+          } else if (gradeKey && classKey && numberKey) {
+            if (!studentIdKey) {
+              processedHeaders.unshift('학번');
+              studentIdKey = '학번';
+            }
+            
+            processedRows = rawRows.map(row => {
+              const gVal = String(row[gradeKey] || '').replace(/\D/g, '') || gradeVal;
+              const cVal = String(row[classKey] || '').replace(/\D/g, '');
+              const nVal = String(row[numberKey] || '').replace(/\D/g, '');
+              
+              if (gVal && cVal && nVal) {
+                const formattedNum = nVal.padStart(2, '0');
+                const calculatedId = `${gVal}0${cVal}${formattedNum}`;
+                return {
+                  ...row,
+                  [studentIdKey!]: calculatedId
+                };
+              }
+              return row;
+            });
+          }
+
+          if (!studentIdKey) {
+            setPdfErrorMsg(
+              `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번', '반/번호' 혹은 '학년', '반', '번호' 열이 포함되어야 합니다.`
+            );
+            return;
+          }
+
+          const defaultRound = pdfRound.trim() || '1';
+          const defaultDetail = pdfDetailName.trim() || '수행평가 결과내역';
+          const initialTitle = `📂 [최종확인] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
+
+          const newEvalMetadata: EvaluationState = {
+            title: initialTitle,
+            subject: defaultSubject,
+            round: defaultRound,
+            evaluationDetailName: defaultDetail,
+            maxScore: '100', // Handled client side
+            reflectRate: '100',
+            headers: processedHeaders,
+            rows: processedRows,
+            uploadedAt: new Date().toLocaleString('ko-KR'),
+            uploadType: 'pdf',
+            pdfFileName: file.name,
+            targetGradeClass: cleanTgtGC
+          };
+
+          const newId = await onCreateEvaluation(newEvalMetadata);
+          onSelectEvaluationId(newId);
+          setPdfErrorMsg('');
+        } catch (err) {
+          console.error(err);
+          setPdfErrorMsg('엑셀 파일 분석 중 에러가 발생했습니다.');
         }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const base64Data = e.target?.result as string;
+          if (!base64Data) {
+            setPdfErrorMsg('PDF 데이터를 정상적으로 디코딩하지 못했습니다.');
+            return;
+          }
 
-        const cleanTgtGC = pdfTargetGradeClass.trim();
-        if (!cleanTgtGC) {
-          setPdfErrorMsg(
-            '⚠️ 대상 학년반 정보를 먼저 입력하십시오.\n' +
-            '예: 1학년 1반 전체를 대상으로 하려면 "101"을 입력해야 매칭 조회가 가능합니다.'
-          );
-          return;
+          const defaultRound = pdfRound.trim() || '1';
+          const defaultDetail = pdfDetailName.trim() || '수행평가 결과안내';
+          const initialTitle = `📂 [PDF 전체점수] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
+
+          const newEvalMetadata: EvaluationState = {
+            title: initialTitle,
+            subject: defaultSubject,
+            round: defaultRound,
+            evaluationDetailName: defaultDetail,
+            maxScore: '100',
+            reflectRate: '100',
+            headers: [],
+            rows: [],
+            uploadedAt: new Date().toLocaleString('ko-KR'),
+            uploadType: 'pdf',
+            pdfBase64: base64Data,
+            pdfFileName: file.name,
+            targetGradeClass: cleanTgtGC
+          };
+
+          const newId = await onCreateEvaluation(newEvalMetadata);
+          onSelectEvaluationId(newId);
+          setPdfErrorMsg('');
+        } catch (err) {
+          console.error(err);
+          setPdfErrorMsg('PDF 파일 업로드 중 예기치 못한 에러가 발생했습니다.');
         }
-
-        const defaultSubject = pdfSubject.trim();
-        if (!defaultSubject) {
-          setPdfErrorMsg('⚠️ 평가 과목명을 먼저 입력하십시오.');
-          return;
-        }
-        const defaultRound = pdfRound.trim() || '1';
-        const defaultDetail = pdfDetailName.trim() || '수행평가 결과안내';
-        const initialTitle = `📂 [PDF 전체점수] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
-
-        const newEvalMetadata: EvaluationState = {
-          title: initialTitle,
-          subject: defaultSubject,
-          round: defaultRound,
-          evaluationDetailName: defaultDetail,
-          maxScore: '100', // Summary score has nominal max 100
-          reflectRate: '100',
-          headers: [],
-          rows: [],
-          uploadedAt: new Date().toLocaleString('ko-KR'),
-          uploadType: 'pdf',
-          pdfBase64: base64Data,
-          pdfFileName: file.name,
-          targetGradeClass: cleanTgtGC
-        };
-
-        const newId = await onCreateEvaluation(newEvalMetadata);
-        onSelectEvaluationId(newId);
-        setPdfErrorMsg('');
-      } catch (err) {
-        console.error(err);
-        setPdfErrorMsg('PDF 파일 업로드 중 예기치 못한 에러가 발생했습니다.');
-      }
-    };
-    reader.readAsDataURL(file);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const processExcelFile = async (file: File) => {
@@ -584,10 +705,10 @@ export default function AdminDashboard({
     pdfFileInputRef.current?.click();
   };
 
-  const handleDeleteActive = async (idToDelete: string) => {
-    if (window.confirm('이 성적 파일을 정말 삭제합니까? 파일 삭제 시 점수 조회는 불가합니다.')) {
-      await onDeleteEvaluation(idToDelete);
-    }
+  const handleDeleteActive = (idToDelete: string) => {
+    const item = myEvaluations.find(e => e.id === idToDelete);
+    const itemTitle = item ? item.title : '선택한 파일';
+    setDeleteConfirmModal({ id: idToDelete, title: itemTitle });
   };
 
   // Preview filtration
@@ -655,45 +776,119 @@ export default function AdminDashboard({
 
             {myEvaluations.length === 0 ? (
               <div className="py-8 text-center text-slate-400 text-xs italic">
-                등록된 성적 파일이 없습니다.<br/>새로운 엑셀 파일을 업로드 하세요.
+                등록된 성적 파일이 없습니다.<br/>새로운 엑셀 또는 PDF 파일을 업로드 하세요.
               </div>
             ) : (
-              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                {myEvaluations.map((item) => {
-                  const isActive = item.id === activeEvaluationId;
+              <div className="space-y-4">
+                {/* 1. Excel Evaluation List */}
+                {(() => {
+                  const excelEvaluations = myEvaluations.filter(e => e.uploadType !== 'pdf');
                   return (
-                    <div 
-                      key={item.id} 
-                      className={`group p-3 rounded-xl border text-left cursor-pointer transition-all flex justify-between items-start gap-1 ${
-                        isActive 
-                          ? 'bg-indigo-50 border-indigo-300 shadow-xs' 
-                          : 'bg-white border-slate-200 hover:border-slate-300'
-                      }`}
-                      onClick={() => onSelectEvaluationId(item.id || '')}
-                    >
-                      <div className="space-y-1 overflow-hidden">
-                        <span className="block text-xs font-black text-slate-800 truncate" title={item.title}>
-                          {item.title}
-                        </span>
-                        <span className="block text-[10px] text-slate-400 font-mono">
-                          {item.uploadedAt || '시각 없음'}
-                        </span>
-                      </div>
+                    <div className="space-y-1.5">
+                      <span className="block text-[10px] font-black text-slate-500 uppercase tracking-tight flex items-center gap-1 border-b border-slate-100 pb-1">
+                        📊 엑셀 성적표 ({excelEvaluations.length}개)
+                      </span>
+                      {excelEvaluations.length === 0 ? (
+                        <div className="py-3 text-center text-slate-450 text-[10.5px] italic bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                          등록된 엑셀 파일이 없습니다.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-[190px] overflow-y-auto pr-1">
+                          {excelEvaluations.map((item) => {
+                            const isActive = item.id === activeEvaluationId;
+                            return (
+                              <div 
+                                key={item.id} 
+                                className={`group p-2.5 rounded-xl border text-left cursor-pointer transition-all flex justify-between items-start gap-1 ${
+                                  isActive 
+                                    ? 'bg-indigo-50 border-indigo-300 shadow-xs' 
+                                    : 'bg-white border-slate-200 hover:border-slate-350'
+                                }`}
+                                onClick={() => onSelectEvaluationId(item.id || '')}
+                              >
+                                <div className="space-y-0.5 overflow-hidden">
+                                  <span className="block text-[11px] font-black text-slate-800 truncate" title={item.title}>
+                                    {item.title}
+                                  </span>
+                                  <span className="block text-[9px] text-slate-400 font-mono">
+                                    {item.uploadedAt || '시각 없음'}
+                                  </span>
+                                </div>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteActive(item.id || '');
-                        }}
-                        className="p-1 bg-white border border-slate-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition"
-                        title="파일 삭제"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteActive(item.id || '');
+                                  }}
+                                  className="p-1 bg-white border border-slate-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition shrink-0 cursor-pointer"
+                                  title="파일 삭제"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
-                })}
+                })()}
+
+                {/* 2. PDF Evaluation List */}
+                {(() => {
+                  const pdfEvaluations = myEvaluations.filter(e => e.uploadType === 'pdf');
+                  return (
+                    <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                      <span className="block text-[10px] font-black text-amber-800 uppercase tracking-tight flex items-center gap-1 border-b border-amber-100 pb-1">
+                        📄 PDF 결과지 ({pdfEvaluations.length}개)
+                      </span>
+                      {pdfEvaluations.length === 0 ? (
+                        <div className="py-3 text-center text-slate-450 text-[10.5px] italic bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                          등록된 PDF 파일이 없습니다.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-[190px] overflow-y-auto pr-1">
+                          {pdfEvaluations.map((item) => {
+                            const isActive = item.id === activeEvaluationId;
+                            return (
+                              <div 
+                                key={item.id} 
+                                className={`group p-2.5 rounded-xl border text-left cursor-pointer transition-all flex justify-between items-start gap-1 ${
+                                  isActive 
+                                    ? 'bg-amber-50/50 border-amber-350 shadow-xs' 
+                                    : 'bg-white border-slate-200 hover:border-slate-350'
+                                }`}
+                                onClick={() => onSelectEvaluationId(item.id || '')}
+                              >
+                                <div className="space-y-0.5 overflow-hidden">
+                                  <span className="block text-[11px] font-black text-slate-800 truncate" title={item.title}>
+                                    {item.title}
+                                  </span>
+                                  <span className="block text-[9px] text-slate-400 font-mono">
+                                    {item.uploadedAt || '시각 없음'}
+                                  </span>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteActive(item.id || '');
+                                  }}
+                                  className="p-1 bg-white border border-slate-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition shrink-0 cursor-pointer"
+                                  title="파일 삭제"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
             
@@ -1005,7 +1200,7 @@ export default function AdminDashboard({
                   </div>
 
                   <div id="pdf-notifying-banner" className="bg-indigo-50/50 border border-indigo-100 p-2.5 rounded-lg text-[10px] text-slate-600 leading-normal">
-                    <span>💡 <strong>필독:</strong> 학번 대조를 위해 <strong>대상 학년반</strong>(예: 1학년 1반은 101, 복수 반은 101, 102 쉼표 구분)을 정확히 입력한 뒤 PDF 파일을 드롭하십시오.</span>
+                    <span>💡 <strong>필독:</strong> 학번 대조 및 개인 점수 식별을 위해 <strong>대상 학년반</strong>(예: 1학년 7반은 107)을 정확히 입력해 주십시오. <strong>학생 프라이버시 보호를 위해 전체 파일 내용 노출을 막고 개인의 성적 및 총합 합계만 필터링하여 보여줍니다.</strong> 최종 확인 일람표 엑셀 파일(.xlsx/.xls)을 등록하시면 완벽한 자동 식별이 지원됩니다.</span>
                   </div>
 
                   {/* PDF File Drop Area */}
@@ -1025,15 +1220,15 @@ export default function AdminDashboard({
                     <input 
                       ref={pdfFileInputRef}
                       type="file" 
-                      accept=".pdf"
+                      accept=".pdf, .xlsx, .xls"
                       onChange={handlePdfFileChange}
                       className="hidden" 
                     />
                     <div className="p-2 bg-rose-50 rounded-full mb-2 text-rose-900">
                       <Upload size={16} className="stroke-[2.5]" />
                     </div>
-                    <p className="text-xs font-black text-rose-950">여기에 피디에프 파일을 드래그하거나 클릭하세요</p>
-                    <p className="text-[10px] text-slate-450 mt-1">.pdf 확장자만 업로드 가능합니다.</p>
+                    <p className="text-xs font-black text-rose-950">여기에 성적 일람표(Excel) 또는 PDF 파일을 드래그하거나 클릭하세요</p>
+                    <p className="text-[10px] text-slate-450 mt-1">.pdf, .xlsx, .xls 파일 업로드 가능</p>
                   </div>
                 </div>
 
@@ -1470,6 +1665,46 @@ export default function AdminDashboard({
                 {isPasswordSubmitting ? '변경 처리 중...' : '확인 및 변경 완료'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirmModal && (
+        <div id="delete-confirm-overlay" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn select-none">
+          <div className="bg-white border border-slate-200 shadow-2xl rounded-2xl max-w-sm w-full overflow-hidden p-5 space-y-4">
+            <div className="flex items-center gap-2 text-rose-600">
+              <Trash2 size={18} className="animate-bounce" />
+              <span className="text-sm font-black tracking-tight">수행평가 파일 삭제 확인</span>
+            </div>
+            <p className="text-xs text-slate-600 font-semibold leading-relaxed whitespace-pre-line">
+              정말로 해당 수행평가 파일을 삭제하시겠습니까?{"\n"}
+              삭제 이후에는 학생의 성적 확인 및 서명 조회가 불가능합니다.
+            </p>
+            <div className="bg-slate-50 border border-slate-150 p-3 rounded-xl space-y-1">
+              <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-tight">삭제할 파일 제목</span>
+              <span className="text-xs font-black text-slate-800 block truncate">{deleteConfirmModal.title}</span>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmModal(null)}
+                className="px-3.5 py-2 bg-white border border-slate-250 hover:bg-slate-50 text-slate-700 font-extrabold rounded-xl text-xs transition duration-150 cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = deleteConfirmModal.id;
+                  setDeleteConfirmModal(null);
+                  await onDeleteEvaluation(id);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 border border-rose-500 text-white font-extrabold rounded-xl text-xs transition duration-150 cursor-pointer shadow-xs hover:scale-[1.02]"
+              >
+                삭제하기
+              </button>
+            </div>
           </div>
         </div>
       )}

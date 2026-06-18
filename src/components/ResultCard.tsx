@@ -16,7 +16,7 @@ import {
   Lock
 } from 'lucide-react';
 import { StudentSession, EvaluationState, Teacher, StudentResultItem, RegisteredStudent } from '../types';
-import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, findNameKey, findGradeKey, findClassKey, findNumberKey } from '../utils';
+import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, findNameKey, findGradeKey, findClassKey, findNumberKey, findClassNumberKey, parseClassNumber, extractGradeFromTarget } from '../utils';
 import SignatureCanvas from './SignatureCanvas';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -48,6 +48,12 @@ export default function ResultCard({
 }: ResultCardProps) {
   const { studentId } = sessionData;
   const [isSavingSig, setIsSavingSig] = useState(false);
+
+  // Dynamic overlay state to replace iframe-unsafe window.confirm
+  const [deleteSignatureModal, setDeleteSignatureModal] = useState<{
+    subject: string;
+    studentId: string;
+  } | null>(null);
 
   // States for password changing
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -383,6 +389,169 @@ export default function ResultCard({
         )}
         {sortedResults.map((item, index) => {
           if (item.uploadType === 'pdf') {
+            const headers = item.headers || [];
+            const row = item.row || {};
+            const hasData = headers.length > 0 && Object.keys(row).length > 0;
+
+            if (hasData) {
+              const studentIdKey = findStudentIdKey(headers);
+              const nameKey = findNameKey(headers);
+              const classNumberKey = findClassNumberKey(headers);
+              const feedbackKeys = findFeedbackKey(headers);
+
+              const scoreHeaders = headers.filter(h => {
+                if (h === studentIdKey || h === nameKey || h === classNumberKey) return false;
+                if (feedbackKeys.includes(h)) return false;
+                
+                const gKey = findGradeKey(headers);
+                const cKey = findClassKey(headers);
+                const nKey = findNumberKey(headers);
+                if (h === gKey || h === cKey || h === nKey) return false;
+
+                const normalized = h.replace(/\s+/g, '').toLowerCase();
+                if (normalized === '합계' || normalized === '총점' || normalized === '총합' || normalized === '합' || normalized === 'total') return false;
+
+                return isScoreColumn(h, row[h]) || normalized.includes('만점');
+              });
+
+              const totalKey = headers.find(h => {
+                const normalized = h.replace(/\s+/g, '').toLowerCase();
+                return normalized === '합계' || normalized === '총점' || normalized === '총합' || normalized === '합' || normalized === 'total';
+              });
+
+              let calculatedMaxTotal = 0;
+              const displayItems = scoreHeaders.map(h => {
+                let parsedMax = 0;
+                const maxMatch = h.match(/만점\s*([\d.]+)/) || h.match(/만점\s*(\d+)/);
+                if (maxMatch && maxMatch[1]) {
+                  parsedMax = parseFloat(maxMatch[1]);
+                }
+                calculatedMaxTotal += parsedMax;
+                
+                return {
+                  originalHeader: h,
+                  displayName: h.replace(/\s*\(.*\)/g, '').trim(),
+                  score: row[h],
+                  maxScore: parsedMax
+                };
+              });
+
+              const rawTotalVal = totalKey ? row[totalKey] : null;
+              const totalScoreVal = rawTotalVal !== null && rawTotalVal !== undefined && rawTotalVal !== ''
+                ? rawTotalVal
+                : displayItems.reduce((acc, current) => acc + (parseFloat(current.score) || 0), 0);
+
+              const feedbackVal = feedbackKeys.map(k => row[k]).filter(v => v !== undefined && v !== null && String(v).trim() !== '').join(' | ');
+
+              return (
+                <div 
+                  key={item.evaluationId} 
+                  className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden print:border print:border-slate-350 print:shadow-none break-inside-avoid-page"
+                >
+                  {/* Header Title Section */}
+                  <div className="bg-rose-50/50 border-b border-rose-100 p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:bg-slate-100">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-2 bg-rose-100/80 text-rose-900 rounded-xl mt-0.5 print:bg-slate-200">
+                        <Award size={16} className="text-rose-950 font-black" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black text-rose-800 bg-rose-50 border border-rose-100 px-2.5 py-0.5 rounded-md uppercase print:bg-white">
+                          최종 결과 통지 및 서명
+                        </span>
+                        <h2 className="text-sm sm:text-base font-black text-slate-900 mt-1">
+                          {item.subject} 종합 수행평가 최종 확인표
+                        </h2>
+                      </div>
+                    </div>
+                    <span className="text-[11px] bg-rose-100 border border-rose-250 font-black px-3 py-1 rounded-xl text-rose-900 self-start sm:self-center">
+                      최종 성적 확인
+                    </span>
+                  </div>
+
+                  <div className="p-6 sm:p-7 space-y-6">
+                    {/* Intro Alert Banner */}
+                    <div id="pdf-privacy-alert-strip" className="bg-rose-50/30 border border-rose-100 p-4 rounded-2xl text-xs text-rose-950 leading-relaxed font-semibold">
+                      🔒 <strong>개인 정보 식별 완료:</strong> 본 성적표는 타 학생 조회가 불가하도록 필터링된 개별 전용 통지 자료입니다. 각 영역별 세부 취득 점수 및 최종 환산 합계를 확인하신 후, 하단 서명란에 전자 서명을 완료하여 확정해 주시기 바랍니다.
+                    </div>
+
+                    {/* Bento Box Score Cards Grid dyanmically divided */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {displayItems.map((scoreItem, idx) => {
+                        const scoreNum = parseFloat(scoreItem.score) || 0;
+                        const maxNum = scoreItem.maxScore || 100;
+                        const percentNum = Math.min(100, Math.max(0, (scoreNum / maxNum) * 100));
+
+                        return (
+                          <div 
+                            key={idx}
+                            className="bg-slate-50/55 border border-slate-200 hover:border-rose-200 p-4 sm:p-5 rounded-2xl transition-all duration-250"
+                          >
+                            <span className="text-[9.5px] uppercase font-black text-slate-400 tracking-wider">
+                              영역 {idx + 1}
+                            </span>
+                            <h4 className="text-xs font-black text-slate-800 mt-1 truncate" title={scoreItem.displayName}>
+                              {scoreItem.displayName}
+                            </h4>
+
+                            <div className="mt-4 flex items-baseline justify-between">
+                              <span className="text-2xl font-black text-slate-900 font-mono">
+                                {scoreItem.score}
+                              </span>
+                              <span className="text-xs font-bold text-slate-400">
+                                / {scoreItem.maxScore} 점 만점
+                              </span>
+                            </div>
+
+                            {/* Gauge bar */}
+                            <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2.5 overflow-hidden">
+                              <div 
+                                className="bg-rose-650 h-1.5 rounded-full transition-all duration-500" 
+                                style={{ width: `${percentNum}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Prominent High-Contrast SUM Card */}
+                    <div className="bg-rose-650/5 border border-rose-200 rounded-2xl p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="text-center sm:text-left space-y-1">
+                        <span className="text-[10px] bg-rose-600 text-white rounded font-black px-2.5 py-0.5 inline-block">
+                          최종 취득 총계
+                        </span>
+                        <h4 className="text-xs font-black text-slate-800 leading-normal mt-1.5">
+                          본 과목의 모든 세부 영역 점수를 합산한 최종 수행평가 합산 원점수입니다.
+                        </h4>
+                      </div>
+                      <div className="text-center sm:text-right font-mono">
+                        <span className="text-3xl sm:text-4xl font-black text-rose-950">
+                          {totalScoreVal}
+                        </span>
+                        <span className="text-sm text-slate-400 font-bold ml-1">
+                          / {calculatedMaxTotal || '100'} 점 만점
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Remarks/Feedback section if exists */}
+                    {feedbackVal ? (
+                      <div className="border border-slate-200 rounded-2xl p-5 space-y-2">
+                        <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                          📝 평가 비고 및 특기 사유
+                        </h4>
+                        <p className="text-xs sm:text-sm text-slate-700 font-bold leading-relaxed whitespace-pre-wrap mt-2">
+                          {feedbackVal}
+                        </p>
+                      </div>
+                    ) : null}
+
+                  </div>
+                </div>
+              );
+            }
+
+            // Raw PDF Fallback: Has no excel headers/rows
             return (
               <div 
                 key={item.evaluationId} 
@@ -399,50 +568,33 @@ export default function ResultCard({
                         요약 성적 통지
                       </span>
                       <h2 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
-                        {item.subject} 종합 수행평가 성적안내표 (PDF)
+                        {item.subject} 종합 수행평가 성적안내표
                       </h2>
                     </div>
                   </div>
                   <span className="text-[11px] bg-amber-100/60 border border-amber-250 font-bold px-3 py-1 rounded-xl text-amber-800 self-start sm:self-center">
-                    전체 통합 안내형
+                    보안 안심 대조형
                   </span>
                 </div>
 
-                {/* PDF Info & Download Block */}
+                {/* Secure Notice Block */}
                 <div className="p-6 sm:p-7 space-y-4">
-                  <div className="bg-amber-50/40 border border-amber-150 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 animate-fadeIn">
-                    <div className="space-y-1 text-center sm:text-left">
-                      <span className="text-[10px] bg-amber-150 border border-amber-200 rounded font-black px-2 py-0.5 text-amber-900">
-                        종합 요약 결과지 동기화
+                  <div className="bg-rose-50/35 border border-rose-150 rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4 animate-fadeIn">
+                    <div className="p-3 bg-rose-50 text-rose-900 rounded-full">
+                      <Lock size={20} className="stroke-[2.5]" />
+                    </div>
+                    <div className="space-y-1.5 flex-1 select-none text-left">
+                      <span className="text-[10px] bg-rose-100 border border-rose-200 rounded font-black px-2 py-0.5 text-rose-950">
+                        학생 개인정보 및 사생활 보호 설정 가동
                       </span>
-                      <h4 className="text-xs font-black text-slate-800 mt-1.5 h-auto leading-relaxed">
-                        선생님께서 전체 요약 점수 및 영역 성적 내용이 담긴 PDF 파일을 업로드하셨습니다.
+                      <h4 className="text-xs font-black text-slate-800 leading-relaxed mt-1.5">
+                        본 평가 성적표는 타 학생 개개인의 취득 점수 및 신상정보가 한 번에 기록되어 있는 일람표(PDF) 파일입니다.
                       </h4>
-                      <p className="text-[10.5px] text-slate-450 font-medium">
-                        파일명: {item.pdfFileName || '전체_수행평가_합산_결과.pdf'}
+                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                        교내 학생 비밀 보장 및 개인정보 보호 규정 준수를 위해 원본 PDF의 직접 다운로드 및 화면 전체 조회가 영구 차단됩니다. 각 평가 영역별 안전하고 정밀한 개별 점수를 전산 조회하고 서명하시려면, 교과 및 학급 선생님께 <strong>\'수행평가 일람표 Excel 파일(.xlsx, .xls)로 최종 등록해 주시도록\'</strong> 안내하여 주시기 바랍니다.
                       </p>
                     </div>
-
-                    <a
-                      href={item.pdfBase64}
-                      download={item.pdfFileName || `${item.subject}_성적결과.pdf`}
-                      className="px-4 py-2.5 bg-slate-900 hover:bg-indigo-900 text-white rounded-xl text-xs font-extrabold transition-all duration-205 flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto text-center shadow-xs shrink-0 self-center"
-                    >
-                      <Download size={14} className="stroke-[2.5]" />
-                      전체 성적 PDF 다운로드
-                    </a>
                   </div>
-
-                  {/* Browser embedded iframe viewer for seamless desktop previews! */}
-                  {item.pdfBase64 && (
-                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-100 h-[420px] hidden md:block relative">
-                      <iframe
-                        src={`${item.pdfBase64}#toolbar=0&navpanes=0`}
-                        className="w-full h-full"
-                        title="PDF 성적표 뷰어"
-                      />
-                    </div>
-                  )}
                 </div>
               </div>
             );
@@ -765,12 +917,8 @@ export default function ResultCard({
                     <span className="text-[10px] text-slate-400 font-mono font-bold">서명 제출 일시 기록됨</span>
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (window.confirm("제출한 서명을 삭제하고 다시 새롭게 서명하시겠습니까?")) {
-                          if (onDeleteSignature) {
-                            await onDeleteSignature(subjName, studentId);
-                          }
-                        }
+                      onClick={() => {
+                        setDeleteSignatureModal({ subject: subjName, studentId });
                       }}
                       className="mt-1 text-[11px] font-black text-red-500 hover:text-red-700 bg-white border border-red-200 hover:bg-red-50 rounded-lg px-2.5 py-1.5 transition cursor-pointer shadow-2xs active:scale-95"
                     >
@@ -900,6 +1048,48 @@ export default function ResultCard({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Signature Confirmation Modal */}
+      {deleteSignatureModal && (
+        <div id="delete-signature-overlay" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn select-none print:hidden">
+          <div className="bg-white border border-slate-200 shadow-2xl rounded-2xl max-w-sm w-full overflow-hidden p-5 space-y-4">
+            <div className="flex items-center gap-2 text-rose-600">
+              <span className="text-lg">⚠️</span>
+              <span className="text-sm font-black tracking-tight">제출 서명 삭제 확인</span>
+            </div>
+            <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+              제출한 확인 서명을 삭제하고 다시 새롭게 서명하시겠습니까? {"\n"}
+              이 작업은 취소할 수 없으며 즉시 삭제됩니다.
+            </p>
+            <div className="bg-slate-50 border border-slate-150 p-3 rounded-xl">
+              <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-tight">교과목</span>
+              <span className="text-xs font-black text-slate-800 block truncate">{deleteSignatureModal.subject}</span>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteSignatureModal(null)}
+                className="px-3.5 py-2 bg-white border border-slate-250 hover:bg-slate-50 text-slate-700 font-extrabold rounded-xl text-xs transition duration-150 cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const { subject, studentId } = deleteSignatureModal;
+                  setDeleteSignatureModal(null);
+                  if (onDeleteSignature) {
+                    await onDeleteSignature(subject, studentId);
+                  }
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 border border-rose-500 text-white font-extrabold rounded-xl text-xs transition duration-150 cursor-pointer shadow-xs hover:scale-[1.02]"
+              >
+                삭제하기
+              </button>
+            </div>
           </div>
         </div>
       )}
