@@ -55,7 +55,7 @@ export default function LoginCard({
       if (!studentInRoster) {
         setErrorMsg(
           '입력하신 학번의 학생 정보를 찾을 수 없습니다.\n' +
-          '학교 관리자가 등록한 교적 정보와 다르면 담임선생님 혹은 학교 관리자에게 연락 바랍니다.'
+          '문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
         );
         return;
       }
@@ -66,7 +66,7 @@ export default function LoginCard({
         if (studentInRoster.password === birthdate.trim()) {
           matchedRegisteredStudent = studentInRoster;
         } else {
-          setErrorMsg('비밀번호가 일치하지 않습니다. 비밀번호를 분실한 경우 학교 관리자에게 재설정을 요청하세요.');
+          setErrorMsg('비밀번호가 일치하지 않습니다. 비밀번호를 분실한 경우 학급 정보도우미를 통해 문의해주세요.');
           return;
         }
       } else {
@@ -75,7 +75,7 @@ export default function LoginCard({
         } else {
           setErrorMsg(
             '입력하신 학번과 생년월일이 일치하는 학생 정보를 찾을 수 없습니다.\n' +
-            '학교 관리자가 등록한 교적 정보와 다르면 담임선생님 혹은 학교 관리자에게 연락 바랍니다.'
+            '문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
           );
           return;
         }
@@ -104,7 +104,7 @@ export default function LoginCard({
       if (!foundInEvaluations) {
         setErrorMsg(
           '입력하신 학번 또는 생년월일과 일치하는 성적 기록을 찾을 수 없습니다.\n' +
-          '교적 명부가 비어 있는 상태이므로, 선생님이 엑셀에 입력한 정보와 맞는지 확인하십시오.'
+          '학적 명부가 비어 있는 상태이므로, 선생님이 엑셀에 입력한 정보와 맞는지 확인하십시오.'
         );
         return;
       }
@@ -140,7 +140,7 @@ export default function LoginCard({
         </h2>
         
         <p className="text-xs text-indigo-200 font-medium mt-1.5 leading-relaxed max-w-sm mx-auto">
-          학번과 생년월일을 입력하여 수행평가 점수와 개별 피드백을 확인할 수 있습니다.
+          학번과 생년월일을 입력하여 수행평가 점수와 피드백을 확인할 수 있습니다.
         </p>
       </div>
 
@@ -192,8 +192,8 @@ export default function LoginCard({
               <div className="text-[11px] text-slate-600 leading-relaxed space-y-2 select-text font-medium border-slate-200">
                 <p className="font-extrabold text-slate-800 text-[11px]">개인정보 수집·이용 동의</p>
                 <p><strong>1. 수집·이용 목적:</strong> 수행평가 결과 조회 서비스 제공</p>
-                <p><strong>2. 수집 항목:</strong> 학번, 이름, 수행평가 점수, 교사 피드백(해당 시)</p>
-                <p><strong>3. 보유 및 이용 기간:</strong> 수행평가 결과 조회 기간 동안 보관 후 즉시 삭제</p>
+                <p><strong>2. 수집 항목:</strong> 학번, 이름, 수행평가 점수, 서명, 교사 피드백(해당 시)</p>
+                <p><strong>3. 보유 및 이용 기간:</strong> 학기말, 수행평가 결과 조회 기간 동안 보관 후 즉시 삭제</p>
                 <p><strong>4. 동의 거부 권리 및 불이익:</strong> 개인정보 수집·이용에 대한 동의를 거부할 수 있으며, 이 경우 수행평가 결과 조회 서비스를 이용할 수 없습니다.</p>
                 <p className="font-semibold text-slate-700 pt-1">본인은 위 내용을 확인하였으며 개인정보 수집·이용에 동의합니다.</p>
               </div>
@@ -246,9 +246,9 @@ export default function LoginCard({
             <div className="mt-3 bg-slate-50 p-4 border border-slate-200 rounded-xl text-left text-xs text-slate-600 space-y-2 leading-relaxed animate-fadeIn">
               <p className="font-bold text-slate-900">📌 성적 확인 관련 자주 묻는 질문 (FAQ)</p>
               <ul className="list-disc pl-4 space-y-1 text-slate-600">
-                <li><strong>학번 입력 형식:</strong> 엑셀 파일 내 등록된 형태와 완전히 동일해야 합니다. (예: 다섯 자릿수 학번인 <code className="bg-slate-200 px-1 rounded text-red-600">10101</code> 등)</li>
-                <li><strong>생년월일 형식:</strong> 일반적으로 <strong className="text-slate-900 text-[11.5px]">8자리</strong>(예: <code className="bg-slate-200 px-1 rounded">20081231</code>) 형태나 엑셀 셀 시트에 담긴 생일 형식으로 입력해주십시오.</li>
-                <li><strong>다중 성적 조회 보장:</strong> 로그인에 성공하시면, 담임선생님 혹은 교과선생님들께서 등록해 주신 학년반에 따라 교사 드롭다운 메뉴가 생성되어 과목별로 손쉽고 편리하게 일괄 조회가 가능합니다.</li>
+                <li><strong>학번 입력 형식:</strong> 숫자5자리 (예: 다섯 자릿수 학번인 <code className="bg-slate-200 px-1 rounded text-red-600">10101</code> 등)</li>
+                <li><strong>생년월일 형식:</strong> 초기 비빌번호는 <strong className="text-slate-900 text-[11.5px]">생년월일 8자리</strong>(예: <code className="bg-slate-200 px-1 rounded">20081231</code>) 또는 본인이 변경한 비밀번호</li>
+                <li><strong>수행평가 성적 조회:</strong> 로그인을 하면 이 시스템을 활용한 모든 교과 선생님 과목의 수행평가 점수를 조회할 수 있습니다.</li>
               </ul>
             </div>
           )}
