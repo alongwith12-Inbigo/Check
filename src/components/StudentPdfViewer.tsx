@@ -30,18 +30,19 @@ export function cleanAndFormatHeaderName(rawHeader: string): string {
   let title = rawHeader.trim();
   title = title.replace(/\s+/g, ' ');
 
-  // Remove percentage parts (e.g. ", 30.00%")
-  title = title.replace(/,\s*[\d.]+\s*%/g, '');
-  title = title.replace(/[\d.]+\s*%\s*,?/g, '');
+  // Look for Total Score indicator
+  const isTotal = ['합계', '합 계', '총점', '총합', '계', '원점수', '합'].some(k => title.replace(/\s+/g, '').includes(k));
 
+  // 1. Try to extract max score numeric value
   let maxScoreVal = '';
-  // Try to find any numeric max score like (만점 30.00) or [만점 20] or (20점) or (20.0)
   const maxScoreRegexes = [
     /만점\s*([\d.]+)/,
     /배점\s*([\d.]+)/,
     /\(\s*([\d.]+)\s*점\s*\)/,
-    /\(\s*만점\s*([\d.]+)\s*점\s*\)/,
-    /\[\s*만점\s*([\d.]+)\s*\]/,
+    /\[\s*([\d.]+)\s*점\s*\]/,
+    /\(\s*([\d.]+)\s*점\s*만점\s*\)/,
+    /\(([\d.]+)점\)/,
+    /\(([\d.]+)점\s*만점\)/,
     /\(\s*([\d.]+)\s*\)/,
     /\[\s*([\d.]+)\s*\]/
   ];
@@ -49,33 +50,42 @@ export function cleanAndFormatHeaderName(rawHeader: string): string {
   for (const regex of maxScoreRegexes) {
     const match = title.match(regex);
     if (match && match[1]) {
-      maxScoreVal = parseFloat(match[1]).toString(); // "30.00" -> "30"
-      break;
+      const parsed = parseFloat(match[1]);
+      if (!isNaN(parsed)) {
+        maxScoreVal = parsed.toString(); // e.g. "30.00" -> "30"
+        break;
+      }
     }
   }
 
-  // Check if it represents Total Score column
-  const isTotal = ['합계', '합 계', '총점', '총합', '계', '원점수', '합'].some(k => title.replace(/\s+/g, '').includes(k));
   if (isTotal) {
+    if (maxScoreVal) {
+      return `합계 (${maxScoreVal}점)`;
+    }
     return '합계';
   }
 
-  // Clean title: remove any parentheses or brackets containing the score/max word
+  // 2. Clean the title from parentheticals completely
   let cleanTitle = title;
-  cleanTitle = cleanTitle.replace(/\(\s*만점\s*[\d.]+\s*%\s*\)/g, '');
-  cleanTitle = cleanTitle.replace(/\(\s*만점\s*[\d.]+\s*\)/g, '');
-  cleanTitle = cleanTitle.replace(/\[\s*만점\s*[\d.]+\s*\]/g, '');
-  cleanTitle = cleanTitle.replace(/\(\s*[\d.]+\s*점\s*\)/g, '');
+  
+  // Clean custom format like (만점 30.00, 30.00%) or (30.00%, 만점 30.00) or (만점 30.00)
+  cleanTitle = cleanTitle.replace(/\([^)]*만점[^)]*\)/gi, '');
+  cleanTitle = cleanTitle.replace(/\[[^\]]*만점[^\]]*\]/gi, '');
+  cleanTitle = cleanTitle.replace(/\([^)]*배점[^)]*\)/gi, '');
+  cleanTitle = cleanTitle.replace(/\[[^\]]*배점[^\]]*\]/gi, '');
+  cleanTitle = cleanTitle.replace(/\([^)]*%\s*\)/gi, '');
+  cleanTitle = cleanTitle.replace(/\([^)]*[\d.]+\s*%[^)]*\)/gi, '');
+  cleanTitle = cleanTitle.replace(/\([^)]*[\d.]+\s*점[^)]*\)/gi, '');
+  cleanTitle = cleanTitle.replace(/\[[^\]]*[\d.]+\s*점[^\]]*\]/gi, '');
   cleanTitle = cleanTitle.replace(/\(\s*[\d.]+\s*\)/g, '');
   cleanTitle = cleanTitle.replace(/\[\s*[\d.]+\s*\]/g, '');
+
   cleanTitle = cleanTitle.replace(/\s+/g, ' ').trim();
 
-  // If cleanTitle is blank, default to '합계'
   if (cleanTitle === '') {
     return '합계';
   }
 
-  // Format as "Title (MaxScore점)"
   if (maxScoreVal) {
     return `${cleanTitle} (${maxScoreVal}점)`;
   }
@@ -180,6 +190,14 @@ function isPageForClass(textLines: string[][], grade: string, classNum: string):
     return true;
   }
 
+  // Regex check for custom school designations like "1학년 콘텐츠디자인과 7"
+  try {
+    const rx = new RegExp(`${grade}\\s*학년.*${classNum}`);
+    if (rx.test(textLines.flat().join(' '))) {
+      return true;
+    }
+  } catch (e) {}
+
   return false;
 }
 
@@ -204,7 +222,7 @@ function findStudentRowInPage(
 
     const combinedText = textLines[r].join('').replace(/\s+/g, '');
 
-    // 1. Ultimate Fail-safe Priority: Exact Student ID (e.g., 10305) present anywhere in this row's combined text
+    // 1. Ultimate Fail-safe Priority: Exact Student ID (e.g., 10701) present anywhere in this row's combined text
     if (combinedText.includes(studentId)) {
       return r;
     }
@@ -222,77 +240,91 @@ function findStudentRowInPage(
       }
     }
 
-    // 3. Dual-Verification Matching (Either exact column or general combinedText fallback)
-    let isMatched = false;
-    let hasName = false;
+    // 3. Extract Class and Roll Number from leading columns to assert direct unique mapping
+    let rowClass = '';
+    let rowNumber = '';
+    const limit = nameColIdx !== -1 ? nameColIdx : Math.min(3, cleanMergedCells.length);
 
+    for (let c = 0; c < limit; c++) {
+      const txt = cleanMergedCells[c].text.replace(/\s+/g, '');
+      
+      if (txt.includes('/')) {
+        const parts = txt.split('/');
+        const cv = parts[0].replace(/\D/g, '');
+        const nv = parts[1].replace(/\D/g, '');
+        if (cv && nv) {
+          rowClass = cv;
+          rowNumber = nv;
+          break;
+        }
+      }
+
+      if (txt.includes('-')) {
+        const parts = txt.split('-');
+        const cv = parts[0].replace(/\D/g, '');
+        const nv = parts[1].replace(/\D/g, '');
+        if (cv && nv) {
+          rowClass = cv;
+          rowNumber = nv;
+          break;
+        }
+      }
+
+      const parsed = parseClassNumber(txt);
+      if (parsed) {
+        rowClass = parsed.classVal;
+        rowNumber = parsed.numberVal;
+        break;
+      }
+    }
+
+    if (!rowClass || !rowNumber) {
+      const numericValues: string[] = [];
+      for (let c = 0; c < limit; c++) {
+        const num = cleanMergedCells[c].text.replace(/\D/g, '');
+        if (num) numericValues.push(num);
+      }
+      if (numericValues.length >= 2) {
+        if (numericValues.length === 3) {
+          rowClass = numericValues[1];
+          rowNumber = numericValues[2];
+        } else {
+          rowClass = numericValues[0];
+          rowNumber = numericValues[1];
+        }
+      } else if (numericValues.length === 1) {
+        rowNumber = numericValues[0];
+      }
+    }
+
+    const rClass = rowClass.replace(/\D/g, '').trim();
+    const rNumber = rowNumber.replace(/\D/g, '').trim();
+
+    // Direct Class & Number Match - Highly secure and specific
+    if (rClass && rNumber) {
+      const isClassMatch = parseInt(rClass, 10) === parseInt(targetClass, 10);
+      const isNumMatch = parseInt(rNumber, 10) === parseInt(targetNumber, 10);
+      if (isClassMatch && isNumMatch) {
+        return r;
+      }
+    }
+
+    // 4. Fallback: Matching via student name if found
+    let hasName = false;
     if (nameColIdx !== -1) {
       const studentNameVal = cleanMergedCells[nameColIdx].text.replace(/\s+/g, '');
       hasName = studentNameVal.includes(cleanStudentName) || cleanStudentName.includes(studentNameVal);
     } else {
-      // Fallback if name column detection failed or was ambiguous
       hasName = combinedText.includes(cleanStudentName);
     }
 
     if (hasName) {
-      // If we have verified the student name exists in this row,
-      // now evaluate whether the student class and number matches as well.
+      const containsNumber = combinedText.includes(targetNumber) || combinedText.includes(targetNumberWithZero);
+      const containsClass = combinedText.includes(targetClass) || combinedText.includes('0' + targetClass);
       
-      // Look through leading columns before the name
-      if (nameColIdx !== -1) {
-        for (let c = 0; c < nameColIdx; c++) {
-          const txt = cleanMergedCells[c].text.replace(/\s+/g, '');
-
-          if (txt === studentId || txt.replace(/\D/g, '') === studentId) {
-            isMatched = true;
-            break;
-          }
-
-          const numOnly = txt.replace(/\D/g, '');
-          if (numOnly === targetNumber || numOnly === targetNumberWithZero) {
-            isMatched = true;
-            break;
-          }
-
-          const parsed = parseClassNumber(txt);
-          if (parsed) {
-            const isClassMatch = parsed.classVal === targetClass || parsed.classVal === '0' + targetClass;
-            const isNumMatch = parsed.numberVal === targetNumber || parsed.numberVal === targetNumberWithZero;
-            if (isClassMatch && isNumMatch) {
-              isMatched = true;
-              break;
-            }
-          } else {
-            const parts = txt.split(/[\/·,-]/);
-            if (parts.length >= 2) {
-              const cls = parts[0].replace(/\D/g, '');
-              const num = parts[1].replace(/\D/g, '');
-              const isClassMatch = cls === targetClass || cls === '0' + targetClass;
-              const isNumMatch = num === targetNumber || num === targetNumberWithZero;
-              if (isClassMatch && isNumMatch) {
-                isMatched = true;
-                break;
-              }
-            }
-          }
-        }
+      if (containsNumber && (containsClass || textLines.length <= 45)) {
+        return r;
       }
-
-      // If the above structured prefix columns check was bypassed, search the whole row text
-      if (!isMatched) {
-        const containsNumber = combinedText.includes(targetNumber) || combinedText.includes(targetNumberWithZero);
-        const containsClass = combinedText.includes(targetClass) || combinedText.includes('0' + targetClass);
-        if (containsNumber && containsClass) {
-          isMatched = true;
-        } else if (containsNumber && textLines.length <= 45) {
-          // If the page was already class-filtered, only need to match student's individual number
-          isMatched = true;
-        }
-      }
-    }
-
-    if (isMatched) {
-      return r;
     }
   }
 
@@ -317,18 +349,32 @@ export default function StudentPdfViewer({
         const hCleaned = cleanAndFormatHeaderName(h);
         if (hCleaned === '학번' || hCleaned === '성명' || hCleaned === '반' || hCleaned === '번호' || h === '학번' || h === '성명') return;
 
-        const isTotal = hCleaned === '합계';
-        const scoreVal = String(row[h] !== undefined ? row[h] : '0').trim();
+        const isTotal = hCleaned.startsWith('합계');
+        
+        let scoreVal = String(row[h] !== undefined ? row[h] : '0').trim();
+        if (/^\d+\.00$/.test(scoreVal)) {
+          scoreVal = parseFloat(scoreVal).toString();
+        } else if (/^\d+\.\d+$/.test(scoreVal)) {
+          const parsedFloat = parseFloat(scoreVal);
+          if (!isNaN(parsedFloat)) {
+            scoreVal = parsedFloat.toString();
+          }
+        }
 
         // Extract max score from header
         let maxScoreVal = '100';
-        const maxMatch = h.match(/만점\s*([\d.]+)/) || h.match(/배점\s*([\d.]+)/) || h.match(/만점\s*(\d+)/);
-        if (maxMatch && maxMatch[1]) {
-          maxScoreVal = parseFloat(maxMatch[1]).toString();
+        const hMatch = hCleaned.match(/\((\d+)점\)/) || hCleaned.match(/\(([\d.]+)점\)/);
+        if (hMatch && hMatch[1]) {
+          maxScoreVal = hMatch[1];
         } else {
-          const numMatch = h.match(/\(\s*([\d.]+)\s*\)?/) || h.match(/\[\s*([\d.]+)\s*\]?/);
-          if (numMatch && numMatch[1]) {
-            maxScoreVal = parseFloat(numMatch[1]).toString();
+          const maxMatch = h.match(/만점\s*([\d.]+)/) || h.match(/배점\s*([\d.]+)/) || h.match(/만점\s*(\d+)/);
+          if (maxMatch && maxMatch[1]) {
+            maxScoreVal = parseFloat(maxMatch[1]).toString();
+          } else {
+            const numMatch = h.match(/\(\s*([\d.]+)\s*\)?/) || h.match(/\[\s*([\d.]+)\s*\]?/);
+            if (numMatch && numMatch[1]) {
+              maxScoreVal = parseFloat(numMatch[1]).toString();
+            }
           }
         }
 
@@ -344,11 +390,16 @@ export default function StudentPdfViewer({
         }
       });
 
+      if ((!totalMaxScore || totalMaxScore === '100' || totalMaxScore === '0') && areaScores.length > 0) {
+        const maxSum = areaScores.reduce((acc, curr) => acc + (parseFloat(curr.maxScore) || 0), 0);
+        if (maxSum > 0) {
+          totalMaxScore = String(maxSum);
+        }
+      }
+
       if (!totalScore && areaScores.length > 0) {
         const sum = areaScores.reduce((acc, curr) => acc + (parseFloat(curr.score) || 0), 0);
-        const maxSum = areaScores.reduce((acc, curr) => acc + (parseFloat(curr.maxScore) || 0), 0);
         totalScore = String(sum);
-        totalMaxScore = String(maxSum);
       }
 
       return {
