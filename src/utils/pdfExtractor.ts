@@ -24,8 +24,12 @@ export function cleanAndFormatHeaderName(rawHeader: string): string {
   let title = rawHeader.trim();
   title = title.replace(/\s+/g, ' ');
 
-  // Look for Total Score indicator
-  const isTotal = ['합계', '합 계', '총점', '총합', '계', '원점수', '합'].some(k => title.replace(/\s+/g, '').includes(k));
+  const cleanSpace = title.replace(/\s+/g, '');
+  // A precise check for "Total" / "Sum" to avoid false positives like "통계", "설계", "단계", "계획"
+  const isTotal = [
+    '합계', '총점', '총합', '원점수', '합계점수', '득점계'
+  ].some(k => cleanSpace.includes(k)) || 
+  cleanSpace === '계' || cleanSpace === '합' || cleanSpace === '총';
 
   // 1. Try to extract max score numeric value
   let maxScoreVal = '';
@@ -77,7 +81,7 @@ export function cleanAndFormatHeaderName(rawHeader: string): string {
   cleanTitle = cleanTitle.replace(/\s+/g, ' ').trim();
 
   if (cleanTitle === '') {
-    return '합계';
+    return '';
   }
 
   if (maxScoreVal) {
@@ -88,8 +92,8 @@ export function cleanAndFormatHeaderName(rawHeader: string): string {
 }
 
 /**
- * Merges text segments on the same line that are visually adjacent (X-coordinate gap < 45).
- * Extremely robust for joining name fragments and split numbers.
+ * Merges text segments on the same line that are visually adjacent.
+ * Prevents merging adjacent separate numbers/scores to protect column separation.
  */
 function mergeRowCells(items: { text: string; x: number; y: number }[]): MergedCell[] {
   if (items.length === 0) return [];
@@ -106,7 +110,30 @@ function mergeRowCells(items: { text: string; x: number; y: number }[]): MergedC
   for (let i = 1; i < sorted.length; i++) {
     const item = sorted[i];
     const avgX = current.sumX / current.count;
-    if (item.x - current.xEnd < 45 || item.x - avgX < 45) {
+
+    const currentClean = current.text.replace(/\s+/g, '');
+    const itemClean = item.text.replace(/\s+/g, '');
+
+    const isCurrentNum = /^\d+(\.\d+)?$/.test(currentClean);
+    const isItemNum = /^\d+(\.\d+)?$/.test(itemClean);
+
+    const hasSlashOrDash = currentClean.includes('/') || currentClean.includes('-') ||
+                           itemClean.includes('/') || itemClean.includes('-');
+
+    let limit = 40; // Default gap threshold for text/names
+
+    if (hasSlashOrDash) {
+      // Slashes or dashes are part of class/number, always merge them!
+      limit = 35;
+    } else if (isCurrentNum && isItemNum) {
+      // Preserve separate score columns
+      limit = 12;
+    } else if (isCurrentNum || isItemNum) {
+      // If one is numeric and another is text, keep them separate if they are columns, but some small gap is ok
+      limit = 15;
+    }
+
+    if (item.x - current.xEnd < limit || item.x - avgX < limit) {
       current.text += ' ' + item.text;
       current.xEnd = Math.max(current.xEnd, item.x + item.text.length * 6);
       current.count += 1;
@@ -166,27 +193,25 @@ export async function extractDataFromPdf(
     const pdf = await loadingTask.promise;
     const totalPages = pdf.numPages;
 
-    // Robust parsing of grade and class from targetGradeClass
+    // Robust parsing of grade and class from targetGradeClass (e.g. "107")
     let parsedGrade = '1';
-    let parsedClass = '';
+    let parsedClass = '7';
 
     const cleanInput = targetGradeClass.trim();
-    const numbersInTarget = cleanInput.match(/\d+/g)?.filter(num => num.length !== 4) || [];
-
-    if (numbersInTarget.length >= 2) {
-      parsedGrade = numbersInTarget[0];
-      parsedClass = parseInt(numbersInTarget[1], 10).toString();
-    } else if (numbersInTarget.length === 1) {
-      const numStr = numbersInTarget[0];
-      if (numStr.length === 3) {
-        parsedGrade = numStr[0];
-        parsedClass = parseInt(numStr.substring(1), 10).toString();
-      } else if (numStr.length === 2) {
-        parsedGrade = numStr[0];
-        parsedClass = parseInt(numStr[1], 10).toString();
+    const numMatch = cleanInput.match(/\d+/);
+    if (numMatch) {
+      const code = numMatch[0]; // e.g. "107"
+      if (code.length === 3) {
+        parsedGrade = code[0];
+        parsedClass = parseInt(code.substring(1), 10).toString();
+      } else if (code.length === 4) {
+        parsedGrade = code.substring(0, 2);
+        parsedClass = parseInt(code.substring(2), 10).toString();
+      } else if (code.length === 2) {
+        parsedGrade = code[0];
+        parsedClass = parseInt(code[1], 10).toString();
       } else {
-        parsedGrade = '1';
-        parsedClass = parseInt(numStr, 10).toString();
+        parsedClass = parseInt(code, 10).toString();
       }
     } else {
       const gradeM = cleanInput.match(/(\d+)\s*학년/);
@@ -195,145 +220,108 @@ export async function extractDataFromPdf(
       if (classM) parsedClass = classM[1];
     }
 
-    // Stat/header keywords to filter out non-student names
-    const statsKeywords = [
-      '합계', '총점', '총합', '계', '원점수', '평균', '응시', '전체', '만점', '배점', 
-      '소계', '평가', '명판', '의사', '학교', '학급', '교사', '평가영역', '성적', 
-      '과목', '최고', '최저', '분포', '비율', '편차', '학년', '성명', '이름', '반/번호', '번호', '과정'
-    ];
-
-    // Helper to identify if a row of merged cells is a valid student row
-    const checkStudentRow = (cells: MergedCell[]) => {
-      if (cells.length < 2) return null;
-
-      let nameColIdx = -1;
-      let nameVal = '';
-
-      for (let i = 0; i < Math.min(5, cells.length); i++) {
-        const text = cells[i].text.trim();
-        const norm = text.replace(/\s+/g, '');
-
-        if (norm === '') continue;
-        if (statsKeywords.some(k => norm.includes(k))) continue;
-
-        // Name is usually non-numeric and not pure symbols (e.g. "7/1", "10715")
-        const isNumericOrSymbol = /^[0-9./\s-]+$/.test(text);
-        if (isNumericOrSymbol) continue;
-
-        // Name length bounds (usually 1 ~ 25 characters)
-        if (text.length > 25) continue;
-
-        nameColIdx = i;
-        nameVal = text;
-        break;
+    // Class and Number parser
+    const parseClassAndNumber = (text: string, defaultClass: string): { classVal: string; numVal: string } | null => {
+      const norm = text.replace(/\s+/g, '');
+      
+      // 0. Extract any 5-digit numeric block (e.g. 10701, "10701번", "(10701)")
+      const fiveDigitMatch = norm.match(/(\d)(\d{2})(\d{2})/);
+      if (fiveDigitMatch) {
+        return {
+          classVal: parseInt(fiveDigitMatch[2], 10).toString(),
+          numVal: parseInt(fiveDigitMatch[3], 10).toString()
+        };
       }
 
-      if (nameColIdx === -1) return null;
-
-      // Extract class & student number from prior columns
-      let detectedClass = '';
-      let detectedNum = '';
-
-      for (let i = nameColIdx - 1; i >= 0; i--) {
-        const rawText = cells[i].text.replace(/\s+/g, '');
-
-        // Pattern 1: 5-digit academic ID (e.g. 10715)
-        if (rawText.length === 5 && rawText.startsWith(parsedGrade) && /^\d+$/.test(rawText)) {
-          detectedClass = parseInt(rawText.substring(1, 3), 10).toString();
-          detectedNum = parseInt(rawText.substring(3), 10).toString();
-          break;
-        }
-
-        // Pattern 2: Slash (7/15)
-        if (rawText.includes('/')) {
-          const parts = rawText.split('/');
-          const cv = parts[0].replace(/\D/g, '');
-          const nv = parts[1].replace(/\D/g, '');
-          if (cv && nv && parseInt(nv, 10) > 0) {
-            detectedClass = cv;
-            detectedNum = nv;
-            break;
-          }
-        }
-
-        // Pattern 3: Dash (7-15)
-        if (rawText.includes('-')) {
-          const parts = rawText.split('-');
-          const cv = parts[0].replace(/\D/g, '');
-          const nv = parts[1].replace(/\D/g, '');
-          if (cv && nv && parseInt(nv, 10) > 0) {
-            detectedClass = cv;
-            detectedNum = nv;
-            break;
-          }
-        }
+      // 1. Check for 5-digit id (e.g. 10701)
+      const id5Match = norm.match(/^(\d)(\d{2})(\d{1,2})$/);
+      if (id5Match) {
+        return {
+          classVal: parseInt(id5Match[2], 10).toString(),
+          numVal: parseInt(id5Match[3], 10).toString()
+        };
       }
 
-      // Pattern 4: Separate discrete numbers in columns before Name
-      if (!detectedClass || !detectedNum) {
-        const numericValues: string[] = [];
-        for (let i = 0; i < nameColIdx; i++) {
-          const onlyNum = cells[i].text.replace(/\D/g, '');
-          if (onlyNum) {
-            numericValues.push(onlyNum);
-          }
-        }
-
-        if (numericValues.length >= 2) {
-          if (numericValues.length === 3) {
-            detectedClass = parseInt(numericValues[1], 10).toString();
-            detectedNum = parseInt(numericValues[2], 10).toString();
+      // 2. Check for slash pattern (e.g. 7/1 or 1/7/1)
+      if (norm.includes('/')) {
+        const parts = norm.split('/');
+        const digits = parts.map(p => p.replace(/\D/g, '')).filter(p => p !== '');
+        if (digits.length >= 2) {
+          if (digits.length >= 3) {
+            return {
+              classVal: parseInt(digits[1], 10).toString(),
+              numVal: parseInt(digits[2], 10).toString()
+            };
           } else {
-            detectedClass = parseInt(numericValues[0], 10).toString();
-            detectedNum = parseInt(numericValues[1], 10).toString();
+            return {
+              classVal: parseInt(digits[0], 10).toString(),
+              numVal: parseInt(digits[1], 10).toString()
+            };
           }
-        } else if (numericValues.length === 1) {
-          detectedNum = parseInt(numericValues[0], 10).toString();
-          detectedClass = parsedClass || '1';
         }
       }
 
-      detectedClass = (detectedClass || '').trim();
-      detectedNum = (detectedNum || '').trim();
-
-      const numValParsed = parseInt(detectedNum, 10);
-      if (isNaN(numValParsed) || numValParsed <= 0) {
-        return null;
+      // 3. Check for dash pattern (e.g. 7-1 or 1-7-1)
+      if (norm.includes('-')) {
+        const parts = norm.split('-');
+        const digits = parts.map(p => p.replace(/\D/g, '')).filter(p => p !== '');
+        if (digits.length >= 2) {
+          if (digits.length >= 3) {
+            return {
+              classVal: parseInt(digits[1], 10).toString(),
+              numVal: parseInt(digits[2], 10).toString()
+            };
+          } else {
+            return {
+              classVal: parseInt(digits[0], 10).toString(),
+              numVal: parseInt(digits[1], 10).toString()
+            };
+          }
+        }
       }
 
-      if (!detectedClass) {
-        detectedClass = parsedClass || '1';
+      // 4. Check for Korean formats like "7반1번"
+      const koreanMatch = norm.match(/(\d+)반\s*(\d+)번/);
+      if (koreanMatch) {
+        return {
+          classVal: parseInt(koreanMatch[1], 10).toString(),
+          numVal: parseInt(koreanMatch[2], 10).toString()
+        };
       }
 
-      return {
-        classVal: detectedClass,
-        numberVal: detectedNum,
-        nameVal,
-        nameColIdx
-      };
+      // 5. Fallback for single integer values
+      if (/^\d+$/.test(norm)) {
+        const val = parseInt(norm, 10);
+        if (val > 0 && val <= 40) {
+          return {
+            classVal: defaultClass,
+            numVal: val.toString()
+          };
+        }
+      }
+
+      return null;
     };
 
-    interface RecognizedStudent {
-      classVal: string;
-      numberVal: string;
-      nameVal: string;
+    interface ExtractedStudentData {
+      student_id: string;
+      scores: { [header: string]: string };
+      total: string;
+      rawHeadersList: string[];
       nameColIdx: number;
-      cells: MergedCell[];
-      y: number;
+      totalColIdx: number;
     }
 
-    const detectedStudents: RecognizedStudent[] = [];
-    const headerItemsAbove: any[] = [];
-    let absoluteFirstStudentY = -Infinity;
+    const detectedStudentScores: ExtractedStudentData[] = [];
+    const seenStudentIds = new Set<string>();
 
-    // Step 1: Collect cells & identify first student line Y across all pages
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
       const items = textContent.items as any[];
       if (items.length === 0) continue;
 
-      // Group into physical visual rows
+      // Group into physical rows by Y coordinate height tolerance
       const tolerance = 6;
       const linesMap: { [y: number]: any[] } = {};
 
@@ -354,221 +342,280 @@ export async function extractDataFromPdf(
 
       const sortedYKeys = Object.keys(linesMap).map(Number).sort((a, b) => b - a);
 
-      let firstStudentYInPage = -Infinity;
-      const pageStudents: RecognizedStudent[] = [];
+      // 1. Identify the table header row on this page
+      let headerRowCells: MergedCell[] = [];
+      let headerY = -Infinity;
 
-      sortedYKeys.forEach(y => {
+      for (const y of sortedYKeys) {
         const lineItems = linesMap[y];
         const mergedRow = mergeRowCells(lineItems);
-        const meta = checkStudentRow(mergedRow);
-        if (meta) {
-          pageStudents.push({
-            classVal: meta.classVal,
-            numberVal: meta.numberVal,
-            nameVal: meta.nameVal,
-            nameColIdx: meta.nameColIdx,
-            cells: mergedRow,
-            y
-          });
-          if (y > firstStudentYInPage) {
-            firstStudentYInPage = y;
-          }
-        }
-      });
+        const hasHeaderIndicators = mergedRow.some(cell => {
+          const cleanedText = cell.text.replace(/\s+/g, '');
+          return cleanedText.includes('반/번호') || 
+                 (cleanedText.includes('반') && cleanedText.includes('번호')) || 
+                 cleanedText === '성명' || 
+                 cleanedText === '이름';
+        });
 
-      if (firstStudentYInPage > absoluteFirstStudentY) {
-        absoluteFirstStudentY = firstStudentYInPage;
+        if (hasHeaderIndicators) {
+          headerRowCells = mergedRow;
+          headerY = y;
+          break;
+        }
       }
 
-      pageStudents.forEach(st => detectedStudents.push(st));
+      // If no table header is detected on this page, fall back to the largest columns row
+      if (headerRowCells.length === 0) {
+        let maxLen = 0;
+        let bestY = -Infinity;
+        let bestCells: MergedCell[] = [];
+        sortedYKeys.forEach(y => {
+          const mRow = mergeRowCells(linesMap[y]);
+          if (mRow.length > maxLen) {
+            maxLen = mRow.length;
+            bestY = y;
+            bestCells = mRow;
+          }
+        });
+        if (maxLen >= 3) {
+          headerRowCells = bestCells;
+          headerY = bestY + 20; // Assume we are below headers
+        } else {
+          continue; // Skip pages without tables
+        }
+      }
 
-      // Separate header candidate items purely above student region in this page
+      const columnPositions = headerRowCells.map(c => c.x);
+
+      // 2. Accumulate raw headers for each column on this page (and project multi-line titles)
+      const rawHeaders = Array(columnPositions.length).fill('');
       items.forEach(item => {
-        const y = item.transform[5] || 0;
         const x = item.transform[4] || 0;
+        const y = item.transform[5] || 0;
         const str = item.str || '';
-        if (str.trim() !== '') {
-          if (firstStudentYInPage === -Infinity || y > firstStudentYInPage + 4) {
-            headerItemsAbove.push({ text: str, x, y });
+        if (str.trim() === '') return;
+
+        // Cover header row and rows at or above it (plus 15px below it for "만점" numbers)
+        if (y >= headerY - 15) {
+          let closestIdx = -1;
+          let minDist = Infinity;
+          for (let index = 0; index < columnPositions.length; index++) {
+            const dist = Math.abs(x - columnPositions[index]);
+            if (dist < minDist) {
+              minDist = dist;
+              closestIdx = index;
+            }
+          }
+          if (closestIdx !== -1 && minDist < 60) {
+            if (rawHeaders[closestIdx]) {
+              rawHeaders[closestIdx] += ' ' + str;
+            } else {
+              rawHeaders[closestIdx] = str;
+            }
           }
         }
       });
+
+      // Find Name and Total column index mappings
+      let nameColIdx = -1;
+      let totalColIdx = -1;
+
+      for (let c = 0; c < columnPositions.length; c++) {
+        const headerText = rawHeaders[c].replace(/\s+/g, '');
+        if (headerText.includes('성명') || headerText === '이름') {
+          nameColIdx = c;
+        }
+        if (['합계', '총점', '총합', '계', '원점수'].some(k => headerText.includes(k))) {
+          totalColIdx = c;
+        }
+      }
+
+      if (nameColIdx === -1) {
+        // Fallback: name is typically column 1 (second column)
+        nameColIdx = 1;
+      }
+      if (totalColIdx === -1) {
+        // Fallback: total/sum is typically the second last or last column
+        totalColIdx = columnPositions.length - 2 >= nameColIdx ? columnPositions.length - 2 : columnPositions.length - 1;
+      }
+
+      // 3. Extract Student Rows
+      let stopPage = false;
+      for (const y of sortedYKeys) {
+        if (stopPage) break;
+        if (y >= headerY - 5) continue; // Skip header lines and titles
+
+        const lineItems = linesMap[y];
+        const mergedRow = mergeRowCells(lineItems);
+        if (mergedRow.length < 2) continue; // Skip noise lines
+
+        // A. Check for table footer summary keywords - stop parsing page if reached
+        const firstCellText = mergedRow[0].text.replace(/\s+/g, '');
+        const secondCellText = (mergedRow[1]?.text || '').replace(/\s+/g, '');
+        
+        const isFooterRow = [
+          '응시생수', '총점', '평균', '학과응시생수', '학과총점', '학과평균', 
+          '소계', '합계', '최고', '최저', '분포', '비율', '편차', '만점', '배점', 
+          '기안자', '결재', '교장', '교감', '부장', '교사', '학교', '학급'
+        ].some(k => firstCellText.includes(k) || secondCellText.includes(k));
+
+        if (isFooterRow) {
+          stopPage = true;
+          break;
+        }
+
+        // B. Locate student ID/number in the ID column slot (nearest to columnPositions[0])
+        let idCell: MergedCell | null = null;
+        let minIdDist = Infinity;
+        mergedRow.forEach(cell => {
+          const dist = Math.abs(cell.x - columnPositions[0]);
+          if (dist < minIdDist) {
+            minIdDist = dist;
+            idCell = cell;
+          }
+        });
+
+        if (!idCell || minIdDist > 40) continue;
+
+        const parsedCode = parseClassAndNumber((idCell as MergedCell).text, parsedClass);
+        if (!parsedCode) continue; // Skip rows without class/number structure
+
+        const classValParsed = parseInt(parsedCode.classVal, 10);
+        const numValParsed = parseInt(parsedCode.numVal, 10);
+
+        // Filter students of target class code only!
+        if (classValParsed !== parseInt(parsedClass, 10)) {
+          continue;
+        }
+
+        // General outlier sizing cap
+        if (numValParsed > 40) continue;
+
+        const paddedClass = parsedClass.padStart(2, '0');
+        const paddedNum = parsedCode.numVal.padStart(2, '0');
+        const finalStudentId = `${parsedGrade}${paddedClass}${paddedNum}`;
+
+        if (seenStudentIds.has(finalStudentId)) continue;
+        seenStudentIds.add(finalStudentId);
+
+        // C. Clean and assign grades (scores) for evaluation subheaders
+        const scores: { [header: string]: string } = {};
+        let totalScore = '0';
+
+        for (let c = 0; c < columnPositions.length; c++) {
+          let closestCell: MergedCell | null = null;
+          let minDist = Infinity;
+          mergedRow.forEach(cell => {
+            const dist = Math.abs(cell.x - columnPositions[c]);
+            if (dist < minDist) {
+              minDist = dist;
+              closestCell = cell;
+            }
+          });
+
+          let cellText = (closestCell && minDist < 45) ? closestCell.text.trim() : '0';
+          if (/^\d+\.00$/.test(cellText)) {
+            cellText = parseFloat(cellText).toString();
+          } else if (/^\d+\.\d+$/.test(cellText)) {
+            const parsedFloat = parseFloat(cellText);
+            if (!isNaN(parsedFloat)) {
+              cellText = parsedFloat.toString();
+            }
+          }
+
+          if (c > nameColIdx && c < totalColIdx) {
+            const rawHeader = rawHeaders[c] || `영역_${c - nameColIdx}`;
+            const cleanedHeader = cleanAndFormatHeaderName(rawHeader) || `영역_${c - nameColIdx}`;
+            scores[cleanedHeader] = cellText;
+          } else if (c === totalColIdx) {
+            totalScore = cellText;
+          }
+        }
+
+        detectedStudentScores.push({
+          student_id: finalStudentId,
+          scores,
+          total: totalScore,
+          rawHeadersList: rawHeaders,
+          nameColIdx,
+          totalColIdx
+        });
+      }
     }
 
-    if (detectedStudents.length === 0) {
-      console.warn('No student rows could be parsed from PDF pages.');
+    if (detectedStudentScores.length === 0) {
+      console.warn('No active student rows found matching target requirements.');
       return null;
     }
 
-    // Step 2: Establish a unified Layout Model (Anchor-Row column mapping)
-    const sortedCompleted = [...detectedStudents].sort((a, b) => b.cells.length - a.cells.length);
-    const anchorRow = sortedCompleted[0];
-    const columnXPositions = anchorRow.cells.map(c => c.x);
-
-    // Step 3: Align and merge all upper header pieces with standard columns layout
-    const rawColumnHeaders: string[] = Array(columnXPositions.length).fill('');
-    headerItemsAbove.sort((a, b) => {
-      if (Math.abs(a.y - b.y) > 6) {
-        return b.y - a.y;
-      }
-      return a.x - b.x;
+    // Step 5: Master compilation and final standardization of columns & alignment
+    const allAreaHeaderKeys = new Set<string>();
+    detectedStudentScores.forEach(stud => {
+      Object.keys(stud.scores).forEach(k => {
+        allAreaHeaderKeys.add(k);
+      });
     });
 
-    headerItemsAbove.forEach(item => {
-      let closestColIdx = -1;
-      let minDistance = Infinity;
-
-      for (let c = 0; c < columnXPositions.length; c++) {
-        const dist = Math.abs(item.x - columnXPositions[c]);
-        if (dist < minDistance) {
-          minDistance = dist;
-          closestColIdx = c;
-        }
-      }
-
-      if (closestColIdx !== -1 && minDistance < 65) {
-        if (rawColumnHeaders[closestColIdx]) {
-          rawColumnHeaders[closestColIdx] += ' ' + item.text;
-        } else {
-          rawColumnHeaders[closestColIdx] = item.text;
-        }
-      }
-    });
-
-    // Step 4: Clean, structure, and assemble the schema attributes
-    const nameColIdxInAnchor = anchorRow.nameColIdx;
-    const finalHeaders: string[] = ['학번', '성명'];
-    const subHeaders: string[] = [];
-    const allHeadersSet = new Set<string>();
-
-    const colIndexToKeyMap: { [col: number]: string } = {};
-
-    for (let c = nameColIdxInAnchor + 1; c < columnXPositions.length; c++) {
-      const rawHeader = rawColumnHeaders[c] || '';
-      const formattedHeader = cleanAndFormatHeaderName(rawHeader);
-
-      if (
-        formattedHeader === '' || 
-        ['반', '번호', '성명', '이름', '학년', '성별', '연번', '비고', '확인', '날인'].some(k => formattedHeader.includes(k))
-      ) {
-        continue;
-      }
-
-      colIndexToKeyMap[c] = formattedHeader;
-      if (!formattedHeader.startsWith('합계')) {
-        subHeaders.push(formattedHeader);
-        allHeadersSet.add(formattedHeader);
-      }
+    const uniqueAreaHeaders = Array.from(allAreaHeaderKeys);
+    if (uniqueAreaHeaders.length === 0) {
+      console.warn('PDF parsed but found no evaluation column headers.');
+      return null;
     }
 
-    // Calculate dynamic summation max targets to build correct total text header "합계 (70점)"
+    // Sort evaluation columns in their visual order of original index
+    const sortedAreaHeaders = [...uniqueAreaHeaders].sort((a, b) => {
+      const getMinColIdx = (hName: string) => {
+        for (const stud of detectedStudentScores) {
+          const idx = stud.rawHeadersList.findIndex(h => cleanAndFormatHeaderName(h) === hName);
+          if (idx !== -1) return idx;
+        }
+        return 0;
+      };
+      return getMinColIdx(a) - getMinColIdx(b);
+    });
+
+    // Compute the absolute total max score from evaluation headers
     let totalMaxScore = 0;
-    subHeaders.forEach(sh => {
+    sortedAreaHeaders.forEach(sh => {
       const match = sh.match(/\((\d+)점\)/) || sh.match(/\(([\d.]+)점\)/);
       if (match && match[1]) {
         totalMaxScore += parseFloat(match[1]);
       }
     });
 
-    finalHeaders.push(...subHeaders);
-    let totalHeaderKey = '합계';
-    if (totalMaxScore > 0) {
-      totalHeaderKey = `합계 (${totalMaxScore}점)`;
-    }
-    finalHeaders.push(totalHeaderKey);
+    const totalHeaderKey = totalMaxScore > 0 ? `합계 (${totalMaxScore}점)` : '합계';
+    const finalHeaders = ['학번', ...sortedAreaHeaders, totalHeaderKey];
 
-    // Step 5: Process student row entries on standard layouts aligning coordinates tightly
-    const finalParsedRows: any[] = [];
-    const seenStudentIds = new Set<string>();
-
-    detectedStudents.forEach(stud => {
-      const studentClassVal = stud.classVal || parsedClass;
-      const paddedClass = studentClassVal.padStart(2, '0');
-      const paddedNum = stud.numberVal.padStart(2, '0');
-      const finalStudentId = `${parsedGrade}${paddedClass}${paddedNum}`;
-
-      if (seenStudentIds.has(finalStudentId)) {
-        return;
-      }
-      seenStudentIds.add(finalStudentId);
-
-      const rowData: any = {
-        '학번': finalStudentId,
-        '성명': stud.nameVal
+    // Compile ultimate student objects
+    const finalParsedRows = detectedStudentScores.map(stud => {
+      const row: any = {
+        '학번': stud.student_id
       };
 
-      finalHeaders.forEach(h => {
-        if (h !== '학번' && h !== '성명') {
-          rowData[h] = '0';
-        }
+      // Fill empty cells
+      sortedAreaHeaders.forEach(sh => {
+        row[sh] = '0';
       });
 
-      stud.cells.forEach(cell => {
-        let nearestIdx = -1;
-        let minDistance = Infinity;
-
-        for (let idx = 0; idx < columnXPositions.length; idx++) {
-          const dist = Math.abs(cell.x - columnXPositions[idx]);
-          if (dist < minDistance) {
-            minDistance = dist;
-            nearestIdx = idx;
-          }
-        }
-
-        if (nearestIdx !== -1 && minDistance < 40) {
-          const headerKey = colIndexToKeyMap[nearestIdx];
-          if (headerKey) {
-            let scoreVal = cell.text.trim();
-            if (/^\d+\.00$/.test(scoreVal)) {
-              scoreVal = parseFloat(scoreVal).toString();
-            } else if (/^\d+\.\d+$/.test(scoreVal)) {
-              const parsed = parseFloat(scoreVal);
-              if (!isNaN(parsed)) {
-                scoreVal = parsed.toString();
-              }
-            }
-            rowData[headerKey] = scoreVal;
-          }
-        }
+      // Fill parsed evaluation scores
+      Object.entries(stud.scores).forEach(([sh, value]) => {
+        row[sh] = value;
       });
 
+      // If original OCR total score is empty, use the computed fallback sum
       let sumOfAreas = 0;
-      subHeaders.forEach(sh => {
-        const val = parseFloat(rowData[sh]) || 0;
-        sumOfAreas += val;
+      sortedAreaHeaders.forEach(sh => {
+        sumOfAreas += parseFloat(row[sh]) || 0;
       });
 
-      let parsedTotalScoreVal = '';
-      for (let idx = nameColIdxInAnchor + 1; idx < columnXPositions.length; idx++) {
-        const headerKey = colIndexToKeyMap[idx];
-        if (headerKey && headerKey.startsWith('합계')) {
-          parsedTotalScoreVal = rowData[headerKey] || '';
-          break;
-        }
+      let finalTotal = stud.total;
+      if (!finalTotal || finalTotal === '0') {
+        finalTotal = sumOfAreas.toString();
       }
 
-      if (parsedTotalScoreVal && parsedTotalScoreVal !== '0') {
-        rowData[totalHeaderKey] = parsedTotalScoreVal;
-      } else {
-        rowData[totalHeaderKey] = sumOfAreas.toString();
-      }
-
-      let totalRaw = rowData[totalHeaderKey];
-      if (/^\d+\.00$/.test(totalRaw)) {
-        rowData[totalHeaderKey] = parseFloat(totalRaw).toString();
-      } else if (/^\d+\.\d+$/.test(totalRaw)) {
-        const parsed = parseFloat(totalRaw);
-        if (!isNaN(parsed)) {
-          rowData[totalHeaderKey] = parsed.toString();
-        }
-      }
-
-      finalParsedRows.push(rowData);
+      row[totalHeaderKey] = finalTotal;
+      return row;
     });
-
-    if (finalParsedRows.length === 0) {
-      return null;
-    }
 
     finalParsedRows.sort((a, b) => a['학번'].localeCompare(b['학번']));
 

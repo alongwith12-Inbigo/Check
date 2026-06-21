@@ -43,6 +43,8 @@ interface AdminDashboardProps {
   onLogout: () => void;
   subjectMaxScores?: Record<string, string>;
   onUpdateSubjectMaxScore?: (subject: string, maxScore: string) => void | Promise<void>;
+  subjectCompletionStates?: Record<string, boolean>;
+  onUpdateSubjectCompletion?: (subject: string, completed: boolean) => void | Promise<void>;
   teacherSettings?: Record<string, boolean>;
   signatures?: Record<string, string>;
   onToggleSignature?: (enabled: boolean) => void | Promise<void>;
@@ -129,6 +131,8 @@ export default function AdminDashboard({
   onLogout,
   subjectMaxScores = {},
   onUpdateSubjectMaxScore = () => {},
+  subjectCompletionStates = {},
+  onUpdateSubjectCompletion = () => {},
   teacherSettings = {},
   signatures = {},
   onToggleSignature = () => {},
@@ -299,8 +303,66 @@ export default function AdminDashboard({
     setErrorMsg('');
   }, [activeEvaluationId, activeEval]);
 
+  const downloadActiveEvalPdf = () => {
+    if (!activeEval || !activeEval.pdfBase64) return;
+    try {
+      let cleanBase64 = activeEval.pdfBase64;
+      if (cleanBase64.includes(',')) {
+        cleanBase64 = cleanBase64.split(',')[1];
+      }
+      
+      const byteCharacters = atob(cleanBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = activeEval.pdfFileName || `[성적통지표]_${activeEval.subject || '평가물'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      console.error('PDF 다운로드 실패:', err);
+      alert('PDF 파일 다운로드 도중 오류가 발생했습니다: ' + (err.message || err));
+    }
+  };
+
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const [pdfExtractError, setPdfExtractError] = useState<string | null>(null);
+
+  const extractPdfOrImage = async (base64: string, subject: string, tgtClass: string): Promise<{ headers: string[]; rows: any[] } | null> => {
+    try {
+      const res = await fetch('/api/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          pdfBase64: base64,
+          subject: subject,
+          targetGradeClass: tgtClass
+        })
+      });
+      const data = await res.json();
+      if (data && data.success) {
+        return {
+          headers: data.headers,
+          rows: data.rows
+        };
+      } else {
+        console.warn('Backend Gemini AI OCR returned unsuccessful response, falling back to local client parser...', data?.error);
+      }
+    } catch (err) {
+      console.error('OCR API request failed, falling back to local client parser...', err);
+    }
+    return await extractDataFromPdf(base64, tgtClass);
+  };
 
   useEffect(() => {
     if (
@@ -314,7 +376,12 @@ export default function AdminDashboard({
         setIsExtractingPdf(true);
         setPdfExtractError(null);
         try {
-          const extractedPdf = await extractDataFromPdf(activeEval.pdfBase64!, activeEval.targetGradeClass || '');
+          const extractedPdf = await extractPdfOrImage(
+            activeEval.pdfBase64!,
+            activeEval.subject || '',
+            activeEval.targetGradeClass || ''
+          );
+
           if (active) {
             if (extractedPdf && extractedPdf.rows.length > 0) {
               await onUpdateEvaluation(activeEval.id!, {
@@ -517,7 +584,7 @@ export default function AdminDashboard({
           let extractedHeaders: string[] = [];
           let extractedRows: any[] = [];
           try {
-            const extractedPdf = await extractDataFromPdf(base64Data, cleanTgtGC);
+            const extractedPdf = await extractPdfOrImage(base64Data, defaultSubject, cleanTgtGC);
             if (extractedPdf && extractedPdf.rows.length > 0) {
               extractedHeaders = extractedPdf.headers;
               extractedRows = extractedPdf.rows;
@@ -898,17 +965,30 @@ export default function AdminDashboard({
                     const settingKey = `${loggedTeacher.code.trim()}_${sub.trim()}`;
                     const dbMaxScore = subjectMaxScores[settingKey] || '';
                     return (
-                      <div key={sub} className="flex items-center justify-between gap-1 bg-slate-50 border border-slate-150 rounded-xl p-2.5">
-                        <span className="text-xs font-black text-slate-700 truncate max-w-[100px]" title={sub}>
-                          {sub}
-                        </span>
-                        <SubjectMaxScoreInput 
-                          subject={sub}
-                          initialValue={dbMaxScore}
-                          onSave={async (newVal) => {
-                            await onUpdateSubjectMaxScore(sub, newVal);
-                          }}
-                        />
+                      <div key={sub} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 border border-slate-150 rounded-xl p-3 shadow-3xs">
+                        <div className="flex items-center justify-between sm:justify-start gap-4">
+                          <span className="text-xs font-black text-slate-800 truncate max-w-[120px] shrink-0" title={sub}>
+                            {sub}
+                          </span>
+                          <SubjectMaxScoreInput 
+                            subject={sub}
+                            initialValue={dbMaxScore}
+                            onSave={async (newVal) => {
+                              await onUpdateSubjectMaxScore(sub, newVal);
+                            }}
+                          />
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer select-none bg-white py-1.5 px-3 rounded-lg border border-slate-200 hover:border-indigo-400 hover:bg-slate-50 transition-all text-slate-650 shrink-0">
+                          <input 
+                            type="checkbox"
+                            checked={!!subjectCompletionStates[settingKey]}
+                            onChange={async (e) => {
+                              await onUpdateSubjectCompletion(sub, e.target.checked);
+                            }}
+                            className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-900 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <span className="text-[10px] font-extrabold">전체 영역 입력 완료</span>
+                        </label>
                       </div>
                     );
                   })}
@@ -970,9 +1050,11 @@ export default function AdminDashboard({
                   {/* 엑셀 샘플 파일 다운로드 및 관리자 업로드 바 */}
                   <div className="bg-amber-50/50 border border-amber-200/80 rounded-2xl p-4.5 space-y-3.5 my-2.5 animate-fadeIn">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/70 p-3.5 rounded-xl border border-amber-100">
-                      <div className="space-y-1">
-                        <span className="text-[9px] font-black text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-md uppercase tracking-wider">교사용 필수 양식</span>
-                        <p className="text-xs font-black text-slate-800 leading-tight">선생님들이 보실 엑셀 샘플 파일 양식</p>
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] font-black text-amber-800 bg-amber-100/70 px-2.5 py-0.5 rounded-full uppercase tracking-wider">교사용 필수 양식</span>
+                        <p className="text-sm font-extrabold text-slate-800 tracking-tight leading-tight flex items-center gap-1.5 hover:text-amber-800 transition-colors">
+                          선생님들이 보실 엑셀 샘플 파일 양식
+                        </p>
                       </div>
                       <button
                         type="button"
@@ -1386,19 +1468,18 @@ export default function AdminDashboard({
                           <p className="text-[10px] text-slate-400 font-mono">대상 학년반: {activeEval.targetGradeClass || '미지정'}</p>
                         </div>
                       </div>
-                      <a
-                        href={activeEval.pdfBase64}
-                        download={activeEval.pdfFileName || 'result.pdf'}
-                        className="px-3.5 py-1.5 bg-indigo-900 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                      <button
+                        onClick={downloadActiveEvalPdf}
+                        className="px-3.5 py-1.5 bg-indigo-900 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
                       >
                         📥 파일 다운로드
-                      </a>
+                      </button>
                     </div>
 
                     {isExtractingPdf && (
-                      <div className="p-3 bg-indigo-50 text-indigo-900 border border-indigo-150 rounded-xl flex items-center gap-2.5 text-[11px] font-bold animate-pulse">
-                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-ping" />
-                        <span>PDF에서 학급별 학생들의 개별 수행평가 성적 데이터를 정밀 추출 및 가배열하는 중입니다...</span>
+                      <div className="p-3 bg-rose-50 text-rose-950 border border-rose-200/60 rounded-xl flex items-center gap-2.5 text-[11px] font-bold animate-pulse">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping" />
+                        <span>AI OCR 복원 엔진이 일람표 문서의 표 구조와 점수를 분석하고 정밀 대조하는 중입니다...</span>
                       </div>
                     )}
 
@@ -1487,14 +1568,14 @@ export default function AdminDashboard({
                   <thead>
                     <tr className="bg-slate-100 text-slate-600 border-b border-slate-200 sticky top-0 font-bold">
                       <th className="py-2 px-2.5 text-center w-10 border-r border-slate-200">No.</th>
-                      {activeEval.headers.map((header) => {
+                      {activeEval.headers.map((header, hIdx) => {
                         const isId = header === studentIdKey;
                         const isBirth = header === birthdateKey;
                         const isFeedback = feedbackKeys.includes(header);
                         
                         return (
                           <th 
-                            key={header} 
+                            key={`${header}-${hIdx}`} 
                             className={`py-2 px-2.5 whitespace-nowrap ${
                               isId || isBirth 
                                 ? 'bg-slate-200/80 text-slate-900 font-extrabold border-x border-slate-250' 
@@ -1518,7 +1599,7 @@ export default function AdminDashboard({
                     {previewRows.map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 transition-colors font-semibold">
                         <td className="py-1.5 px-2.5 text-center text-slate-400 font-mono border-r border-slate-200">{idx + 1}</td>
-                        {activeEval.headers.map((header) => {
+                        {activeEval.headers.map((header, hIdx) => {
                           const val = row[header];
                           const isId = header === studentIdKey;
                           const isBirth = header === birthdateKey;
@@ -1526,7 +1607,7 @@ export default function AdminDashboard({
                           
                           return (
                             <td 
-                              key={header} 
+                              key={`${header}-${hIdx}`} 
                               className={`py-1.5 px-2.5 whitespace-nowrap overflow-hidden max-w-xs text-ellipsis font-medium ${
                                 isId || isBirth 
                                   ? 'bg-slate-100/50 text-slate-900 border-x border-slate-200 font-mono' 

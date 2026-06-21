@@ -26,6 +26,7 @@ interface ResultCardProps {
   sessionData: StudentSession;
   onBack: () => void;
   subjectMaxScores?: Record<string, string>;
+  subjectCompletionStates?: Record<string, boolean>;
   signatures?: Record<string, string>;
   teacherSettings?: Record<string, boolean>;
   onSaveSignature?: (subject: string, studentId: string, studentName: string, signatureDataUrl: string) => void | Promise<void>;
@@ -39,6 +40,7 @@ export default function ResultCard({
   sessionData, 
   onBack, 
   subjectMaxScores = {},
+  subjectCompletionStates = {},
   signatures = {},
   teacherSettings = {},
   onSaveSignature,
@@ -294,6 +296,7 @@ export default function ResultCard({
   const settingKey = `${tCode}_${subjName}`;
   const customMaxScoreStr = subjectMaxScores[settingKey] || '';
   const courseMaxScore = customMaxScoreStr ? parseFloat(customMaxScoreStr) : aggregateReflectedMax;
+  const isSubjectCompleted = !!subjectCompletionStates[settingKey];
 
   // Compute stats across all evaluations
   const totalEvalsCount = sortedResults.length;
@@ -420,6 +423,9 @@ export default function ResultCard({
 
               return excelResults.map((item, index) => {
                 const { headers, row, evaluationTitle, subject, round, evaluationDetailName, maxScore } = item;
+                const formattedRound = round
+                  ? (round.endsWith('차') || round.endsWith('차수') ? round : `${round}차`)
+                  : '';
                 
                 const feedbackKeys = findFeedbackKey(headers);
                 const totalScoreKey = findTotalScoreKey(headers, row, feedbackKeys);
@@ -558,7 +564,7 @@ export default function ResultCard({
                                     </span>
                                   </div>
                                   <h4 className="text-xs font-black text-slate-800 mt-1">
-                                    {subject} 최종 취득 점수
+                                    {subject} {formattedRound ? `${formattedRound} ` : ''}수행 점수
                                   </h4>
                                 </div>
                                 <div className="text-right">
@@ -585,7 +591,7 @@ export default function ResultCard({
                                   </span>
                                 </div>
                                 <h4 className="text-xs font-black text-slate-800 mt-1">
-                                  {subject} 취득 원점수
+                                  {subject} {formattedRound ? `${formattedRound} ` : ''}수행 원점수
                                 </h4>
                               </div>
                               <div className="text-right">
@@ -698,12 +704,25 @@ export default function ResultCard({
                     </p>
                   </div>
                   <div className="text-center sm:text-right shrink-0">
-                    <span className="text-4xl sm:text-5xl font-black text-indigo-950 font-sans tracking-tight">
-                      {formattedAggregateReflectedObtained}
-                    </span>
-                    <span className="text-sm font-bold text-slate-400 ml-1">
-                      / {courseMaxScore} 점 만점
-                    </span>
+                    {isSubjectCompleted ? (
+                      <>
+                        <span className="text-4xl sm:text-5xl font-black text-indigo-950 font-sans tracking-tight">
+                          {formattedAggregateReflectedObtained}
+                        </span>
+                        <span className="text-sm font-bold text-slate-400 ml-1">
+                          / {courseMaxScore} 점 만점
+                        </span>
+                      </>
+                    ) : (
+                      <div className="text-center sm:text-right">
+                        <span className="text-base sm:text-lg font-black bg-amber-100 hover:bg-amber-150 text-amber-900 border border-amber-250 px-3 py-1.5 rounded-xl block select-none">
+                          전체 영역 입력 전 ⚠️
+                        </span>
+                        <p className="text-[10px] text-slate-400 mt-1.5 font-bold">
+                          (현재 기준 누적: {formattedAggregateReflectedObtained} / {courseMaxScore}점)
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

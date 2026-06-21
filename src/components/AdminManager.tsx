@@ -220,8 +220,9 @@ export default function AdminManager({
             const cVal = String(row[classKey] || '').replace(/\D/g, '');
             const nVal = String(row[numberKey] || '').replace(/\D/g, '');
             if (gVal && cVal && nVal) {
+              const formattedClass = cVal.padStart(2, '0');
               const formattedNum = nVal.padStart(2, '0');
-              const calculatedId = `${gVal}0${cVal}${formattedNum}`;
+              const calculatedId = `${gVal}${formattedClass}${formattedNum}`;
               return {
                 ...row,
                 [studentIdKey!]: calculatedId

@@ -94,7 +94,8 @@ export function cleanAndFormatHeaderName(rawHeader: string): string {
 }
 
 /**
- * Merges text segments on the same line that are visually adjacent (X-coordinate gap < 45).
+ * Merges text segments on the same line that are visually adjacent.
+ * Prevents merging adjacent separate numbers/scores to protect column separation.
  */
 function mergeRowCells(items: { text: string; x: number; y: number }[]): MergedCell[] {
   if (items.length === 0) return [];
@@ -111,7 +112,30 @@ function mergeRowCells(items: { text: string; x: number; y: number }[]): MergedC
   for (let i = 1; i < sorted.length; i++) {
     const item = sorted[i];
     const avgX = current.sumX / current.count;
-    if (item.x - current.xEnd < 45 || item.x - avgX < 45) {
+
+    const currentClean = current.text.replace(/\s+/g, '');
+    const itemClean = item.text.replace(/\s+/g, '');
+
+    const isCurrentNum = /^\d+(\.\d+)?$/.test(currentClean);
+    const isItemNum = /^\d+(\.\d+)?$/.test(itemClean);
+
+    const hasSlashOrDash = currentClean.includes('/') || currentClean.includes('-') ||
+                           itemClean.includes('/') || itemClean.includes('-');
+
+    let limit = 40; // Default gap threshold for text/names
+
+    if (hasSlashOrDash) {
+      // Slashes or dashes are part of class/number, always merge them!
+      limit = 35;
+    } else if (isCurrentNum && isItemNum) {
+      // Preserve separate score columns
+      limit = 12;
+    } else if (isCurrentNum || isItemNum) {
+      // If one is numeric and another is text, keep them separate if they are columns, but some small gap is ok
+      limit = 15;
+    }
+
+    if (item.x - current.xEnd < limit || item.x - avgX < limit) {
       current.text += ' ' + item.text;
       current.xEnd = Math.max(current.xEnd, item.x + item.text.length * 6);
       current.count += 1;
@@ -163,16 +187,22 @@ function isPageForClass(textLines: string[][], grade: string, classNum: string):
 
   // Count how many cells on the page contain a 5-digit number starting with the classPrefix
   let prefixCount = 0;
+  let slashPrefixCount = 0;
+  
   textLines.forEach(line => {
     line.forEach(cell => {
       const cleaned = cell.replace(/\s+/g, '');
       if (cleaned.startsWith(classPrefix) && cleaned.length === 5 && /^\d+$/.test(cleaned)) {
         prefixCount++;
       }
+      if (cleaned.startsWith(`${classNum}/`) || cleaned.startsWith(`${classNum}-`)) {
+        slashPrefixCount++;
+      }
     });
   });
 
   if (prefixCount >= 3) return true;
+  if (slashPrefixCount >= 3) return true;
 
   // Check page text for classroom indications
   const pageAllText = textLines.flat().join(' ').replace(/\s+/g, '');
@@ -213,6 +243,8 @@ function findStudentRowInPage(
   targetNumber: string,
   targetNumberWithZero: string
 ): number {
+  const targetGrade = studentId.length >= 5 ? studentId[0] : '1';
+
   for (let r = 0; r < textLines.length; r++) {
     const rawLineCells = rawLines[r];
     if (!rawLineCells || rawLineCells.length < 2) continue;
@@ -222,109 +254,122 @@ function findStudentRowInPage(
 
     const combinedText = textLines[r].join('').replace(/\s+/g, '');
 
-    // 1. Ultimate Fail-safe Priority: Exact Student ID (e.g., 10701) present anywhere in this row's combined text
+    // 1. Ultimate Fail-safe Priority: Exact 5-digit Student ID (e.g., 10701) present anywhere in this row's combined text
     if (combinedText.includes(studentId)) {
       return r;
     }
 
-    // 2. Identify the Name Column robustly
-    let nameColIdx = -1;
-    for (let c = 0; c < Math.min(4, cleanMergedCells.length); c++) {
-      const txt = cleanMergedCells[c].text.replace(/\s+/g, '');
-      if (txt !== '' && !['반', '번호', '반/번호', '학번', '학년', '성별', '연번'].some(k => txt.includes(k))) {
-        const isPureNum = /^\d+$/.test(txt) || /^\d+\/\d+$/.test(txt);
-        if (!isPureNum) {
-          nameColIdx = c;
-          break;
-        }
-      }
-    }
+    // 2. Class/Number combo matching inside structural columns (e.g. "1-7-1", "7-1", "1/7/1", "7/1", "10701", "07-01", "7반1번")
+    let matchedByStructuredColumns = false;
+    const maxScanCols = Math.min(5, cleanMergedCells.length);
 
-    // 3. Extract Class and Roll Number from leading columns to assert direct unique mapping
-    let rowClass = '';
-    let rowNumber = '';
-    const limit = nameColIdx !== -1 ? nameColIdx : Math.min(3, cleanMergedCells.length);
+    for (let c = 0; c < maxScanCols; c++) {
+      const cellText = cleanMergedCells[c].text.replace(/\s+/g, '');
+      if (!cellText) continue;
 
-    for (let c = 0; c < limit; c++) {
-      const txt = cleanMergedCells[c].text.replace(/\s+/g, '');
-      
-      if (txt.includes('/')) {
-        const parts = txt.split('/');
-        const cv = parts[0].replace(/\D/g, '');
-        const nv = parts[1].replace(/\D/g, '');
-        if (cv && nv) {
-          rowClass = cv;
-          rowNumber = nv;
-          break;
-        }
-      }
+      const cellCleaned = cellText.replace(/[가-힣]/g, ''); // strip letters like 학년, 반, 번
 
-      if (txt.includes('-')) {
-        const parts = txt.split('-');
-        const cv = parts[0].replace(/\D/g, '');
-        const nv = parts[1].replace(/\D/g, '');
-        if (cv && nv) {
-          rowClass = cv;
-          rowNumber = nv;
-          break;
-        }
-      }
-
-      const parsed = parseClassNumber(txt);
-      if (parsed) {
-        rowClass = parsed.classVal;
-        rowNumber = parsed.numberVal;
+      // 5-digit academic ID direct match (e.g. "10701")
+      if (cellCleaned === studentId && /^\d{5}$/.test(cellCleaned)) {
+        matchedByStructuredColumns = true;
         break;
       }
-    }
 
-    if (!rowClass || !rowNumber) {
-      const numericValues: string[] = [];
-      for (let c = 0; c < limit; c++) {
-        const num = cleanMergedCells[c].text.replace(/\D/g, '');
-        if (num) numericValues.push(num);
-      }
-      if (numericValues.length >= 2) {
-        if (numericValues.length === 3) {
-          rowClass = numericValues[1];
-          rowNumber = numericValues[2];
-        } else {
-          rowClass = numericValues[0];
-          rowNumber = numericValues[1];
+      // Three part split like "1-7-1" or "1/7/1" or "1.7.1"
+      if (/^\d+[-\/.]\d+[-\/.]\d+$/.test(cellCleaned)) {
+        const parts = cellCleaned.split(/[-\/.]/);
+        if (
+          parseInt(parts[0], 10) === parseInt(targetGrade, 10) &&
+          parseInt(parts[1], 10) === parseInt(targetClass, 10) &&
+          parseInt(parts[2], 10) === parseInt(targetNumber, 10)
+        ) {
+          matchedByStructuredColumns = true;
+          break;
         }
-      } else if (numericValues.length === 1) {
-        rowNumber = numericValues[0];
+      }
+
+      // Two part split like "7-1" or "7/1" or "7.1" or "07-01"
+      if (/^\d+[-\/.]\d+$/.test(cellCleaned)) {
+        const parts = cellCleaned.split(/[-\/.]/);
+        if (
+          parseInt(parts[0], 10) === parseInt(targetClass, 10) &&
+          parseInt(parts[1], 10) === parseInt(targetNumber, 10)
+        ) {
+          matchedByStructuredColumns = true;
+          break;
+        }
+      }
+
+      // Semantic Korean text (e.g. "7반1번" or "1학년7반1번")
+      if (cellText.includes('반') && cellText.includes('번')) {
+        const matchGrad = cellText.match(/(\d+)\s*학년/);
+        const matchCls = cellText.match(/(\d+)\s*반/);
+        const matchNum = cellText.match(/(\d+)\s*번/);
+
+        const gradeOk = !matchGrad || parseInt(matchGrad[1], 10) === parseInt(targetGrade, 10);
+        const classOk = matchCls && parseInt(matchCls[1], 10) === parseInt(targetClass, 10);
+        const numberOk = matchNum && parseInt(matchNum[1], 10) === parseInt(targetNumber, 10);
+
+        if (gradeOk && classOk && numberOk) {
+          matchedByStructuredColumns = true;
+          break;
+        }
       }
     }
 
-    const rClass = rowClass.replace(/\D/g, '').trim();
-    const rNumber = rowNumber.replace(/\D/g, '').trim();
+    if (matchedByStructuredColumns) {
+      return r;
+    }
 
-    // Direct Class & Number Match - Highly secure and specific
-    if (rClass && rNumber) {
-      const isClassMatch = parseInt(rClass, 10) === parseInt(targetClass, 10);
-      const isNumMatch = parseInt(rNumber, 10) === parseInt(targetNumber, 10);
-      if (isClassMatch && isNumMatch) {
+    // 3. Sequential Separate Columns matching (e.g. [Class, Number] or [Serial/Grade, Class, Number])
+    const parsedCells: number[] = [];
+    for (let c = 0; c < Math.min(4, cleanMergedCells.length); c++) {
+      const txt = cleanMergedCells[c].text.replace(/\s+/g, '');
+      const val = parseInt(txt, 10);
+      if (!isNaN(val) && /^\d+$/.test(txt)) {
+        parsedCells.push(val);
+      }
+    }
+
+    if (parsedCells.length >= 2) {
+      // Look for [Class, Number] (e.g. [7, 1])
+      if (parsedCells[0] === parseInt(targetClass, 10) && parsedCells[1] === parseInt(targetNumber, 10)) {
         return r;
       }
     }
 
-    // 4. Fallback: Matching via student name if found
-    let hasName = false;
-    if (nameColIdx !== -1) {
-      const studentNameVal = cleanMergedCells[nameColIdx].text.replace(/\s+/g, '');
-      hasName = studentNameVal.includes(cleanStudentName) || cleanStudentName.includes(studentNameVal);
-    } else {
-      hasName = combinedText.includes(cleanStudentName);
-    }
-
-    if (hasName) {
-      const containsNumber = combinedText.includes(targetNumber) || combinedText.includes(targetNumberWithZero);
-      const containsClass = combinedText.includes(targetClass) || combinedText.includes('0' + targetClass);
-      
-      if (containsNumber && (containsClass || textLines.length <= 45)) {
+    if (parsedCells.length >= 3) {
+      // Look for [Grade/Serial, Class, Number] (e.g. [1, 7, 1] or [12, 7, 1])
+      if (parsedCells[1] === parseInt(targetClass, 10) && parsedCells[2] === parseInt(targetNumber, 10)) {
         return r;
       }
+    }
+
+    // 4. Fallback: Check if the digits-only version of any early cell matches the student ID or targetNumber
+    for (let c = 0; c < Math.min(4, cleanMergedCells.length); c++) {
+      const txtDigits = cleanMergedCells[c].text.replace(/\D/g, '');
+      if (txtDigits === studentId) {
+        return r;
+      }
+    }
+
+    // 5. Fallback 2: Exact containment of targetClass and targetNumber as distinct words/numbers in the text line
+    const containsNumber = combinedText.includes(targetNumber) || combinedText.includes(targetNumberWithZero);
+    const containsClass = combinedText.includes(targetClass) || combinedText.includes('0' + targetClass);
+
+    if (containsNumber && containsClass && textLines.length <= 45) {
+      // On narrow page outputs with fewer than 45 rows (one typical class page size limit),
+      // containment of correct numbers is strong indicator
+      return r;
+    }
+  }
+
+  // 6. Word-boundary absolute fallback check for dense line layouts
+  for (let r = 0; r < textLines.length; r++) {
+    const lineStr = textLines[r].join(' ');
+    const numTokens = lineStr.split(/[^0-9]/).filter(t => t !== '');
+    if (numTokens.includes(studentId)) {
+      return r;
     }
   }
 
@@ -590,15 +635,17 @@ export default function StudentPdfViewer({
           for (let c = 0; c < Math.min(4, cleanMergedCells.length); c++) {
             const txt = cleanMergedCells[c].text.replace(/\s+/g, '');
             if (txt !== '' && !['반', '번호', '반/번호', '학번', '학년', '성별', '연번'].some(k => txt.includes(k))) {
-              const isPureNum = /^\d+$/.test(txt) || /^\d+\/\d+$/.test(txt);
-              if (!isPureNum) {
+              const isNumericOrID = /^[0-9./\s-]+$/.test(txt);
+              if (!isNumericOrID) {
                 nameColIdx = c;
                 break;
               }
             }
           }
 
-          if (nameColIdx === -1) nameColIdx = 1; // Fallback to column index 1
+          if (nameColIdx === -1) {
+            nameColIdx = 0; // Fallback to 0 if no Name column exists, starting scores from index 1.
+          }
 
           // Find the Header row index on this page to identify the boundaries of header elements
           let headerRowIdx = -1;
@@ -756,7 +803,7 @@ export default function StudentPdfViewer({
             totalPages
           });
         } else {
-          setError(`나이스 종합 PDF 일람표 내부에서 학번 [${studentId}] 또는 성명 [${studentName}]에 해당하는 개별 성적 데이터를 자동으로 추출하지 못했습니다.\n\n[알아두기] 교과 담당 선생님께 이 과목 PDF 자료에 학생 본인의 학번(${studentId}) 및 이름(${studentName})이 정확히 등록되어 확인 가능한 텍스트 일람표인지 체크를 요청해주세요.`);
+          setError(`나이스 종합 PDF 일람표 내부에서 학번 [${studentId}]에 해당하는 개별 성적 데이터를 자동으로 추출하지 못했습니다.\n\n[알아두기] 교과 담당 선생님께 이 과목 PDF 자료에 학생 본인의 학번(${studentId}) 번호가 정확히 등록되어 성적 조회가 가능한 정상 텍스트형 한글/엑셀 변환 일람표인지 체크를 요청해주세요.`);
         }
 
       } catch (err: any) {
@@ -778,6 +825,36 @@ export default function StudentPdfViewer({
     };
   }, [pdfBase64, studentId, studentName, JSON.stringify(headers), JSON.stringify(row)]);
 
+  const handleDownloadPdf = () => {
+    if (!pdfBase64) return;
+    try {
+      let cleanBase64 = pdfBase64;
+      if (pdfBase64.includes(',')) {
+        cleanBase64 = pdfBase64.split(',')[1];
+      }
+      
+      const byteCharacters = atob(cleanBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `[성적통지표]_${studentId}_${studentName}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      console.error('PDF 다운로드 실패:', err);
+      alert('PDF 파일 다운로드 도중 오류가 발생했습니다: ' + (err.message || err));
+    }
+  };
+
   return (
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden p-5 space-y-5 shadow-xxs">
       
@@ -789,11 +866,17 @@ export default function StudentPdfViewer({
         </div>
         
         {activeData && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] bg-rose-50 border border-rose-100 text-rose-800 px-2.5 py-0.5 rounded-md font-bold">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={handleDownloadPdf}
+              className="text-[10px] bg-rose-600 border border-rose-700 text-white hover:bg-slate-900 px-2.5 py-1 rounded-md font-bold transition flex items-center gap-1 cursor-pointer"
+            >
+              📥 원본 PDF 다운받기
+            </button>
+            <span className="text-[10px] bg-rose-50 border border-rose-100 text-rose-800 px-2.5 py-1 rounded-md font-bold">
               🔒 개인 안심 보안 조회용
             </span>
-            <span className="text-[10.5px] bg-slate-100 px-2.5 py-0.5 rounded text-slate-500 font-extrabold font-mono">
+            <span className="text-[10.5px] bg-slate-100 px-2.5 py-1 rounded text-slate-500 font-extrabold font-mono">
               분석 매칭: {activeData.matchedPage} / {activeData.totalPages} 페이지
             </span>
           </div>

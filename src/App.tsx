@@ -39,6 +39,9 @@ export default function App() {
   // Subject-level final max score configurations
   const [subjectMaxScores, setSubjectMaxScores] = useState<Record<string, string>>({});
 
+  // Subject-level final completion configurations
+  const [subjectCompletionStates, setSubjectCompletionStates] = useState<Record<string, boolean>>({});
+
   // Selected state for student
   const [selectedEvaluationId, setSelectedEvaluationId] = useState<string>('');
 
@@ -71,11 +74,14 @@ export default function App() {
     const collRef = collection(db, 'subjectSettings');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const scores: Record<string, string> = {};
+      const completions: Record<string, boolean> = {};
       snap.forEach((d) => {
         const data = d.data();
         scores[d.id] = data.maxScore !== undefined ? String(data.maxScore) : '';
+        completions[d.id] = !!data.completed;
       });
       setSubjectMaxScores(scores);
+      setSubjectCompletionStates(completions);
     }, (error) => {
       console.warn("Firestore subjectSettings subscription failed: ", error);
     });
@@ -317,7 +323,31 @@ export default function App() {
         teacherCode: cleanTeacherCode,
         subject: cleanSubject,
         maxScore: cleanMaxScore
-      });
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `subjectSettings/${settingId}`);
+    }
+  };
+
+  const handleUpdateSubjectCompletion = async (subject: string, completed: boolean) => {
+    if (!loggedTeacher) return;
+    const cleanTeacherCode = loggedTeacher.code.trim();
+    const cleanSubject = subject.trim();
+    const settingId = `${cleanTeacherCode}_${cleanSubject}`;
+
+    // Optimistically update the state for flawless dynamic responsiveness
+    setSubjectCompletionStates(prev => ({
+      ...prev,
+      [settingId]: completed
+    }));
+
+    try {
+      const docRef = doc(db, 'subjectSettings', settingId);
+      await setDoc(docRef, {
+        teacherCode: cleanTeacherCode,
+        subject: cleanSubject,
+        completed: completed
+      }, { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `subjectSettings/${settingId}`);
     }
@@ -658,6 +688,8 @@ export default function App() {
                   onLogout={handleTeacherLogout}
                   subjectMaxScores={subjectMaxScores}
                   onUpdateSubjectMaxScore={handleUpdateSubjectMaxScore}
+                  subjectCompletionStates={subjectCompletionStates}
+                  onUpdateSubjectCompletion={handleUpdateSubjectCompletion}
                   teacherSettings={teacherSettings}
                   signatures={signatures}
                   onToggleSignature={handleToggleSignature}
@@ -791,6 +823,7 @@ export default function App() {
                 sessionData={loggedStudent}
                 onBack={handleStudentLogout}
                 subjectMaxScores={subjectMaxScores}
+                subjectCompletionStates={subjectCompletionStates}
                 signatures={signatures}
                 teacherSettings={teacherSettings}
                 onSaveSignature={handleSaveSignature}
