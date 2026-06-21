@@ -967,7 +967,7 @@ export default function AdminDashboard({
                     return (
                       <div key={sub} className="flex flex-col bg-slate-50 border border-slate-150 rounded-xl p-3 shadow-3xs space-y-2.5">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs font-black text-slate-800 truncate pr-2" title={sub}>
+                          <span className="text-xs font-black text-slate-800 break-all whitespace-normal leading-tight pr-2 flex-grow" title={sub}>
                             {sub}
                           </span>
                           <SubjectMaxScoreInput 
