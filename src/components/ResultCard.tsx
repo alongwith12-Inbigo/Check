@@ -703,25 +703,19 @@ export default function ResultCard({
                       각 영역별 만점과 실제 성적 반영 비율(%)을 가중 계산하여 종합한 최종 수행평가 성적 누적 점수입니다.
                     </p>
                   </div>
-                  <div className="text-center sm:text-right shrink-0">
-                    {isSubjectCompleted ? (
-                      <>
-                        <span className="text-4xl sm:text-5xl font-black text-indigo-950 font-sans tracking-tight">
-                          {formattedAggregateReflectedObtained}
-                        </span>
-                        <span className="text-sm font-bold text-slate-400 ml-1">
-                          / {courseMaxScore} 점 만점
-                        </span>
-                      </>
-                    ) : (
-                      <div className="text-center sm:text-right">
-                        <span className="text-base sm:text-lg font-black bg-amber-100 hover:bg-amber-150 text-amber-900 border border-amber-250 px-3 py-1.5 rounded-xl block select-none">
-                          전체 영역 입력 전 ⚠️
-                        </span>
-                        <p className="text-[10px] text-slate-400 mt-1.5 font-bold">
-                          (현재 기준 누적: {formattedAggregateReflectedObtained} / {courseMaxScore}점)
-                        </p>
-                      </div>
+                  <div className="text-center sm:text-right shrink-0 flex flex-col items-center sm:items-end gap-1.5">
+                    <div className="flex items-baseline gap-1 justify-center sm:justify-end">
+                      <span className="text-4xl sm:text-5xl font-black text-indigo-950 font-sans tracking-tight">
+                        {formattedAggregateReflectedObtained}
+                      </span>
+                      <span className="text-sm font-bold text-slate-400">
+                        / {courseMaxScore} 점 만점
+                      </span>
+                    </div>
+                    {!isSubjectCompleted && (
+                      <span className="inline-flex items-center gap-1.5 text-[10.5px] font-extrabold bg-amber-50 text-amber-800 border border-amber-250/70 px-2.5 py-1 rounded-lg select-none">
+                        <span>⚠️</span> 전체 영역 입력 전
+                      </span>
                     )}
                   </div>
                 </div>

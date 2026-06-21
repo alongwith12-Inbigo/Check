@@ -965,9 +965,9 @@ export default function AdminDashboard({
                     const settingKey = `${loggedTeacher.code.trim()}_${sub.trim()}`;
                     const dbMaxScore = subjectMaxScores[settingKey] || '';
                     return (
-                      <div key={sub} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 border border-slate-150 rounded-xl p-3 shadow-3xs">
-                        <div className="flex items-center justify-between sm:justify-start gap-4">
-                          <span className="text-xs font-black text-slate-800 truncate max-w-[120px] shrink-0" title={sub}>
+                      <div key={sub} className="flex flex-col bg-slate-50 border border-slate-150 rounded-xl p-3 shadow-3xs space-y-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-black text-slate-800 truncate pr-2" title={sub}>
                             {sub}
                           </span>
                           <SubjectMaxScoreInput 
@@ -978,17 +978,21 @@ export default function AdminDashboard({
                             }}
                           />
                         </div>
-                        <label className="flex items-center gap-2 cursor-pointer select-none bg-white py-1.5 px-3 rounded-lg border border-slate-200 hover:border-indigo-400 hover:bg-slate-50 transition-all text-slate-650 shrink-0">
-                          <input 
-                            type="checkbox"
-                            checked={!!subjectCompletionStates[settingKey]}
-                            onChange={async (e) => {
-                              await onUpdateSubjectCompletion(sub, e.target.checked);
-                            }}
-                            className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-900 focus:ring-indigo-500 cursor-pointer"
-                          />
-                          <span className="text-[10px] font-extrabold">전체 영역 입력 완료</span>
-                        </label>
+                        
+                        {/* Completion switch beautifully aligned under the inputs to prevent horizontal overflow */}
+                        <div className="pt-2 border-t border-slate-200 flex justify-end">
+                          <label className="flex items-center gap-1.5 cursor-pointer select-none bg-white py-1 px-2.5 rounded-lg border border-slate-200 hover:border-indigo-400 hover:bg-slate-50 transition-all text-slate-650">
+                            <input 
+                              type="checkbox"
+                              checked={!!subjectCompletionStates[settingKey]}
+                              onChange={async (e) => {
+                                await onUpdateSubjectCompletion(sub, e.target.checked);
+                              }}
+                              className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-900 focus:ring-indigo-500 cursor-pointer"
+                            />
+                            <span className="text-[10px] font-extrabold text-slate-700">전체 영역 입력 완료</span>
+                          </label>
+                        </div>
                       </div>
                     );
                   })}
