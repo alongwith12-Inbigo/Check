@@ -82,7 +82,7 @@ function SubjectMaxScoreInput({ subject, initialValue, onSave }: SubjectMaxScore
   };
 
   return (
-    <div className="flex items-center gap-1.5 shrink-0">
+    <div className="flex items-center gap-1 shrink-0">
       <input
         type="text"
         placeholder="예: 30"
@@ -98,23 +98,25 @@ function SubjectMaxScoreInput({ subject, initialValue, onSave }: SubjectMaxScore
             (e.target as HTMLInputElement).blur();
           }
         }}
-        className="w-16 px-1.5 py-1 text-center border border-slate-300 rounded font-black text-xs text-indigo-900 font-mono bg-white focus:outline-none focus:border-indigo-500 transition-colors"
+        className="w-12 sm:w-14 px-1.5 py-1 text-center border border-slate-300 rounded font-black text-xs text-indigo-900 font-mono bg-white focus:outline-none focus:border-indigo-500 transition-colors"
       />
       <span className="text-[10px] font-bold text-slate-400">점</span>
       
-      {/* Visual Indicator of Save Success */}
-      <div className="w-14 flex items-center text-[10px] font-bold h-5 select-none">
-        {isSaving && (
-          <span className="text-amber-500 animate-pulse flex items-center gap-0.5">
-            ⌛ 저장중
-          </span>
-        )}
-        {hasSaved && !isSaving && (
-          <span className="text-emerald-600 flex items-center gap-0.5 animate-fadeIn">
-            ✅ 저장됨
-          </span>
-        )}
-      </div>
+      {/* Visual Indicator of Save Success - Compacted to 0-width when idle */}
+      {(isSaving || hasSaved) && (
+        <div className="text-[10px] font-bold select-none animate-fadeIn ml-1 shrink-0">
+          {isSaving && (
+            <span className="text-amber-500 animate-pulse">
+              ⌛
+            </span>
+          )}
+          {hasSaved && !isSaving && (
+            <span className="text-emerald-600 animate-bounce">
+              ✅
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -966,17 +968,23 @@ export default function AdminDashboard({
                     const dbMaxScore = subjectMaxScores[settingKey] || '';
                     return (
                       <div key={sub} className="flex flex-col bg-slate-50 border border-slate-150 rounded-xl p-3 shadow-3xs space-y-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs font-black text-slate-800 break-all whitespace-normal leading-tight pr-2 flex-grow" title={sub}>
-                            {sub}
-                          </span>
-                          <SubjectMaxScoreInput 
-                            subject={sub}
-                            initialValue={dbMaxScore}
-                            onSave={async (newVal) => {
-                              await onUpdateSubjectMaxScore(sub, newVal);
-                            }}
-                          />
+                        <div className="flex items-center justify-between gap-3 w-full">
+                          {/* Left: Subject Name. Absolutely NO truncate or max-width restriction, fully wrapping */}
+                          <div className="flex-1 min-w-0 pr-1">
+                            <span className="text-xs font-black text-slate-800 break-words whitespace-normal leading-tight block" title={sub}>
+                              {sub}
+                            </span>
+                          </div>
+                          {/* Right: Score Input. Shrink-0 keeps it aligned exactly to the right edge */}
+                          <div className="shrink-0 flex items-center justify-end">
+                            <SubjectMaxScoreInput 
+                              subject={sub}
+                              initialValue={dbMaxScore}
+                              onSave={async (newVal) => {
+                                await onUpdateSubjectMaxScore(sub, newVal);
+                              }}
+                            />
+                          </div>
                         </div>
                         
                         {/* Completion switch beautifully aligned under the inputs to prevent horizontal overflow */}
