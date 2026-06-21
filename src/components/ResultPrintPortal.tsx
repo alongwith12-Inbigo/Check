@@ -245,16 +245,14 @@ export default function ResultPrintPortal({
                         const rateNum = parseFloat(ev.reflectRate || '100') || 100;
                         const reflectedMax = Number((maxScoreNum * (rateNum / 100)).toFixed(2)).toString();
                         return (
-                          <th key={ev.id || idx} className="border border-slate-800 px-2 py-2 text-center">
-                            <div className="leading-tight">
-                              <span className="block font-black">평가 {idx + 1}</span>
+                          <th key={ev.id || idx} className="border border-slate-800 px-2 py-2.5 text-center min-w-[90px] max-w-[120px]">
+                            <div className="flex flex-col items-center justify-center gap-1.5 leading-tight">
                               {ev.evaluationDetailName && (
-                                <span className="block text-[8px] text-slate-500 font-bold max-w-[80px] truncate mx-auto" title={ev.evaluationDetailName}>
+                                <span className="block text-[11px] font-black text-slate-800 break-words whitespace-normal text-center" title={ev.evaluationDetailName}>
                                   {ev.evaluationDetailName}
                                 </span>
                               )}
-                              <span className="block text-[8px] text-slate-400 font-normal mt-0.5">반영{rateNum}%</span>
-                              <span className="block text-[9px] text-indigo-900 font-bold mt-0.5">
+                              <span className="block text-[9.5px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
                                 만점 {reflectedMax}점
                               </span>
                             </div>
