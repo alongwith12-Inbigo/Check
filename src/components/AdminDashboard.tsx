@@ -1541,7 +1541,7 @@ export default function AdminDashboard({
                           </>
                         ) : (
                           <>
-                            , <span className="bg-indigo-100 text-indigo-950 px-1.5 py-0.5 rounded font-bold ml-1 text-[10px]">생년월일 불필요 (관리자 교적명부 연동 완료)</span>
+                            , <span className="bg-indigo-100 text-indigo-950 px-1.5 py-0.5 rounded font-bold ml-1 text-[10px]">(관리자 전체 명단 연동 완료)</span>
                           </>
                         )})가 활성화되어 설정되었습니다.
                       </div>
