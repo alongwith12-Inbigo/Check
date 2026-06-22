@@ -1065,7 +1065,7 @@ export default function AdminDashboard({
                       <div className="space-y-1.5">
                         <span className="text-[9px] font-black text-amber-800 bg-amber-100/70 px-2.5 py-0.5 rounded-full uppercase tracking-wider">EXCEL 양식</span>
                         <p className="text-sm font-extrabold text-slate-800 tracking-tight leading-tight flex items-center gap-1.5 hover:text-amber-800 transition-colors">
-                          수행평가 세부 점수 안내용
+                          세부 점수 안내용
                         </p>
                       </div>
                       <button
@@ -1189,7 +1189,7 @@ export default function AdminDashboard({
                     <div className="p-2 bg-indigo-50 rounded-full mb-2 text-indigo-900">
                       <Upload size={16} className="stroke-[2.5]" />
                     </div>
-                    <p className="text-xs font-black text-slate-700">여기에 엑셀 파일을 끌어다놓거나 클릭하세요</p>
+                    <p className="text-xs font-black text-slate-700">여기에 EXCEL 파일을 끌어다놓거나 클릭하세요</p>
                     <p className="text-[10px] text-slate-450 mt-1">.xlsx, .xls 확장자만 업로드 가능합니다.</p>
                   </div>
                 </div>
@@ -1273,7 +1273,7 @@ export default function AdminDashboard({
                     <div className="p-2 bg-rose-50 rounded-full mb-2 text-rose-900">
                       <Upload size={16} className="stroke-[2.5]" />
                     </div>
-                    <p className="text-xs font-black text-rose-950">여기에 나이스에서 저장한 PDF 파일을 끌어다놓거나 클릭하세요</p>
+                    <p className="text-xs font-black text-rose-950">여기에 PDF 파일을 끌어다놓거나 클릭하세요</p>
                     <p className="text-[10px] text-slate-450 mt-1">.pdf 확장자만 업로드 가능합니다.</p>
                   </div>
                 </div>
