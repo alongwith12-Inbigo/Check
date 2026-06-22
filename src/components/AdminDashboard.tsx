@@ -338,6 +338,9 @@ export default function AdminDashboard({
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const [pdfExtractError, setPdfExtractError] = useState<string | null>(null);
   const [lastOcrError, setLastOcrError] = useState<string | null>(null);
+  
+  // Track which evaluation IDs have already run automated extraction during the mount session
+  const automatedExtractionsRef = useRef<Record<string, boolean>>({});
 
   const extractPdfOrImage = async (
     base64: string,
@@ -396,11 +399,18 @@ export default function AdminDashboard({
 
   useEffect(() => {
     if (
+      activeEvaluationId &&
       activeEval && 
       activeEval.uploadType === 'pdf' && 
       (!activeEval.rows || activeEval.rows.length === 0) && 
       activeEval.pdfBase64
     ) {
+      // Prevent running extraction multiple times for the same evaluation ID in this mount session
+      if (automatedExtractionsRef.current[activeEvaluationId]) {
+        return;
+      }
+      automatedExtractionsRef.current[activeEvaluationId] = true;
+
       let active = true;
       const autoExtract = async () => {
         setIsExtractingPdf(true);
@@ -445,7 +455,7 @@ export default function AdminDashboard({
         active = false;
       };
     }
-  }, [activeEvaluationId, activeEval?.rows?.length, lastOcrError]);
+  }, [activeEvaluationId, activeEval?.id, activeEval?.rows?.length]);
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
