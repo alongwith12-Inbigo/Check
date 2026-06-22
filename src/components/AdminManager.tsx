@@ -109,8 +109,8 @@ export default function AdminManager({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 20 * 1024 * 1024) { // 20MB limit
-      setErrorMsg('용량이 너무 큽니다. 20MB 이하의 파일만 업로드할 수 있습니다.');
+    if (file.size > 700 * 1024) { // 700KB limit
+      setErrorMsg('용량이 너무 큽니다. 데이터베이스 안정성을 위해 700KB 이하의 경량화된 PDF 파일만 업로드할 수 있습니다. (기존 PDF 용량 압축기 등을 통해 웹용 경량 파일로 변환하여 업로드해 주세요.)');
       return;
     }
 
@@ -149,8 +149,8 @@ export default function AdminManager({
 
     const file = e.dataTransfer.files?.[0];
     if (file) {
-      if (file.size > 20 * 1024 * 1024) {
-        setErrorMsg('용량이 너무 큽니다. 20MB 이하의 파일만 업로드할 수 있습니다.');
+      if (file.size > 700 * 1024) {
+        setErrorMsg('용량이 너무 큽니다. 데이터베이스 안정성을 위해 700KB 이하의 경량화된 PDF 파일만 업로드할 수 있습니다. (기존 PDF 용량 압축기 등을 통해 웹용 경량 파일로 변환하여 업로드해 주세요.)');
         return;
       }
       const reader = new FileReader();
@@ -844,7 +844,7 @@ export default function AdminManager({
                   <Upload className="text-slate-400" size={32} />
                   <div className="space-y-0.5">
                     <p className="text-xs font-bold text-slate-755">여기에 PDF 파일을 드래그하고 드롭하거나 영역을 클릭하세요</p>
-                    <p className="text-[10px] text-slate-400 font-semibold">지원 포맷: .pdf, .docx, .txt (최대 20MB)</p>
+                    <p className="text-[10px] text-slate-400 font-semibold">지원 포맷: .pdf, .docx, .txt (최대 700KB)</p>
                   </div>
                 </>
               )}
@@ -916,7 +916,18 @@ export default function AdminManager({
                   setSuccessMsg('개인정보처리방침 공식 PDF/약관 및 문안이 실시간 데이터베이스에 완벽히 저장 및 게시되었습니다!');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 } catch (err: any) {
-                  setErrorMsg(`저장 실패: ${err?.message || err}`);
+                  const errMsgStr = String(err?.message || err);
+                  let cleanErr = errMsgStr;
+                  try {
+                    const parsed = JSON.parse(errMsgStr);
+                    cleanErr = parsed.error || errMsgStr;
+                  } catch (e) {}
+
+                  if (cleanErr.toLowerCase().includes('large') || cleanErr.toLowerCase().includes('exceed') || cleanErr.toLowerCase().includes('size')) {
+                    setErrorMsg('데이터베이스 용량 제한 오류: 파이어베이스(Firestore)의 단일 문서 크기 한계(1MB)를 초과했습니다. 업로드하신 PDF 용량이 너무 크거나 텍스트 분량이 너무 많습니다. PDF 용량을 700KB 이하로 압축한 후(예: iLovePDF 등 온라인 무료 압축 서비스 이용) 다시 업로드해 주세요!');
+                  } else {
+                    setErrorMsg(`저장 실패 상세 안내: ${cleanErr}`);
+                  }
                 } finally {
                   setIsSavingPrivacy(false);
                 }

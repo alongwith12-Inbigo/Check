@@ -245,8 +245,8 @@ export default function App() {
           updatePayload.fileName = fileData.fileName;
           updatePayload.fileBase64 = fileData.fileBase64;
         } else {
-          updatePayload.fileName = deleteField();
-          updatePayload.fileBase64 = deleteField();
+          updatePayload.fileName = "";
+          updatePayload.fileBase64 = "";
         }
       }
       await setDoc(docRef, updatePayload, { merge: true });
