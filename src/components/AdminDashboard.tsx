@@ -337,8 +337,10 @@ export default function AdminDashboard({
 
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const [pdfExtractError, setPdfExtractError] = useState<string | null>(null);
+  const [lastOcrError, setLastOcrError] = useState<string | null>(null);
 
   const extractPdfOrImage = async (base64: string, subject: string, tgtClass: string): Promise<{ headers: string[]; rows: any[] } | null> => {
+    let ocrError: string | null = null;
     try {
       const res = await fetch('/api/extract', {
         method: 'POST',
@@ -353,16 +355,20 @@ export default function AdminDashboard({
       });
       const data = await res.json();
       if (data && data.success) {
+        setLastOcrError(null);
         return {
           headers: data.headers,
           rows: data.rows
         };
       } else {
+        ocrError = data?.error || '알 수 없는 AI OCR 에러';
         console.warn('Backend Gemini AI OCR returned unsuccessful response, falling back to local client parser...', data?.error);
       }
-    } catch (err) {
+    } catch (err: any) {
+      ocrError = err?.message || '네트워크 요청 실패';
       console.error('OCR API request failed, falling back to local client parser...', err);
     }
+    setLastOcrError(ocrError);
     return await extractDataFromPdf(base64, tgtClass);
   };
 
@@ -383,7 +389,7 @@ export default function AdminDashboard({
             activeEval.subject || '',
             activeEval.targetGradeClass || ''
           );
-
+ 
           if (active) {
             if (extractedPdf && extractedPdf.rows.length > 0) {
               await onUpdateEvaluation(activeEval.id!, {
@@ -392,7 +398,13 @@ export default function AdminDashboard({
                 rows: extractedPdf.rows
               });
             } else {
-              setPdfExtractError('PDF 파일에서 학생별 성적 자료(반, 번호, 이름 및 각 평가항목)를 자동으로 분석하고 매칭하지 못했습니다. PDF 양식 및 문형 텍스트 구조를 확인하십시오.');
+              let detailMsg = 'PDF 파일에서 학생별 성적 자료(반, 번호, 이름 및 각 평가항목)를 자동으로 분석하고 매칭하지 못했습니다. PDF 양식 및 문형 텍스트 구조를 확인하십시오.';
+              if (lastOcrError) {
+                detailMsg += `\n(참고 - AI 엔진 안내: ${lastOcrError})`;
+              } else {
+                detailMsg += '\n(참고 - 로컬 클라이언트 파서: 매칭 요건을 만족하는 유효 학번 행이 검출되지 않았습니다.)';
+              }
+              setPdfExtractError(detailMsg);
             }
           }
         } catch (err: any) {
@@ -411,7 +423,7 @@ export default function AdminDashboard({
         active = false;
       };
     }
-  }, [activeEvaluationId, activeEval?.rows?.length]);
+  }, [activeEvaluationId, activeEval?.rows?.length, lastOcrError]);
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();

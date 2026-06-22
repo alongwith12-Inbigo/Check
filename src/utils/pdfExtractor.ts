@@ -305,6 +305,7 @@ export async function extractDataFromPdf(
 
     interface ExtractedStudentData {
       student_id: string;
+      student_name: string;
       scores: { [header: string]: string };
       total: string;
       rawHeadersList: string[];
@@ -321,8 +322,8 @@ export async function extractDataFromPdf(
       const items = textContent.items as any[];
       if (items.length === 0) continue;
 
-      // Group into physical rows by Y coordinate height tolerance
-      const tolerance = 6;
+      // Group into physical rows by Y coordinate height tolerance (increased to 12 for robust line grouping)
+      const tolerance = 12;
       const linesMap: { [y: number]: any[] } = {};
 
       items.forEach(item => {
@@ -353,8 +354,8 @@ export async function extractDataFromPdf(
           const cleanedText = cell.text.replace(/\s+/g, '');
           return cleanedText.includes('반/번호') || 
                  (cleanedText.includes('반') && cleanedText.includes('번호')) || 
-                 cleanedText === '성명' || 
-                 cleanedText === '이름';
+                 cleanedText.includes('성명') || 
+                 cleanedText.includes('이름');
         });
 
         if (hasHeaderIndicators) {
@@ -464,7 +465,7 @@ export async function extractDataFromPdf(
           break;
         }
 
-        // B. Locate student ID/number in the ID column slot (nearest to columnPositions[0])
+        // B. Locate student ID/number in the ID column slot (nearest to columnPositions[0], increased tolerance to 120)
         let idCell: MergedCell | null = null;
         let minIdDist = Infinity;
         mergedRow.forEach(cell => {
@@ -475,7 +476,7 @@ export async function extractDataFromPdf(
           }
         });
 
-        if (!idCell || minIdDist > 40) continue;
+        if (!idCell || minIdDist > 120) continue;
 
         const parsedCode = parseClassAndNumber((idCell as MergedCell).text, parsedClass);
         if (!parsedCode) continue; // Skip rows without class/number structure
@@ -489,7 +490,7 @@ export async function extractDataFromPdf(
         }
 
         // General outlier sizing cap
-        if (numValParsed > 40) continue;
+        if (numValParsed > 45) continue;
 
         const paddedClass = parsedClass.padStart(2, '0');
         const paddedNum = parsedCode.numVal.padStart(2, '0');
@@ -501,6 +502,7 @@ export async function extractDataFromPdf(
         // C. Clean and assign grades (scores) for evaluation subheaders
         const scores: { [header: string]: string } = {};
         let totalScore = '0';
+        let studentName = '';
 
         for (let c = 0; c < columnPositions.length; c++) {
           let closestCell: MergedCell | null = null;
@@ -513,7 +515,7 @@ export async function extractDataFromPdf(
             }
           });
 
-          let cellText = (closestCell && minDist < 45) ? closestCell.text.trim() : '0';
+          let cellText = (closestCell && minDist < 55) ? closestCell.text.trim() : '0';
           if (/^\d+\.00$/.test(cellText)) {
             cellText = parseFloat(cellText).toString();
           } else if (/^\d+\.\d+$/.test(cellText)) {
@@ -523,7 +525,9 @@ export async function extractDataFromPdf(
             }
           }
 
-          if (c > nameColIdx && c < totalColIdx) {
+          if (c === nameColIdx) {
+            studentName = cellText === '0' ? '' : cellText;
+          } else if (c > nameColIdx && c < totalColIdx) {
             const rawHeader = rawHeaders[c] || `영역_${c - nameColIdx}`;
             const cleanedHeader = cleanAndFormatHeaderName(rawHeader) || `영역_${c - nameColIdx}`;
             scores[cleanedHeader] = cellText;
@@ -534,6 +538,7 @@ export async function extractDataFromPdf(
 
         detectedStudentScores.push({
           student_id: finalStudentId,
+          student_name: studentName,
           scores,
           total: totalScore,
           rawHeadersList: rawHeaders,
@@ -584,12 +589,13 @@ export async function extractDataFromPdf(
     });
 
     const totalHeaderKey = totalMaxScore > 0 ? `합계 (${totalMaxScore}점)` : '합계';
-    const finalHeaders = ['학번', ...sortedAreaHeaders, totalHeaderKey];
+    const finalHeaders = ['학번', '성명', ...sortedAreaHeaders, totalHeaderKey];
 
     // Compile ultimate student objects
     const finalParsedRows = detectedStudentScores.map(stud => {
       const row: any = {
-        '학번': stud.student_id
+        '학번': stud.student_id,
+        '성명': stud.student_name || ''
       };
 
       // Fill empty cells
