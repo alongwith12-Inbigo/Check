@@ -832,7 +832,7 @@ export default function AdminDashboard({
                   return (
                     <div className="space-y-1.5">
                       <span className="block text-[10px] font-black text-slate-500 uppercase tracking-tight flex items-center gap-1 border-b border-slate-100 pb-1">
-                        📊 엑셀 성적표 ({excelEvaluations.length}개)
+                        📊 수행평가 영역별 EXCEL 파일 ({excelEvaluations.length}개)
                       </span>
                       {excelEvaluations.length === 0 ? (
                         <div className="py-3 text-center text-slate-450 text-[10.5px] italic bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
@@ -887,7 +887,7 @@ export default function AdminDashboard({
                   return (
                     <div className="space-y-1.5 pt-2 border-t border-slate-100">
                       <span className="block text-[10px] font-black text-amber-800 uppercase tracking-tight flex items-center gap-1 border-b border-amber-100 pb-1">
-                        📄 PDF 결과지 ({pdfEvaluations.length}개)
+                        📄 나이스 확인용 PDF 파일 ({pdfEvaluations.length}개)
                       </span>
                       {pdfEvaluations.length === 0 ? (
                         <div className="py-3 text-center text-slate-450 text-[10.5px] italic bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
@@ -1020,16 +1020,16 @@ export default function AdminDashboard({
             <div className="space-y-1.5 my-1 bg-slate-50 border border-slate-150 rounded-xl p-3">
               <div className="flex items-start gap-1.5 text-[10px] text-slate-700 leading-relaxed">
                 <span className="text-indigo-600 font-bold shrink-0">1단계</span>
-                <span><strong>영역별 세부 점수:</strong> 소영역 세분 점수 및 서술 피드백이 입력된 <strong>엑셀 템플릿 파일</strong>을 업로드합니다.</span>
+                <span><strong>EXCEL 파일 등록:</strong> 수행평가 영역별 점수에 대해 구체적으로 피드백하기 위한 용도입니다. <strong>엑셀 샘플 파일</strong>을 활용해주세요.</span>
               </div>
               <div className="border-t border-slate-200/60 my-1"></div>
               <div className="flex items-start gap-1.5 text-[10px] text-slate-700 leading-relaxed">
                 <span className="text-rose-600 font-bold shrink-0">2단계</span>
-                <span><strong>나이스 최종 PDF:</strong> 성적 반영 비율이 가공된 전체 점수가 종합 표기된 <strong>나이스 성적 PDF 파일</strong>을 업로드합니다.</span>
+                <span><strong>PDF 파일 등록:</strong> 나이스에 입력한 점수를 학생들에게 확인받기 위한 용도입니다. <strong>학생 서명</strong>후 출력이 가능합니다.</span>
               </div>
             </div>
             <p className="text-[10px] text-slate-450 leading-relaxed">
-              💡 별도의 온/오프 스위치 조작 필요 없이 **평가 성적이 업로드되는 순간 학생 화면에서 서술형 피드백 확인 후 자율 서명 패드가 자동 활성화**됩니다. 학생들이 서명을 마친 결과는 상단의 <strong>'인쇄 대장 출력'</strong> 버튼을 클릭하여 최종 1장에 가로형 전산 서명이 합산 보관된 확인 문서로 출력 가능합니다.
+              💡 별도의 조작 없이 PDF가 업로드 되면 학생 화면에서 서명 패드가 자동 활성화됩니다. 학생들이 서명을 마친 결과는 상단의 '출력'</strong> 버튼을 클릭하여 1장으로 출력 가능합니다.
             </p>
           </div>
         </div>
@@ -1047,7 +1047,7 @@ export default function AdminDashboard({
                 <div className="space-y-4">
                   <div className="border-b border-indigo-100 pb-3 flex items-center justify-between">
                     <span className="bg-indigo-50 text-indigo-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">수행 영역별 등록 단계</span>
-                    <span className="text-[10px] text-slate-450 font-bold">1단계 (수행평가 상세기록)</span>
+                    <span className="text-[10px] text-slate-450 font-bold">1단계 (EXCEL 자료)</span>
                   </div>
                   
                   <div>
@@ -1063,9 +1063,9 @@ export default function AdminDashboard({
                   <div className="bg-amber-50/50 border border-amber-200/80 rounded-2xl p-4.5 space-y-3.5 my-2.5 animate-fadeIn">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/70 p-3.5 rounded-xl border border-amber-100">
                       <div className="space-y-1.5">
-                        <span className="text-[9px] font-black text-amber-800 bg-amber-100/70 px-2.5 py-0.5 rounded-full uppercase tracking-wider">교사용 필수 양식</span>
+                        <span className="text-[9px] font-black text-amber-800 bg-amber-100/70 px-2.5 py-0.5 rounded-full uppercase tracking-wider">EXCEL 양식</span>
                         <p className="text-sm font-extrabold text-slate-800 tracking-tight leading-tight flex items-center gap-1.5 hover:text-amber-800 transition-colors">
-                          선생님들이 보실 엑셀 샘플 파일 양식
+                          수행평가 세부 점수 안내용
                         </p>
                       </div>
                       <button
@@ -1073,14 +1073,14 @@ export default function AdminDashboard({
                         onClick={downloadSampleTemplate}
                         className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 border border-amber-400 text-white rounded-xl text-xs font-black transition-all hover:scale-[1.02] cursor-pointer self-start sm:self-center shrink-0 shadow-sm"
                       >
-                        <FileSpreadsheet size={13} /> {sampleTemplate ? '최신 샘플 다운로드' : '기본 샘플 다운로드'} 📥
+                        <FileSpreadsheet size={13} /> {sampleTemplate ? '최신 샘플 다운로드' : 'EXCEL 샘플 다운로드'} 📥
                       </button>
                     </div>
                     
                     {/* 관리자를 위한 새로운 샘플 업로드 폼 (Base64) */}
                     <div className="pt-1.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-slate-600">
                       <span className="text-[10px] font-bold text-slate-500 leading-normal truncate max-w-[250px]">
-                        {sampleTemplate ? `🔔 등록됨: ${sampleTemplate.fileName} (${sampleTemplate.uploadedAt})` : '📌 기본 샘플 권장 서류 세팅 상태'}
+                        {sampleTemplate ? `🔔 등록됨: ${sampleTemplate.fileName} (${sampleTemplate.uploadedAt})` : '📌 샘플 세팅 상태'}
                       </span>
                       <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
                         <input
@@ -1096,7 +1096,7 @@ export default function AdminDashboard({
                           disabled={isUploadingTemplate}
                           className="text-[10px] font-black text-indigo-900 bg-white/90 hover:bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-1.5 transition-all shadow-xxs cursor-pointer"
                         >
-                          {isUploadingTemplate ? '⌛ 반영 설정 중...' : '⚙️ 관리자 양식 파일 교체'}
+                          {isUploadingTemplate ? '⌛ 반영 설정 중...' : '⚙️ 관리자 샘플 파일 교체'}
                         </button>
                       </div>
                     </div>
@@ -1189,7 +1189,7 @@ export default function AdminDashboard({
                     <div className="p-2 bg-indigo-50 rounded-full mb-2 text-indigo-900">
                       <Upload size={16} className="stroke-[2.5]" />
                     </div>
-                    <p className="text-xs font-black text-slate-700">여기에 엑셀 파일을 드래그하거나 클릭하세요</p>
+                    <p className="text-xs font-black text-slate-700">여기에 엑셀 파일을 끌어다놓거나 클릭하세요</p>
                     <p className="text-[10px] text-slate-450 mt-1">.xlsx, .xls 확장자만 업로드 가능합니다.</p>
                   </div>
                 </div>
@@ -1215,7 +1215,7 @@ export default function AdminDashboard({
                       📄 나이스 최종 종합 PDF 등록
                     </h3>
                     <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
-                      최종 전체 종합 결과가 표기된 나이스 성적 PDF 파일을 업로드합니다. **(업로드 시 자동으로 학생 서명 제출 활성화)**
+                      최종 전체 종합 결과가 표기된 나이스 성적 PDF 파일을 업로드합니다. (업로드 시 자동으로 학생 서명 제출 활성화)
                     </p>
                   </div>
 
@@ -1246,7 +1246,7 @@ export default function AdminDashboard({
                   </div>
 
                   <div id="pdf-notifying-banner" className="bg-indigo-50/50 border border-indigo-100 p-2.5 rounded-lg text-[10px] text-slate-600 leading-normal">
-                    <span>💡 <strong>필독:</strong> 학번 대조 및 개인 점수 식별을 위해 <strong>대상 학년반</strong>(예: 1학년 7반은 107)을 정확히 입력해 주십시오. <strong>학생 프라이버시 보호를 위해 전체 파일 내용 노출을 막고 개인의 성적 및 총합 합계만 필터링하여 보여줍니다.</strong> 최종 확인 일람표 엑셀 파일(.xlsx/.xls)을 등록하시면 완벽한 자동 식별이 지원됩니다.</span>
+                    <span>💡 <strong>필독:</strong> <strong>대상 학년반</strong>(예: 1학년 7반은 107)을 정확히 입력해 주십시오. 
                   </div>
 
                   {/* PDF File Drop Area */}
@@ -1273,8 +1273,8 @@ export default function AdminDashboard({
                     <div className="p-2 bg-rose-50 rounded-full mb-2 text-rose-900">
                       <Upload size={16} className="stroke-[2.5]" />
                     </div>
-                    <p className="text-xs font-black text-rose-950">여기에 성적 일람표(Excel) 또는 PDF 파일을 드래그하거나 클릭하세요</p>
-                    <p className="text-[10px] text-slate-450 mt-1">.pdf, .xlsx, .xls 파일 업로드 가능</p>
+                    <p className="text-xs font-black text-rose-950">여기에 나이스에서 저장한 PDF 파일을 끌어다놓거나 클릭하세요</p>
+                    <p className="text-[10px] text-slate-450 mt-1">.pdf 확장자만 업로드 가능합니다.</p>
                   </div>
                 </div>
 
@@ -1295,7 +1295,7 @@ export default function AdminDashboard({
               <div className="md:col-span-1 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-4">
                 <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
                   <BookOpen size={14} className="text-slate-500" />
-                  {activeEval.uploadType === 'pdf' ? '📄 PDF 평가 정보 편집' : '수행평가 등록 정보'}
+                  {activeEval.uploadType === 'pdf' ? 'PDF 평가 정보 편집' : '수행평가 등록 정보'}
                 </h3>
 
                 <div className="space-y-3">
@@ -1357,7 +1357,7 @@ export default function AdminDashboard({
                   {activeEval.uploadType === 'pdf' ? (
                     <div>
                       <label htmlFor="eval-target-gc" className="block text-[10px] font-extrabold text-slate-500 mb-1">
-                        4. 👥 대상 학년반 지정 (조회용)
+                        4. 학년반
                       </label>
                       <input 
                         id="eval-target-gc"
@@ -1418,7 +1418,7 @@ export default function AdminDashboard({
                     <>
                       <div className="flex justify-between">
                         <span>파일 형식:</span>
-                        <strong className="text-amber-700 font-bold">📄 PDF 요약 결과지</strong>
+                        <strong className="text-amber-700 font-bold">나이스 PDF 자료</strong>
                       </div>
                       <div className="flex justify-between">
                         <span>허용 반 목록:</span>
