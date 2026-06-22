@@ -339,7 +339,14 @@ export default function AdminDashboard({
   const [pdfExtractError, setPdfExtractError] = useState<string | null>(null);
   const [lastOcrError, setLastOcrError] = useState<string | null>(null);
 
-  const extractPdfOrImage = async (base64: string, subject: string, tgtClass: string): Promise<{ headers: string[]; rows: any[] } | null> => {
+  const extractPdfOrImage = async (
+    base64: string,
+    subject: string,
+    tgtClass: string
+  ): Promise<{
+    extractedPdf: { headers: string[]; rows: any[] } | null;
+    error: string | null;
+  }> => {
     let ocrError: string | null = null;
     try {
       const res = await fetch('/api/extract', {
@@ -353,23 +360,38 @@ export default function AdminDashboard({
           targetGradeClass: tgtClass
         })
       });
-      const data = await res.json();
-      if (data && data.success) {
+
+      const responseText = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(responseText);
+      } catch (jsonErr) {
+        throw new Error(`AI 서버가 올바른 JSON 형식을 반환하지 않았습니다. (HTTP 상태 코드: ${res.status}, 응답 일부: ${responseText.trim().substring(0, 150)})`);
+      }
+
+      if (res.ok && data && data.success) {
         setLastOcrError(null);
         return {
-          headers: data.headers,
-          rows: data.rows
+          extractedPdf: {
+            headers: data.headers,
+            rows: data.rows
+          },
+          error: null
         };
       } else {
-        ocrError = data?.error || '알 수 없는 AI OCR 에러';
-        console.warn('Backend Gemini AI OCR returned unsuccessful response, falling back to local client parser...', data?.error);
+        ocrError = data?.error || `서버 에러가 발생했습니다 (HTTP 상태 코드: ${res.status})`;
+        console.warn('Backend Gemini AI OCR returned unsuccessful response, falling back to local client parser...', ocrError);
       }
     } catch (err: any) {
       ocrError = err?.message || '네트워크 요청 실패';
       console.error('OCR API request failed, falling back to local client parser...', err);
     }
     setLastOcrError(ocrError);
-    return await extractDataFromPdf(base64, tgtClass);
+    const localParsed = await extractDataFromPdf(base64, tgtClass);
+    return {
+      extractedPdf: localParsed,
+      error: ocrError
+    };
   };
 
   useEffect(() => {
@@ -384,7 +406,7 @@ export default function AdminDashboard({
         setIsExtractingPdf(true);
         setPdfExtractError(null);
         try {
-          const extractedPdf = await extractPdfOrImage(
+          const { extractedPdf, error } = await extractPdfOrImage(
             activeEval.pdfBase64!,
             activeEval.subject || '',
             activeEval.targetGradeClass || ''
@@ -399,8 +421,8 @@ export default function AdminDashboard({
               });
             } else {
               let detailMsg = 'PDF 파일에서 학생별 성적 자료(반, 번호, 이름 및 각 평가항목)를 자동으로 분석하고 매칭하지 못했습니다. PDF 양식 및 문형 텍스트 구조를 확인하십시오.';
-              if (lastOcrError) {
-                detailMsg += `\n(참고 - AI 엔진 안내: ${lastOcrError})`;
+              if (error) {
+                detailMsg += `\n(참고 - AI 엔진 안내: ${error})`;
               } else {
                 detailMsg += '\n(참고 - 로컬 클라이언트 파서: 매칭 요건을 만족하는 유효 학번 행이 검출되지 않았습니다.)';
               }
@@ -598,7 +620,7 @@ export default function AdminDashboard({
           let extractedHeaders: string[] = [];
           let extractedRows: any[] = [];
           try {
-            const extractedPdf = await extractPdfOrImage(base64Data, defaultSubject, cleanTgtGC);
+            const { extractedPdf } = await extractPdfOrImage(base64Data, defaultSubject, cleanTgtGC);
             if (extractedPdf && extractedPdf.rows.length > 0) {
               extractedHeaders = extractedPdf.headers;
               extractedRows = extractedPdf.rows;
