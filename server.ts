@@ -16,15 +16,45 @@ async function startServer() {
   app.use(express.json({ limit: "150mb" }));
   app.use(express.urlencoded({ limit: "150mb", extended: true }));
 
-  // Initialize the server-side Gemini client with telemetries
-  const apiKey = process.env.GEMINI_API_KEY;
-  const ai = new GoogleGenAI({
-    apiKey: apiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
-    },
+  // Lazy initialize the server-side Gemini client with telemetries to prevent startup crashes
+  let aiInstance: GoogleGenAI | null = null;
+  const getAi = () => {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      throw new Error("서버에 GEMINI_API_KEY 환경 변수가 정의되지 않았습니다. AI Studio의 'Settings' -> 'Secrets' 메뉴에서 API Key를 꼭 등록해주셔야 AI OCR 복원 기능이 정상적으로 동작합니다.");
+    }
+    if (!aiInstance) {
+      aiInstance = new GoogleGenAI({
+        apiKey: key,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
+    }
+    return aiInstance;
+  };
+
+  // Define a proxy object so we don't have to rewrite the rest of the code using 'ai'
+  const ai = new Proxy({} as GoogleGenAI, {
+    get(target, prop, receiver) {
+      try {
+        const client = getAi();
+        const value = Reflect.get(client, prop, receiver);
+        if (typeof value === 'function') {
+          return value.bind(client);
+        }
+        return value;
+      } catch (err: any) {
+        // Return a dummy object with functions that throw to propagate the error
+        return new Proxy({}, {
+          get() {
+            return () => { throw err; };
+          }
+        });
+      }
+    }
   });
 
   // API: Health probe
