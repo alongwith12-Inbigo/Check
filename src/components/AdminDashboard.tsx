@@ -1096,7 +1096,7 @@ export default function AdminDashboard({
                           disabled={isUploadingTemplate}
                           className="text-[10px] font-black text-indigo-900 bg-white/90 hover:bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-1.5 transition-all shadow-xxs cursor-pointer"
                         >
-                          {isUploadingTemplate ? '⌛ 반영 설정 중...' : '⚙️ 관리자 샘플 파일 교체'}
+                          {isUploadingTemplate ? '⌛ 반영 설정 중...' : '⚙️ 샘플 교체'}
                         </button>
                       </div>
                     </div>
