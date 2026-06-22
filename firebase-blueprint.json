@@ -187,6 +187,22 @@
         }
       },
       "required": ["fileName", "fileBase64", "uploadedAt"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "General application settings",
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "Privacy policy text content or other general settings"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of when it was updated"
+        }
+      },
+      "required": ["content"]
     }
   },
   "firestore": {
@@ -221,6 +237,10 @@
     "/systemConfig/{configId}": {
       "schema": "SystemConfig",
       "description": "System configs and shared file templates like Excel forms"
+    },
+    "/appSettings/{settingId}": {
+      "schema": "AppSettings",
+      "description": "General application settings like privacy policies"
     }
   }
 }

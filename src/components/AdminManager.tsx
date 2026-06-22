@@ -38,6 +38,8 @@ interface AdminManagerProps {
   onDeleteStudent: (studentId: string, name: string) => void;
   excelUploads: ExcelUpload[];
   onSaveExcelUpload: (id: string, fileName: string, recordCount: number) => Promise<void>;
+  privacyPolicy: string;
+  onUpdatePrivacyPolicy: (content: string) => Promise<void>;
 }
 
 export default function AdminManager({ 
@@ -49,10 +51,23 @@ export default function AdminManager({
   onUpdateStudents,
   onDeleteStudent,
   excelUploads,
-  onSaveExcelUpload
+  onSaveExcelUpload,
+  privacyPolicy,
+  onUpdatePrivacyPolicy
 }: AdminManagerProps) {
   // Navigation state
-  const [activeTab, setActiveTab] = useState<'teachers' | 'students'>('teachers');
+  const [activeTab, setActiveTab] = useState<'teachers' | 'students' | 'privacy'>('teachers');
+
+  // Privacy Policy editor local states
+  const [privacyEditorText, setPrivacyEditorText] = useState(privacyPolicy || '');
+  const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
+
+  // Sync privacy policy content from database
+  React.useEffect(() => {
+    if (privacyPolicy) {
+      setPrivacyEditorText(privacyPolicy);
+    }
+  }, [privacyPolicy]);
 
   // Search filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -632,14 +647,14 @@ export default function AdminManager({
         </div>
         <button 
           onClick={onLogout}
-          className="flex items-center gap-1.5 px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-red-600 bg-white hover:bg-red-50 hover:border-red-200 hover:shadow-xs transition cursor-pointer"
+          className="flex items-center gap-1.5 px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-red-650 bg-white hover:bg-red-50 hover:border-red-200 hover:shadow-xs transition cursor-pointer"
         >
           <LogOut size={13} /> 관리자 로그아웃
         </button>
       </div>
 
-      {/* Dual Tab Navigation Area */}
-      <div className="flex border-b border-indigo-100 bg-white p-1 rounded-xl shadow-xs border">
+      {/* Tri Tab Navigation Area */}
+      <div className="flex flex-wrap gap-1 border-b border-indigo-100 bg-white p-1 rounded-xl shadow-xs border">
         <button
           onClick={() => { setActiveTab('teachers'); setErrorMsg(''); setSuccessMsg(''); }}
           className={`flex-1 sm:flex-initial text-center px-6 py-2.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
@@ -660,6 +675,16 @@ export default function AdminManager({
         >
           🎓 전교생 학번/생년월일 관리 ({allStudents.length}명)
         </button>
+        <button
+          onClick={() => { setActiveTab('privacy'); setErrorMsg(''); setSuccessMsg(''); }}
+          className={`flex-1 sm:flex-initial text-center px-6 py-2.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+            activeTab === 'privacy'
+              ? 'bg-indigo-900 text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          🔒 개인정보처리방침 관리
+        </button>
       </div>
 
       {/* Shared alerts space */}
@@ -678,6 +703,80 @@ export default function AdminManager({
       )}
 
       {/* Conditional Rendering Panels based on Tab */}
+      {activeTab === 'privacy' ? (
+        // Privacy Policy Administration Panel
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+          <div className="border-b border-slate-150 pb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                <span>🔒 개인정보처리방침 (약관) 설정 및 편집</span>
+              </h3>
+              <p className="text-xs text-slate-400 font-semibold mt-1">
+                학교 홈페이지 또는 교육청 가이드라인에 부합하도록 개인정보 수집 목적, 범위, 보유 기간 등을 자유롭게 수정할 수 있습니다.
+              </p>
+            </div>
+            <span className="hidden sm:inline-block bg-indigo-50 text-indigo-800 text-[10px] px-2.5 py-1 rounded-full font-black">
+              실시간 DB 수렴
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            <label className="block text-xs font-black text-slate-700">개인정보처리방침 법적 고지 전문 (텍스트/마크다운 형식 지원)</label>
+            <textarea
+              value={privacyEditorText}
+              onChange={(e) => setPrivacyEditorText(e.target.value)}
+              placeholder="여기에 학교 개인정보처리방침 약관 전문을 입력하세요..."
+              className="w-full h-96 p-4 border border-slate-300 rounded-xl text-xs font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-400 resize-none font-medium text-slate-800 select-text bg-slate-50/10"
+            />
+            <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-100 flex items-start gap-2.5 bg-indigo-50/20">
+              <Info size={14} className="text-indigo-850 mt-0.5 shrink-0" />
+              <div className="text-[11px] text-indigo-950/80 font-semibold leading-relaxed space-y-1">
+                <p>💡 <strong className="font-extrabold text-indigo-950">마크다운 서식 팁:</strong></p>
+                <p>- 단락이나 문단을 굵게 하려면 양 끝에 **를 붙이세요 (예: **1. 수집 항목**).</p>
+                <p>- 줄의 앞에 - 기호를 붙이면 깔끔한 불릿 머리로 자동 변환되어 렌더링됩니다 (예: - 학번, 이름, 생년월일).</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setPrivacyEditorText(privacyPolicy || '');
+                setSuccessMsg('개인정보처리방침 내용이 마지막으로 저장된 상태로 되돌아갔습니다.');
+                setErrorMsg('');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-750 font-extrabold rounded-xl text-xs cursor-pointer transition shadow-2xs"
+            >
+              입력 취소 (원상복구)
+            </button>
+            <button
+              type="button"
+              disabled={isSavingPrivacy}
+              onClick={async () => {
+                setErrorMsg('');
+                setSuccessMsg('');
+                setIsSavingPrivacy(true);
+                try {
+                  await onUpdatePrivacyPolicy(privacyEditorText);
+                  setSuccessMsg('개인정보처리방침 문안이 실시간 데이터베이스에 안전하게 업데이트되었습니다!');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                } catch (err: any) {
+                  setErrorMsg(`저장 실패: ${err?.message || err}`);
+                } finally {
+                  setIsSavingPrivacy(false);
+                }
+              }}
+              className={`px-6 py-2.5 bg-indigo-900 border border-indigo-850 hover:bg-indigo-950 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition hover:scale-[1.01] ${
+                isSavingPrivacy ? 'opacity-50 pointer-events-none' : ''
+              }`}
+            >
+              {isSavingPrivacy ? '저장하는 중...' : '💾 상위 약관 변경내용 저장'}
+            </button>
+          </div>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Left Side: Bulk Spreadsheet & Individual Registrator */}
@@ -1237,6 +1336,7 @@ export default function AdminManager({
         </div>
 
       </div>
+      )}
 
       {/* Beautiful React Custom Confirmation Modal (Iframe-safe & Responsive) */}
       {confirmModal && (

@@ -26,6 +26,86 @@ import {
   Key
 } from 'lucide-react';
 
+const DEFAULT_PRIVACY_POLICY = `**[수행평가 결과 조회 및 서명 제출 시스템 개인정보처리방침]**
+
+본 수행평가 결과 조회 및 서명 제출 시스템(이하 '시스템')은 「개인정보 보호법」 제30조에 따라 정보주체의 개인정보를 보호하고 이와 관련한 고충을 신속하고 원활하게 처리할 수 있도록 하기 위하여 다음과 같이 개인정보 처리방침을 수립·공개합니다.
+
+**1. 개인정보의 처리 목적**
+본 시스템은 다음의 목적을 위하여 최소한의 개인정보를 처리합니다. 처리하고 있는 개인정보는 다음 목적 이외의 용도로는 이용되지 않으며, 이용 목적이 변경되는 경우에는 「개인정보 보호법」 제18조에 따라 별도의 동의를 받는 등 필요한 조치를 이행할 예정입니다.
+- 학생의 수행평가 결과 및 피드백 개별 조회
+- 수행평가 결과 확인 서명 제출 및 실시간 교사 확인 일람표 반영
+
+**2. 처리하는 개인정보 항목**
+본 시스템이 수집 및 조회, 처리하는 개인정보의 필수 항목은 다음과 같습니다.
+- 필수 항목: 학번(학년, 반, 번호), 이름, 생년월일, 수행평가 영역별 취득 점수, 학생 성명 서명 데이터(이미지), 교사 피드백
+
+**3. 개인정보의 처리 및 보유 기간**
+본 시스템은 법령에 따른 개인정보 보유·이용기간 또는 정보주체로부터 개인정보를 수집 시에 동의 받은 개인정보 보유·이용기간 내에서 개인정보를 처리·보유합니다.
+- 개인정보 보유 및 이용 기간: 당해 학년도 수행평가 결과 조회 및 이의 신청 완료 기간 (목적 달성 후 즉시 또는 학기말 파기)
+
+**4. 개인정보의 파기절차 및 파기방법**
+- 파기절차: 목적 달성 또는 보유기간이 만료된 데이터베이스 레코드는 관계 법령에 따라 보안상 복구 불가능한 방법으로 파기합니다.
+- 파기방법: 데이터베이스에서 영구 삭제 처리합니다.
+
+**5. 정보주체의 권리·의무 및 그 행사방법**
+학생 및 법정대리인은 언제든지 개인정보 열람·정정·삭제·처리정지 요구 등의 권리를 행사할 수 있으며, 이의 신청은 각 교과 담당 선생님 및 학교 정보 담당자에게 요청하실 수 있습니다.
+
+**6. 개인정보의 안전성 확보 조치**
+본 시스템은 개인정보의 안전성 확보를 위해 다음과 같은 조치를 취하고 있습니다.
+- 관리적 조치: 개인정보 취급 직원의 최소화 및 정기 교육
+- 기술적 조치: 비밀번호 일방향 암호화, 데이터베이스 접근 권한 관리, 보안 전송 기능 적용
+
+**7. 개인정보 보호책임자 및 고충처리 부서**
+본 시스템의 개인정보 관련 문의 및 고충 처리는 각 학교의 담당 부서 및 교과 선생님을 통해 문의 바랍니다.
+
+* 본 개인정보 처리방침은 학교 및 교육청 보안 지침 등에 따라 내용이 수정 및 변경될 수 있습니다.`;
+
+function renderMarkdown(text: string) {
+  return text.split('\n').map((line, idx) => {
+    let cleanLine = line.trim();
+    if (!cleanLine) return <div key={idx} className="h-2" />;
+    
+    // Check if header like **[수행평가 ... ]**
+    if (cleanLine.startsWith('**') && cleanLine.endsWith('**')) {
+      const content = cleanLine.slice(2, -2);
+      return (
+        <h3 key={idx} className="text-sm font-extrabold text-indigo-950 tracking-tight mt-4 mb-2 first:mt-0">
+          {content}
+        </h3>
+      );
+    }
+    
+    // Check if subheading like **1. 개인정보의 처리 목적**
+    if (cleanLine.includes('**')) {
+      // Split by ** to find bold inline text
+      const parts = line.split('**');
+      return (
+        <p key={idx} className="text-xs text-slate-700 leading-relaxed font-semibold">
+          {parts.map((p, pIdx) => pIdx % 2 === 1 ? <strong key={pIdx} className="font-extrabold text-slate-950">{p}</strong> : p)}
+        </p>
+      );
+    }
+    
+    // Bullet item like - 필수 항목... or * 필수 항목...
+    if (cleanLine.startsWith('- ') || cleanLine.startsWith('* ')) {
+      const bulletContent = line.replace(/^[-*]\s+/, '');
+      const parts = bulletContent.split('**');
+      return (
+        <li key={idx} className="text-xs text-slate-650 leading-relaxed pl-4 -indent-4 font-semibold flex items-start gap-1">
+          <span className="text-indigo-650 font-extrabold shrink-0 select-none">•</span>
+          <span>{parts.map((p, pIdx) => pIdx % 2 === 1 ? <strong key={pIdx} className="font-extrabold text-slate-950">{p}</strong> : p)}</span>
+        </li>
+      );
+    }
+    
+    return (
+      <p key={idx} className="text-xs text-slate-650 leading-relaxed font-semibold">
+        {line}
+      </p>
+    );
+  });
+}
+
 export default function App() {
   // All evaluations in the database
   const [allEvaluations, setAllEvaluations] = useState<EvaluationState[]>([]);
@@ -68,6 +148,9 @@ export default function App() {
 
   // Student signatures mapping. Key: `${teacherCode}_${subject}_${studentId}` -> signatureDataUrl
   const [signatures, setSignatures] = useState<Record<string, string>>({});
+
+  const [privacyPolicy, setPrivacyPolicy] = useState<string>('');
+  const [showPrivacyModal, setShowPrivacyModal] = useState<boolean>(false);
 
   // Subscribe to Subject Settings in real-time from Firestore
   useEffect(() => {
@@ -122,6 +205,34 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // Subscribe to Application Level Privacy Policy Settings from Firestore
+  useEffect(() => {
+    const docRef = doc(db, 'appSettings', 'privacyPolicy');
+    const unsubscribe = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        setPrivacyPolicy(snap.data().content || '');
+      } else {
+        setPrivacyPolicy(DEFAULT_PRIVACY_POLICY);
+      }
+    }, (error) => {
+      console.warn("Firestore appSettings/privacyPolicy subscription failed: ", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleUpdatePrivacyPolicy = async (content: string) => {
+    try {
+      const docRef = doc(db, 'appSettings', 'privacyPolicy');
+      await setDoc(docRef, {
+        content: content,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'appSettings/privacyPolicy');
+    }
+  };
 
   // 1. Subscribe to Teachers directory in real-time from Firestore
   useEffect(() => {
@@ -665,6 +776,8 @@ export default function App() {
                   onDeleteStudent={handleDeleteStudent}
                   excelUploads={excelUploads}
                   onSaveExcelUpload={handleSaveExcelUpload}
+                  privacyPolicy={privacyPolicy}
+                  onUpdatePrivacyPolicy={handleUpdatePrivacyPolicy}
                 />
               </motion.div>
             ) : loggedTeacher ? (
@@ -864,12 +977,59 @@ export default function App() {
       </main>
 
       {/* Trustfooter */}
-      <footer className="py-6 border-t border-slate-200/60 text-center text-xs text-slate-400 print:hidden mt-12 bg-white flex flex-col items-center justify-center gap-1">
-        <span className="font-semibold text-slate-500 flex items-center gap-1 text-[11px]">
-          수행평가 결과 조회 시스템 v1.1
-        </span>
+      <footer className="py-6 border-t border-slate-200/60 text-center text-xs text-slate-400 print:hidden mt-12 bg-white flex flex-col items-center justify-center gap-2">
+        <div className="flex items-center gap-3">
+          <span className="font-semibold text-slate-500 text-[11px]">
+            수행평가 결과 조회 시스템 v1.1
+          </span>
+          <span className="text-slate-350">|</span>
+          <button 
+            type="button"
+            onClick={() => setShowPrivacyModal(true)}
+            className="font-bold text-indigo-700 hover:text-indigo-900 transition-colors cursor-pointer text-[11px] underline underline-offset-2"
+          >
+            개인정보처리방침
+          </button>
+        </div>
         <span className="text-[10px]">Copyright © 2026 INBIGO. All Rights Reserved.</span>
       </footer>
+
+      {/* Privacy Policy Modal */}
+      {showPrivacyModal && (
+        <div id="privacy-policy-overlay" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn select-text">
+          <div className="bg-white border border-slate-200 shadow-2xl rounded-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-150 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2 text-indigo-900">
+                <span className="font-extrabold text-base tracking-tight">개인정보처리방침</span>
+              </div>
+              <button 
+                onClick={() => setShowPrivacyModal(false)}
+                className="text-slate-400 hover:text-slate-600 transition duration-150 font-black cursor-pointer bg-slate-200/50 hover:bg-slate-200 p-1.5 rounded-full"
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+            {/* Modal Scrollable Content */}
+            <div className="p-6 overflow-y-auto space-y-4 text-left font-sans select-text scrollbar-thin scrollbar-thumb-slate-200">
+              <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/60 space-y-3">
+                {renderMarkdown(privacyPolicy || DEFAULT_PRIVACY_POLICY)}
+              </div>
+            </div>
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-150 flex justify-end bg-slate-50">
+              <button
+                type="button"
+                onClick={() => setShowPrivacyModal(false)}
+                className="px-5 py-2.5 bg-indigo-900 text-white font-extrabold rounded-xl text-xs hover:bg-indigo-950 transition-all duration-150 cursor-pointer shadow-sm hover:shadow"
+              >
+                확인 및 닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

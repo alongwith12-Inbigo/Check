@@ -70,5 +70,10 @@ service cloud.firestore {
     match /systemConfig/{configId} {
       allow read, write: if true;
     }
+
+    // 10. General App Settings (like privacy policies)
+    match /appSettings/{settingId} {
+      allow read, write: if true;
+    }
   }
 }
