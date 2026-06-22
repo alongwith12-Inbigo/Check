@@ -29,8 +29,8 @@ interface ResultCardProps {
   subjectCompletionStates?: Record<string, boolean>;
   signatures?: Record<string, string>;
   teacherSettings?: Record<string, boolean>;
-  onSaveSignature?: (subject: string, studentId: string, studentName: string, signatureDataUrl: string) => void | Promise<void>;
-  onDeleteSignature?: (subject: string, studentId: string) => void | Promise<void>;
+  onSaveSignature?: (subject: string, studentId: string, studentName: string, signatureDataUrl: string, teacherCode: string) => void | Promise<void>;
+  onDeleteSignature?: (subject: string, studentId: string, teacherCode: string) => void | Promise<void>;
   allEvaluations: EvaluationState[];
   teachers: Teacher[];
   allStudents?: RegisteredStudent[];
@@ -51,6 +51,7 @@ export default function ResultCard({
 }: ResultCardProps) {
   const { studentId } = sessionData;
   const [isSavingSig, setIsSavingSig] = useState(false);
+  const [showSavedFeedback, setShowSavedFeedback] = useState(false);
 
   // Dynamic overlay state to replace iframe-unsafe window.confirm
   const [deleteSignatureModal, setDeleteSignatureModal] = useState<{
@@ -303,6 +304,17 @@ export default function ResultCard({
 
   return (
     <div id="student-result-container" className="w-full max-w-3xl mx-auto space-y-6 pb-12 animate-fadeIn print:shadow-none print:border-0 print:p-0">
+      
+      {/* Floating success banner */}
+      {showSavedFeedback && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 bg-emerald-600 text-white font-extrabold px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3.5 z-[100] border border-emerald-500 animate-bounce text-xs shrink-0 select-none">
+          <span className="text-base">🎉</span>
+          <div className="flex flex-col">
+            <span className="font-extrabold text-white text-[12.5px]">학생 확인 서명 영구 저장 완료!</span>
+            <span className="text-[10px] text-emerald-105 font-medium">성적 확인 서명이 안전하게 전송되어 즉시 최종 등재 데이터베이스에 기록되었습니다.</span>
+          </div>
+        </div>
+      )}
       
       {/* Top action bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center print:hidden gap-3 px-2 bg-white/70 backdrop-blur-md p-4 rounded-2xl border border-slate-200">
@@ -816,7 +828,9 @@ export default function ResultCard({
                   if (onSaveSignature) {
                     setIsSavingSig(true);
                     try {
-                      await onSaveSignature(subjName, studentId, studentName, dataUrl);
+                      await onSaveSignature(subjName, studentId, studentName, dataUrl, teacherCode);
+                      setShowSavedFeedback(true);
+                      setTimeout(() => setShowSavedFeedback(false), 4500);
                     } finally {
                       setIsSavingSig(false);
                     }
@@ -963,7 +977,7 @@ export default function ResultCard({
                   const { subject, studentId } = deleteSignatureModal;
                   setDeleteSignatureModal(null);
                   if (onDeleteSignature) {
-                    await onDeleteSignature(subject, studentId);
+                    await onDeleteSignature(subject, studentId, teacherCode);
                   }
                 }}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-700 border border-rose-500 text-white font-extrabold rounded-xl text-xs transition duration-150 cursor-pointer shadow-xs hover:scale-[1.02]"

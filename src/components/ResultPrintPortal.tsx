@@ -426,7 +426,7 @@ export default function ResultPrintPortal({
                           <td className="border border-slate-800 px-2 py-1 text-center bg-slate-50/20 w-36">
                             {studentSigUrl ? (
                               <div className="flex items-center justify-center p-0.5" title="제출 완료">
-                                <img src={studentSigUrl} alt="서명" className="h-[21px] max-w-[120px] object-contain block" referrerPolicy="no-referrer" />
+                                <img src={studentSigUrl} alt="서명" className="h-[34px] max-w-[120px] object-contain block print:h-[34px]" referrerPolicy="no-referrer" />
                               </div>
                             ) : (
                               <div className="text-[9px] text-slate-350 border border-dashed border-slate-300 rounded-sm py-1 font-bold print:border-0 print:p-0 print:text-transparent">

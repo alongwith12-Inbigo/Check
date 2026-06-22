@@ -373,8 +373,8 @@ export default function App() {
     }
   };
 
-  const handleSaveSignature = async (subject: string, studentId: string, studentName: string, signatureDataUrl: string) => {
-    const tCode = loggedStudent?.teacherCode || selectedTeacherCode || '';
+  const handleSaveSignature = async (subject: string, studentId: string, studentName: string, signatureDataUrl: string, teacherCode?: string) => {
+    const tCode = teacherCode || loggedStudent?.teacherCode || selectedTeacherCode || '';
     if (!tCode) return;
     const cleanTeacherCode = tCode.trim();
     const cleanSubject = subject.trim();
@@ -396,8 +396,8 @@ export default function App() {
     }
   };
 
-  const handleDeleteSignature = async (subject: string, studentId: string) => {
-    const tCode = loggedStudent?.teacherCode || selectedTeacherCode || '';
+  const handleDeleteSignature = async (subject: string, studentId: string, teacherCode?: string) => {
+    const tCode = teacherCode || loggedStudent?.teacherCode || selectedTeacherCode || '';
     if (!tCode) return;
     const cleanTeacherCode = tCode.trim();
     const cleanSubject = subject.trim();
@@ -866,7 +866,7 @@ export default function App() {
       {/* Trustfooter */}
       <footer className="py-6 border-t border-slate-200/60 text-center text-xs text-slate-400 print:hidden mt-12 bg-white flex flex-col items-center justify-center gap-1">
         <span className="font-semibold text-slate-500 flex items-center gap-1 text-[11px]">
-          수행평가 결과 조회 시스템 v2.5
+          수행평가 결과 조회 시스템 v1.1
         </span>
         <span className="text-[10px]">Copyright © 2026 INBIGO. All Rights Reserved.</span>
       </footer>
