@@ -30,8 +30,12 @@ export function cleanAndFormatHeaderName(rawHeader: string): string {
   let title = rawHeader.trim();
   title = title.replace(/\s+/g, ' ');
 
-  // Look for Total Score indicator
-  const isTotal = ['합계', '합 계', '총점', '총합', '계', '원점수', '합'].some(k => title.replace(/\s+/g, '').includes(k));
+  // A precise check for "Total" / "Sum" to avoid false positives like "통계", "설계", "단계", "계획"
+  const cleanSpace = title.replace(/\s+/g, '');
+  const isTotal = [
+    '합계', '총점', '총합', '원점수', '합계점수', '득점계'
+  ].some(k => cleanSpace.includes(k)) || 
+  cleanSpace === '계' || cleanSpace === '합' || cleanSpace === '총';
 
   // 1. Try to extract max score numeric value
   let maxScoreVal = '';
@@ -862,23 +866,14 @@ export default function StudentPdfViewer({
       <div className="flex border-b border-rose-100 pb-3 flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-1.5 text-rose-950 font-black">
           <FileText size={16} className="text-rose-600" />
-          <span className="text-xs">나이스 대조용 종합 성적 (PDF 자동 분석)</span>
+          <span className="text-xs">나이스 출력 수행평가 점수 (PDF 자동 분석)</span>
         </div>
         
         {activeData && (
           <div className="flex items-center gap-1.5 flex-wrap">
-            <button
-              onClick={handleDownloadPdf}
-              className="text-[10px] bg-rose-600 border border-rose-700 text-white hover:bg-slate-900 px-2.5 py-1 rounded-md font-bold transition flex items-center gap-1 cursor-pointer"
-            >
-              📥 원본 PDF 다운받기
-            </button>
             <span className="text-[10px] bg-rose-50 border border-rose-100 text-rose-800 px-2.5 py-1 rounded-md font-bold">
-              🔒 개인 안심 보안 조회용
-            </span>
-            <span className="text-[10.5px] bg-slate-100 px-2.5 py-1 rounded text-slate-500 font-extrabold font-mono">
-              분석 매칭: {activeData.matchedPage} / {activeData.totalPages} 페이지
-            </span>
+              🔒 개인 안심 조회
+            </span>            
           </div>
         )}
       </div>
@@ -913,7 +908,7 @@ export default function StudentPdfViewer({
           {/* Top Privacy Notice Strip */}
           <div className="bg-emerald-50/50 border border-emerald-150 p-3.5 rounded-xl text-xs text-emerald-950 font-semibold flex items-center gap-2.5 leading-relaxed">
             <CheckCircle size={15} className="text-emerald-650 shrink-0" />
-            <span>학번 <strong>{studentId} {studentName}</strong> 학생의 고유 등재 정보가 정상 인식되어 종합 나이스 성적이 오차없이 추출되었습니다.</span>
+            <span>학번 <strong>{studentId} {studentName}</strong> 학생의 나이스에 입력된 수행평가 점수입니다.</span>
           </div>
 
           {/* Cards Grid: Each '네모 한칸' is styled as a clean card resembling spreadsheet table cells */}
@@ -941,9 +936,6 @@ export default function StudentPdfViewer({
                     <span className="text-2xl font-black text-slate-900 font-sans tracking-tight">
                       {item.score}
                     </span>
-                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-1">
-                      취득점수
-                    </span>
                   </div>
                 </div>
               );
@@ -963,9 +955,6 @@ export default function StudentPdfViewer({
               <div className="pt-3 flex flex-col items-center justify-center">
                 <span className="text-2xl font-extrabold text-slate-950 font-sans tracking-tight">
                   {activeData.totalScore}
-                </span>
-                <span className="text-[10px] uppercase font-black text-indigo-900 tracking-wider mt-1">
-                  최종 요약 총점
                 </span>
               </div>
             </div>

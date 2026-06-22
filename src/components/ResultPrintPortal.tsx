@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Printer, X, FileSpreadsheet, Check } from 'lucide-react';
 import { EvaluationState, Teacher, RegisteredStudent } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey } from '../utils';
+import { cleanAndFormatHeaderName } from '../utils/pdfExtractor';
 
 interface ResultPrintPortalProps {
   myEvaluations: EvaluationState[];
@@ -143,6 +144,28 @@ export default function ResultPrintPortal({
     window.print();
   };
 
+  const pdfEval = evalsForSubject.find(e => e.uploadType === 'pdf');
+  const isPdfMode = !!pdfEval;
+
+  const pdfScoreHeaders = isPdfMode && pdfEval ? (pdfEval.headers || []).filter(h => {
+    const hCleaned = cleanAndFormatHeaderName(h);
+    if (hCleaned === '학번' || hCleaned === '성명' || hCleaned === '반' || hCleaned === '번호' || h === '학번' || h === '성명') return false;
+    const isTotal = [
+      '합계', '총점', '총합', '원점수', '합계점수', '득점계'
+    ].some(k => hCleaned.replace(/\s+/g, '').includes(k)) || 
+    hCleaned.trim() === '계' || hCleaned.trim() === '합' || hCleaned.trim() === '총';
+    return !isTotal;
+  }) : [];
+
+  const pdfTotalHeader = isPdfMode && pdfEval ? (pdfEval.headers || []).find(h => {
+    const hCleaned = cleanAndFormatHeaderName(h);
+    const isTotal = [
+      '합계', '총점', '총합', '원점수', '합계점수', '득점계'
+    ].some(k => hCleaned.replace(/\s+/g, '').includes(k)) || 
+    hCleaned.trim() === '계' || hCleaned.trim() === '합' || hCleaned.trim() === '총';
+    return isTotal;
+  }) : undefined;
+
   return createPortal(
     <div className="fixed inset-0 bg-slate-900/60 z-50 overflow-y-auto flex items-center justify-center p-2 sm:p-4 print:static print:bg-white print:overflow-visible print:p-0 print-portal-container">
       <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-0 print:static print:w-full">
@@ -151,7 +174,7 @@ export default function ResultPrintPortal({
         <div className="bg-indigo-950 px-6 py-4 flex items-center justify-between text-white print:hidden shrink-0">
           <div className="flex items-center gap-2">
             <Printer size={20} className="text-amber-400 stroke-[2.5]" />
-            <h2 className="text-base sm:text-lg font-black tracking-tight font-sans">학생 수행평가 점수 확인 출력 대기소</h2>
+            <h2 className="text-base sm:text-lg font-black tracking-tight font-sans">수행평가 일람표 출력</h2>
           </div>
           <button 
             onClick={onClose}
@@ -203,7 +226,7 @@ export default function ResultPrintPortal({
                 : 'bg-slate-300 cursor-not-allowed opacity-50'
             }`}
           >
-            <Printer size={15} /> 인쇄하기 / PDF 저장 (1장 규격)
+            <Printer size={15} /> 인쇄하기
           </button>
         </div>
 
@@ -225,7 +248,7 @@ export default function ResultPrintPortal({
                 <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">수행평가 영역별 결과 및 서명 확인 제출표</h1>
                 <div className="flex justify-between items-center text-xs font-bold text-slate-600 font-mono">
                   <span>교과목명: {selectedSubject}</span>
-                  <span>학급 분반: {selectedClass}</span>
+                  <span>학급: {selectedClass}</span>
                   <span>담당교사: {loggedTeacher.name} 선생님</span>
                 </div>
               </div>
@@ -239,26 +262,57 @@ export default function ResultPrintPortal({
                       <th className="border border-slate-800 px-3 py-2 text-center w-28">학번</th>
                       <th className="border border-slate-800 px-3 py-2 text-center w-24">성명</th>
                       
-                      {/* Active evaluation headers matching rounds */}
-                      {sortedEvals.map((ev, idx) => {
-                        const maxScoreNum = parseFloat(ev.maxScore || '100') || 100;
-                        const rateNum = parseFloat(ev.reflectRate || '100') || 100;
-                        const reflectedMax = Number((maxScoreNum * (rateNum / 100)).toFixed(2)).toString();
-                        return (
-                          <th key={ev.id || idx} className="border border-slate-800 px-2 py-2.5 text-center min-w-[90px] max-w-[120px]">
-                            <div className="flex flex-col items-center justify-center gap-1.5 leading-tight">
-                              {ev.evaluationDetailName && (
-                                <span className="block text-[11px] font-black text-slate-800 break-words whitespace-normal text-center" title={ev.evaluationDetailName}>
-                                  {ev.evaluationDetailName}
+                      {!isPdfMode ? (
+                        // Mode A: Excel rounds
+                        sortedEvals.map((ev, idx) => {
+                          const maxScoreNum = parseFloat(ev.maxScore || '100') || 100;
+                          const rateNum = parseFloat(ev.reflectRate || '100') || 100;
+                          const reflectedMax = Number((maxScoreNum * (rateNum / 100)).toFixed(2)).toString();
+                          return (
+                            <th key={ev.id || idx} className="border border-slate-800 px-2 py-2.5 text-center min-w-[90px] max-w-[120px]">
+                              <div className="flex flex-col items-center justify-center gap-1.5 leading-tight">
+                                {ev.evaluationDetailName && (
+                                  <span className="block text-[11px] font-black text-slate-800 break-words whitespace-normal text-center" title={ev.evaluationDetailName}>
+                                    {ev.evaluationDetailName}
+                                  </span>
+                                )}
+                                <span className="block text-[9.5px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
+                                  만점 {reflectedMax}점
                                 </span>
-                              )}
-                              <span className="block text-[9.5px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
-                                만점 {reflectedMax}점
-                              </span>
-                            </div>
-                          </th>
-                        );
-                      })}
+                              </div>
+                            </th>
+                          );
+                        })
+                      ) : (
+                        // Mode B: PDF areas
+                        pdfScoreHeaders.map((h, idx) => {
+                          const hCleaned = cleanAndFormatHeaderName(h);
+                          
+                          // Format cleanly as Title and max score
+                          let title = hCleaned;
+                          let maxScoreText = '';
+                          const match = hCleaned.match(/^([\s\S]+?)\s*\(([\s\S]+?)\)$/);
+                          if (match) {
+                            title = match[1].trim();
+                            maxScoreText = match[2].trim();
+                          }
+
+                          return (
+                            <th key={idx} className="border border-slate-800 px-2 py-2.5 text-center min-w-[90px] max-w-[120px]">
+                              <div className="flex flex-col items-center justify-center gap-1.5 leading-tight">
+                                <span className="block text-[11px] font-black text-slate-800 break-words whitespace-normal text-center">
+                                  {title}
+                                </span>
+                                {maxScoreText && (
+                                  <span className="block text-[9.5px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
+                                    {maxScoreText}
+                                  </span>
+                                )}
+                              </div>
+                            </th>
+                          );
+                        })
+                      )}
 
                       <th className="border border-slate-800 px-3 py-2 text-center w-24">산출총점</th>
                       <th className="border border-slate-800 px-3 py-2 text-center w-36">확인 서명</th>
@@ -266,26 +320,54 @@ export default function ResultPrintPortal({
                   </thead>
                   <tbody>
                     {students.map((student, sIdx) => {
-                      // Calculate overall integrated reflected total score
-                      let reflectedObtainedSum = 0;
-                      let totalReflectedMax = 0;
+                      const studentIdKey = pdfEval ? findStudentIdKey(pdfEval.headers || []) : undefined;
+                      const pdfRow = pdfEval && studentIdKey 
+                        ? pdfEval.rows.find(row => matchesStudentId(student.studentId, row[studentIdKey]))
+                        : null;
 
-                      sortedEvals.forEach(ev => {
-                        const sVal = getScoreValue(ev, student.studentId);
-                        if (sVal !== null) {
-                          const maxScoreNum = parseFloat(ev.maxScore || '100') || 100;
-                          const rateNum = parseFloat(ev.reflectRate || '100') || 100;
-                          reflectedObtainedSum += sVal * (rateNum / 100);
-                          totalReflectedMax += maxScoreNum * (rateNum / 100);
+                      // Calculate overall integrated reflected total score (Mode A / Mode B)
+                      let displayedReflectedObtained = '';
+                      let courseMaxScore = 0;
+
+                      if (!isPdfMode) {
+                        let reflectedObtainedSum = 0;
+                        let totalReflectedMax = 0;
+
+                        sortedEvals.forEach(ev => {
+                          const sVal = getScoreValue(ev, student.studentId);
+                          if (sVal !== null) {
+                            const maxScoreNum = parseFloat(ev.maxScore || '100') || 100;
+                            const rateNum = parseFloat(ev.reflectRate || '100') || 100;
+                            reflectedObtainedSum += sVal * (rateNum / 100);
+                            totalReflectedMax += maxScoreNum * (rateNum / 100);
+                          }
+                        });
+
+                        const customSettingKey = `${loggedTeacher.code.trim()}_${selectedSubject.trim()}`;
+                        const customMaxStr = subjectMaxScores[customSettingKey] || '';
+                        displayedReflectedObtained = Number(reflectedObtainedSum.toFixed(2)).toString();
+                        courseMaxScore = customMaxStr ? parseFloat(customMaxStr) : totalReflectedMax;
+                      } else {
+                        // PDF Mode
+                        const rawTotalVal = pdfRow && pdfTotalHeader ? String(pdfRow[pdfTotalHeader] || '0').trim() : '0';
+                        const totalNum = parseFloat(rawTotalVal);
+                        displayedReflectedObtained = isNaN(totalNum) ? rawTotalVal : totalNum.toString();
+
+                        // Parse max score of total header
+                        let totalMaxVal = 100;
+                        if (pdfTotalHeader) {
+                          const maxMatch = pdfTotalHeader.match(/만점\s*([\d.]+)/) || pdfTotalHeader.match(/배점\s*([\d.]+)/) || pdfTotalHeader.match(/만점\s*(\d+)/) || pdfTotalHeader.match(/\((\d+)점\)/) || pdfTotalHeader.match(/\(([\d.]+)점\)/);
+                          if (maxMatch && maxMatch[1]) {
+                            totalMaxVal = parseFloat(maxMatch[1]);
+                          } else {
+                            const numMatch = pdfTotalHeader.match(/\(\s*([\d.]+)\s*\)?/) || pdfTotalHeader.match(/\[\s*([\d.]+)\s*\]?/);
+                            if (numMatch && numMatch[1]) {
+                              totalMaxVal = parseFloat(numMatch[1]);
+                            }
+                          }
                         }
-                      });
-
-                      const customSettingKey = `${loggedTeacher.code.trim()}_${selectedSubject.trim()}`;
-                      const customMaxStr = subjectMaxScores[customSettingKey] || '';
-                      
-                      const displayedReflectedObtained = Number(reflectedObtainedSum.toFixed(2)).toString();
-
-                      const courseMaxScore = customMaxStr ? parseFloat(customMaxStr) : totalReflectedMax;
+                        courseMaxScore = totalMaxVal;
+                      }
 
                       // Query student signature URL from Firestore signals
                       const signatureKey = `${loggedTeacher.code.trim()}_${selectedSubject.trim()}_${student.studentId.trim()}`;
@@ -297,21 +379,42 @@ export default function ResultPrintPortal({
                           <td className="border border-slate-800 px-3 py-1.5 text-center font-mono font-black">{student.studentId}</td>
                           <td className="border border-slate-800 px-3 py-1.5 text-center truncate">{student.studentName || '미입력'}</td>
 
-                          {/* Individual evaluation rounds */}
-                          {sortedEvals.map(ev => {
-                            const val = getScoreValue(ev, student.studentId);
-                            const rateNum = parseFloat(ev.reflectRate || '100') || 100;
-                            const reflectedVal = val !== null ? val * (rateNum / 100) : null;
-                            const displayedVal = reflectedVal !== null 
-                              ? Number(reflectedVal.toFixed(2)).toString() 
-                              : '-';
+                          {/* Individual evaluation rounds / areas */}
+                          {!isPdfMode ? (
+                            sortedEvals.map(ev => {
+                              const val = getScoreValue(ev, student.studentId);
+                              const rateNum = parseFloat(ev.reflectRate || '100') || 100;
+                              const reflectedVal = val !== null ? val * (rateNum / 100) : null;
+                              const displayedVal = reflectedVal !== null 
+                                ? Number(reflectedVal.toFixed(2)).toString() 
+                                : '-';
 
-                            return (
-                              <td key={ev.id} className="border border-slate-800 px-2 py-1.5 text-center font-mono text-[12px]">
-                                <span className="font-extrabold text-slate-900">{displayedVal}</span>
-                              </td>
-                            );
-                          })}
+                              return (
+                                <td key={ev.id} className="border border-slate-800 px-2 py-1.5 text-center font-mono text-[12px]">
+                                  <span className="font-extrabold text-slate-900">{displayedVal}</span>
+                                </td>
+                              );
+                            })
+                          ) : (
+                            pdfScoreHeaders.map((h, hIdx) => {
+                              const scoreVal = pdfRow ? String(pdfRow[h] || '0').trim() : '-';
+                              let displayedVal = scoreVal;
+                              if (/^\d+\.00$/.test(scoreVal)) {
+                                displayedVal = parseFloat(scoreVal).toString();
+                              } else if (/^\d+\.\d+$/.test(scoreVal)) {
+                                const parsedFloat = parseFloat(scoreVal);
+                                if (!isNaN(parsedFloat)) {
+                                  displayedVal = parsedFloat.toString();
+                                }
+                              }
+
+                              return (
+                                <td key={hIdx} className="border border-slate-800 px-2 py-1.5 text-center font-mono text-[12px]">
+                                  <span className="font-extrabold text-slate-900">{displayedVal}</span>
+                                </td>
+                              );
+                            })
+                          )}
 
                           {/* Cumulative total score */}
                           <td className="border border-slate-800 px-3 py-1.5 text-center font-sans font-black bg-slate-50/50">
@@ -327,7 +430,7 @@ export default function ResultPrintPortal({
                               </div>
                             ) : (
                               <div className="text-[9px] text-slate-350 border border-dashed border-slate-300 rounded-sm py-1 font-bold print:border-0 print:p-0 print:text-transparent">
-                                미서명
+                                 미서명
                               </div>
                             )}
                           </td>
@@ -340,8 +443,8 @@ export default function ResultPrintPortal({
 
               {/* Printable footer area */}
               <div className="mt-8 pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center text-[10px] text-slate-450 leading-relaxed gap-2 print:border-slate-800">
-                <span>※ 본 성적 대리표는 {new Date().toLocaleDateString('ko-KR')} 일자로 시스템에서 출력되었습니다.</span>
-                <span className="font-bold border-b border-slate-800 pb-0.5 text-slate-700">담임/담당교과교사 서명: __________________ (인)</span>
+                <span>※ 본 성적 일람표는 {new Date().toLocaleDateString('ko-KR')} 일자로 출력되었습니다.</span>
+                <span className="font-bold border-b border-slate-800 pb-0.5 text-slate-700">담당 교사 서명: __________________ (인)</span>
               </div>
 
             </div>
