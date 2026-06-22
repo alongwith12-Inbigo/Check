@@ -138,27 +138,39 @@ async function startServer() {
 }`;
 
       let response;
-      try {
-        // Call server-side Gemini 3.5 Flash using the uploaded file reference (robust PDF rendering)
-        response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: [
-            {
-              fileData: {
-                fileUri: uploadResult.uri,
-                mimeType: uploadResult.mimeType
-              }
+      const modelsToTry = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+      let lastError: any = null;
+
+      for (const modelName of modelsToTry) {
+        try {
+          console.log(`[OCR Engine] Attempting OCR content extraction with model: ${modelName}...`);
+          response = await ai.models.generateContent({
+            model: modelName,
+            contents: [
+              {
+                fileData: {
+                  fileUri: uploadResult.uri,
+                  mimeType: uploadResult.mimeType
+                }
+              },
+              "성적이 인쇄된 학교 수행평가 일람표 문서를 정밀하게 인식 및 대조하고 구조화된 JSON으로 복원해 주십시오.",
+            ],
+            config: {
+              systemInstruction: systemPrompt,
+              responseMimeType: "application/json",
             },
-            "성적이 인쇄된 학교 수행평가 일람표 문서를 정밀하게 인식 및 대조하고 구조화된 JSON으로 복원해 주십시오.",
-          ],
-          config: {
-            systemInstruction: systemPrompt,
-            responseMimeType: "application/json",
-          },
-        });
-      } catch (genErr: any) {
-        console.error("[OCR Engine Generation Fail]", genErr);
-        throw new Error(`Gemini AI 분석 도중 에러가 발생했습니다: ${genErr.message || genErr}`);
+          });
+          console.log(`[OCR Engine] Success with model: ${modelName}`);
+          lastError = null;
+          break; // Success
+        } catch (genErr: any) {
+          console.error(`[OCR Engine Fail] Model ${modelName} failed:`, genErr.message || genErr);
+          lastError = genErr;
+        }
+      }
+
+      if (lastError || !response) {
+        throw new Error(`Gemini AI 분석 도중 에러가 발생했습니다: ${lastError?.message || JSON.stringify(lastError) || "모든 지원 모델이 일시적으로 응답하지 않습니다."}`);
       }
 
       const textOutput = response.text || "";
