@@ -155,7 +155,7 @@ export default function SignatureCanvas({ onSave, isLoading = false }: Signature
         />
         {!hasDrawn && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-300 text-[10px] font-bold">
-            이곳에 선명하게 서명을 그려주세요
+            이곳에 이름을 정자체로 작성해주세요.
           </div>
         )}
       </div>
