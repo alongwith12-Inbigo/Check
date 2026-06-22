@@ -39,7 +39,8 @@ interface AdminManagerProps {
   excelUploads: ExcelUpload[];
   onSaveExcelUpload: (id: string, fileName: string, recordCount: number) => Promise<void>;
   privacyPolicy: string;
-  onUpdatePrivacyPolicy: (content: string) => Promise<void>;
+  privacyFile: { fileName: string; fileBase64: string } | null;
+  onUpdatePrivacyPolicy: (content: string, fileData?: { fileName: string; fileBase64: string } | null) => Promise<void>;
 }
 
 export default function AdminManager({ 
@@ -53,6 +54,7 @@ export default function AdminManager({
   excelUploads,
   onSaveExcelUpload,
   privacyPolicy,
+  privacyFile,
   onUpdatePrivacyPolicy
 }: AdminManagerProps) {
   // Navigation state
@@ -60,14 +62,25 @@ export default function AdminManager({
 
   // Privacy Policy editor local states
   const [privacyEditorText, setPrivacyEditorText] = useState(privacyPolicy || '');
+  const [localPrivacyFile, setLocalPrivacyFile] = useState<{ fileName: string; fileBase64: string } | null>(null);
   const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
+  const [dragPrivacyActive, setDragPrivacyActive] = useState(false);
+  const privacyFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync privacy policy content from database
+  // Sync privacy policy content and file from database
   React.useEffect(() => {
     if (privacyPolicy) {
       setPrivacyEditorText(privacyPolicy);
     }
   }, [privacyPolicy]);
+
+  React.useEffect(() => {
+    if (privacyFile) {
+      setLocalPrivacyFile(privacyFile);
+    } else {
+      setLocalPrivacyFile(null);
+    }
+  }, [privacyFile]);
 
   // Search filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -91,6 +104,73 @@ export default function AdminManager({
   const [newStudentBirthdate, setNewStudentBirthdate] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePrivacyFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 20 * 1024 * 1024) { // 20MB limit
+      setErrorMsg('용량이 너무 큽니다. 20MB 이하의 파일만 업로드할 수 있습니다.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        setLocalPrivacyFile({
+          fileName: file.name,
+          fileBase64: base64
+        });
+        setSuccessMsg(`"${file.name}" 파일이 대기열에 추가되었습니다. 아래 '상위 약관 변경내용 저장' 버튼을 누르시면 업로드가 완료됩니다.`);
+        setErrorMsg('');
+      }
+    };
+    reader.onerror = () => {
+      setErrorMsg('파일을 읽어들이는 도중 에러가 발생했습니다.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePrivacyDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragPrivacyActive(true);
+    } else if (e.type === "dragleave") {
+      setDragPrivacyActive(false);
+    }
+  };
+
+  const handlePrivacyDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragPrivacyActive(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      if (file.size > 20 * 1024 * 1024) {
+        setErrorMsg('용량이 너무 큽니다. 20MB 이하의 파일만 업로드할 수 있습니다.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        if (base64) {
+          setLocalPrivacyFile({
+            fileName: file.name,
+            fileBase64: base64
+          });
+          setSuccessMsg(`"${file.name}" 파일이 드롭되었습니다. 아래 '상위 약관 변경내용 저장' 버튼을 누르면 업로드가 완료됩니다.`);
+          setErrorMsg('');
+        }
+      };
+      reader.onerror = () => {
+        setErrorMsg('파일을 읽어들이는 도중 에러가 발생했습니다.');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Dialog Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -705,45 +785,118 @@ export default function AdminManager({
       {/* Conditional Rendering Panels based on Tab */}
       {activeTab === 'privacy' ? (
         // Privacy Policy Administration Panel
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 animate-fadeIn">
           <div className="border-b border-slate-150 pb-3 flex items-center justify-between">
             <div>
               <h3 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-                <span>🔒 개인정보처리방침 (약관) 설정 및 편집</span>
+                <span>🔒 개인정보처리방침 설정 및 스마트 파일 관리</span>
               </h3>
               <p className="text-xs text-slate-400 font-semibold mt-1">
-                학교 홈페이지 또는 교육청 가이드라인에 부합하도록 개인정보 수집 목적, 범위, 보유 기간 등을 자유롭게 수정할 수 있습니다.
+                학교 홈페이지 규정에 부합하도록 다운로드용 개인정보처리방침 공식 파일을 업로드하고, 조회 화면 하단이나 확인창에 적용합니다.
               </p>
             </div>
-            <span className="hidden sm:inline-block bg-indigo-50 text-indigo-800 text-[10px] px-2.5 py-1 rounded-full font-black">
+            <span className="hidden sm:inline-block bg-indigo-50 text-indigo-805 text-[10px] px-2.5 py-1 rounded-full font-black">
               실시간 DB 수렴
             </span>
           </div>
 
+          {/* Section 1: PDF/Doc File Upload */}
+          <div className="bg-indigo-50/10 border border-indigo-100 rounded-xl p-5 space-y-4">
+            <div>
+              <h4 className="text-xs font-black text-slate-800 leading-none">📂 [수정] PDF 파일 업로드 및 관리 (다운로드 공식 약관)</h4>
+              <p className="text-[11px] text-slate-500 font-medium mt-1">
+                학생 및 학부모가 확인 버튼을 누르고 개인정보처리방침을 다운로드받을 때 제공될 메인 PDF 또는 한글/워드 파일을 여기에 업로드하세요.
+              </p>
+            </div>
+
+            {/* Drag and Drop Zone */}
+            <div 
+              onDragEnter={handlePrivacyDrag}
+              onDragOver={handlePrivacyDrag}
+              onDragLeave={handlePrivacyDrag}
+              onDrop={handlePrivacyDrop}
+              onClick={() => privacyFileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-2 select-none ${
+                dragPrivacyActive 
+                  ? 'border-indigo-650 bg-indigo-50/40' 
+                  : localPrivacyFile 
+                    ? 'border-emerald-300 bg-emerald-50/10' 
+                    : 'border-slate-300 hover:border-indigo-400 bg-white hover:bg-slate-50/30'
+              }`}
+            >
+              <input 
+                type="file"
+                ref={privacyFileInputRef}
+                onChange={handlePrivacyFileChange}
+                accept=".pdf,.docx,.hwp,.txt"
+                className="hidden"
+              />
+              {localPrivacyFile ? (
+                <>
+                  <FileSpreadsheet className="text-emerald-505 animate-bounce" size={32} />
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-800 break-all">{localPrivacyFile.fileName}</p>
+                    <p className="text-[10px] text-emerald-650 font-extrabold bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 rounded-md inline-block">대기열에 추가됨 (하단 저장 클릭 시 실반영)</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Upload className="text-slate-400" size={32} />
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-slate-755">여기에 PDF 파일을 드래그하고 드롭하거나 영역을 클릭하세요</p>
+                    <p className="text-[10px] text-slate-400 font-semibold">지원 포맷: .pdf, .docx, .txt (최대 20MB)</p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Clear option if file exists */}
+            {localPrivacyFile && (
+              <div className="flex justify-between items-center bg-white border border-slate-200 rounded-xl px-4 py-2.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[10px] text-slate-400 font-bold shrink-0">업로드 대기:</span>
+                  <span className="text-xs font-bold text-slate-700 truncate">{localPrivacyFile.fileName}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLocalPrivacyFile(null);
+                    setSuccessMsg('대기 파일이 제거되었습니다. 하단 약관 변경내용 저장 버튼을 누르면 파일이 초기화됩니다.');
+                    setErrorMsg('');
+                  }}
+                  className="text-red-650 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border border-red-100"
+                >
+                  <Trash2 size={12} /> 파일 삭제 (초기화)
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Text / Markdown backup box */}
           <div className="space-y-3">
-            <label className="block text-xs font-black text-slate-700">개인정보처리방침 법적 고지 전문 (텍스트/마크다운 형식 지원)</label>
+            <label className="block text-xs font-black text-slate-700">📜 개인정보처리방침 텍스트 고지문 대안 (텍스트/마크다운 형식 지원)</label>
             <textarea
               value={privacyEditorText}
               onChange={(e) => setPrivacyEditorText(e.target.value)}
               placeholder="여기에 학교 개인정보처리방침 약관 전문을 입력하세요..."
-              className="w-full h-96 p-4 border border-slate-300 rounded-xl text-xs font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-400 resize-none font-medium text-slate-800 select-text bg-slate-50/10"
+              className="w-full h-48 p-4 border border-slate-300 rounded-xl text-xs font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-400 resize-none font-medium text-slate-800 select-text bg-slate-50/10"
             />
-            <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-100 flex items-start gap-2.5 bg-indigo-50/20">
+            <div className="bg-indigo-50/20 rounded-xl p-4 border border-indigo-100 flex items-start gap-2.5">
               <Info size={14} className="text-indigo-850 mt-0.5 shrink-0" />
               <div className="text-[11px] text-indigo-950/80 font-semibold leading-relaxed space-y-1">
-                <p>💡 <strong className="font-extrabold text-indigo-950">마크다운 서식 팁:</strong></p>
-                <p>- 단락이나 문단을 굵게 하려면 양 끝에 **를 붙이세요 (예: **1. 수집 항목**).</p>
-                <p>- 줄의 앞에 - 기호를 붙이면 깔끔한 불릿 머리로 자동 변환되어 렌더링됩니다 (예: - 학번, 이름, 생년월일).</p>
+                <p>💡 <strong className="font-extrabold text-indigo-950">텍스트 예비 안내:</strong></p>
+                <p>- PDF/문서가 미지정되었거나 유실되었을 경우, 해당 입력창에 기재한 내용을 기조 문서(.txt) 형식으로 대체 다운로드해 드립니다.</p>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex items-center justify-end gap-3 pt-2 animate-fadeIn">
             <button
               type="button"
               onClick={() => {
                 setPrivacyEditorText(privacyPolicy || '');
-                setSuccessMsg('개인정보처리방침 내용이 마지막으로 저장된 상태로 되돌아갔습니다.');
+                setLocalPrivacyFile(privacyFile);
+                setSuccessMsg('개인정보처리방침 설정이 마지막으로 저장된 상태로 복구되었습니다.');
                 setErrorMsg('');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
@@ -759,8 +912,8 @@ export default function AdminManager({
                 setSuccessMsg('');
                 setIsSavingPrivacy(true);
                 try {
-                  await onUpdatePrivacyPolicy(privacyEditorText);
-                  setSuccessMsg('개인정보처리방침 문안이 실시간 데이터베이스에 안전하게 업데이트되었습니다!');
+                  await onUpdatePrivacyPolicy(privacyEditorText, localPrivacyFile);
+                  setSuccessMsg('개인정보처리방침 공식 PDF/약관 및 문안이 실시간 데이터베이스에 완벽히 저장 및 게시되었습니다!');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 } catch (err: any) {
                   setErrorMsg(`저장 실패: ${err?.message || err}`);

@@ -197,6 +197,14 @@
           "type": "string",
           "description": "Privacy policy text content or other general settings"
         },
+        "fileName": {
+          "type": "string",
+          "description": "Privacy policy document filename"
+        },
+        "fileBase64": {
+          "type": "string",
+          "description": "Privacy policy document file data as Base64 string"
+        },
         "updatedAt": {
           "type": "string",
           "description": "ISO timestamp of when it was updated"

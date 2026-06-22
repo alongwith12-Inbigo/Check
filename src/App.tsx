@@ -150,6 +150,7 @@ export default function App() {
   const [signatures, setSignatures] = useState<Record<string, string>>({});
 
   const [privacyPolicy, setPrivacyPolicy] = useState<string>('');
+  const [privacyFile, setPrivacyFile] = useState<{ fileName: string; fileBase64: string } | null>(null);
   const [showPrivacyModal, setShowPrivacyModal] = useState<boolean>(false);
 
   // Subscribe to Subject Settings in real-time from Firestore
@@ -211,9 +212,19 @@ export default function App() {
     const docRef = doc(db, 'appSettings', 'privacyPolicy');
     const unsubscribe = onSnapshot(docRef, (snap) => {
       if (snap.exists()) {
-        setPrivacyPolicy(snap.data().content || '');
+        const data = snap.data();
+        setPrivacyPolicy(data.content || '');
+        if (data.fileName && data.fileBase64) {
+          setPrivacyFile({
+            fileName: data.fileName,
+            fileBase64: data.fileBase64
+          });
+        } else {
+          setPrivacyFile(null);
+        }
       } else {
         setPrivacyPolicy(DEFAULT_PRIVACY_POLICY);
+        setPrivacyFile(null);
       }
     }, (error) => {
       console.warn("Firestore appSettings/privacyPolicy subscription failed: ", error);
@@ -222,15 +233,61 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const handleUpdatePrivacyPolicy = async (content: string) => {
+  const handleUpdatePrivacyPolicy = async (content: string, fileData?: { fileName: string; fileBase64: string } | null) => {
     try {
       const docRef = doc(db, 'appSettings', 'privacyPolicy');
-      await setDoc(docRef, {
+      const updatePayload: any = {
         content: content,
         updatedAt: new Date().toISOString()
-      });
+      };
+      if (fileData !== undefined) {
+        if (fileData) {
+          updatePayload.fileName = fileData.fileName;
+          updatePayload.fileBase64 = fileData.fileBase64;
+        } else {
+          updatePayload.fileName = deleteField();
+          updatePayload.fileBase64 = deleteField();
+        }
+      }
+      await setDoc(docRef, updatePayload, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'appSettings/privacyPolicy');
+    }
+  };
+
+  const handleDownloadPrivacyFile = () => {
+    const isConfirmed = window.confirm("'개인정보처리방침' PDF 파일을 다운 받으시겠습니까?");
+    if (isConfirmed) {
+      if (privacyFile && privacyFile.fileBase64 && privacyFile.fileName) {
+        try {
+          const link = document.createElement('a');
+          link.href = privacyFile.fileBase64;
+          link.download = privacyFile.fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } catch (e) {
+          console.error("Download failed:", e);
+          alert("파일 다운로드에 실패했습니다.");
+        }
+      } else {
+        // Fallback: If no custom PDF uploaded, download DEFAULT_PRIVACY_POLICY as .txt
+        try {
+          const rawText = DEFAULT_PRIVACY_POLICY.replace(/\*\*/g, '');
+          const blob = new Blob([rawText], { type: 'text/plain;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = "개인정보처리방침_기본약관.txt";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        } catch (e) {
+          console.error("Text download failed:", e);
+          alert("파일 다운로드에 실패했습니다.");
+        }
+      }
     }
   };
 
@@ -777,6 +834,7 @@ export default function App() {
                   excelUploads={excelUploads}
                   onSaveExcelUpload={handleSaveExcelUpload}
                   privacyPolicy={privacyPolicy}
+                  privacyFile={privacyFile}
                   onUpdatePrivacyPolicy={handleUpdatePrivacyPolicy}
                 />
               </motion.div>
@@ -985,7 +1043,7 @@ export default function App() {
           <span className="text-slate-350">|</span>
           <button 
             type="button"
-            onClick={() => setShowPrivacyModal(true)}
+            onClick={handleDownloadPrivacyFile}
             className="font-bold text-indigo-700 hover:text-indigo-900 transition-colors cursor-pointer text-[11px] underline underline-offset-2"
           >
             개인정보처리방침
