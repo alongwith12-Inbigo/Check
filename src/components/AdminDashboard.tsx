@@ -1029,7 +1029,7 @@ export default function AdminDashboard({
               </div>
             </div>
             <p className="text-[10px] text-slate-450 leading-relaxed">
-              💡 별도의 조작 없이 PDF가 업로드 되면 학생 화면에서 서명 패드가 자동 활성화됩니다. 학생들이 서명을 마친 결과는 상단의 '출력'</strong> 버튼을 클릭하여 1장으로 출력 가능합니다.
+              💡 별도의 조작 없이 PDF가 업로드 되면 학생 화면에서 서명 패드가 자동 활성화됩니다. 학생들이 서명을 마친 결과는 상단의 <strong>'출력'</strong> 버튼을 클릭하여 1장으로 출력 가능합니다.
             </p>
           </div>
         </div>
@@ -1246,7 +1246,7 @@ export default function AdminDashboard({
                   </div>
 
                   <div id="pdf-notifying-banner" className="bg-indigo-50/50 border border-indigo-100 p-2.5 rounded-lg text-[10px] text-slate-600 leading-normal">
-                    <span>💡 <strong>필독:</strong> <strong>대상 학년반</strong>(예: 1학년 7반은 107)을 정확히 입력해 주십시오. 
+                    <span>💡 <strong>필독:</strong> <strong>대상 학년반</strong>(예: 1학년 7반은 107)을 정확히 입력해 주십시오. </span>
                   </div>
 
                   {/* PDF File Drop Area */}
