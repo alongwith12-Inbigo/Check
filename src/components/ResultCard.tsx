@@ -13,7 +13,8 @@ import {
   FileText,
   Download,
   Key,
-  Lock
+  Lock,
+  CheckCircle
 } from 'lucide-react';
 import { StudentSession, EvaluationState, Teacher, StudentResultItem, RegisteredStudent } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, findNameKey, findGradeKey, findClassKey, findNumberKey, findClassNumberKey, parseClassNumber, extractGradeFromTarget } from '../utils';
@@ -52,6 +53,7 @@ export default function ResultCard({
   const { studentId } = sessionData;
   const [isSavingSig, setIsSavingSig] = useState(false);
   const [showSavedFeedback, setShowSavedFeedback] = useState(false);
+  const [showSavedFeedbackModal, setShowSavedFeedbackModal] = useState(false);
 
   // Dynamic overlay state to replace iframe-unsafe window.confirm
   const [deleteSignatureModal, setDeleteSignatureModal] = useState<{
@@ -310,8 +312,8 @@ export default function ResultCard({
         <div className="fixed top-5 left-1/2 -translate-x-1/2 bg-emerald-600 text-white font-extrabold px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3.5 z-[100] border border-emerald-500 animate-bounce text-xs shrink-0 select-none">
           <span className="text-base">🎉</span>
           <div className="flex flex-col">
-            <span className="font-extrabold text-white text-[12.5px]">학생 확인 서명 영구 저장 완료!</span>
-            <span className="text-[10px] text-emerald-105 font-medium">성적 확인 서명이 안전하게 전송되어 즉시 최종 등재 데이터베이스에 기록되었습니다.</span>
+            <span className="font-extrabold text-white text-[12.5px]">서명 저장 완료!</span>
+            <span className="text-[10px] text-emerald-105 font-medium">수행평가 성적 확인 서명이 저장되었습니다.</span>
           </div>
         </div>
       )}
@@ -794,8 +796,24 @@ export default function ResultCard({
           </p>
 
           {(() => {
-            const signatureKey = `${tCode}_${subjName}_${studentId.trim()}`;
-            const savedSignature = signatures[signatureKey] || '';
+            const teacherKey = tCode.trim();
+            const subjectKey = subjName.trim();
+            const cardStudentId = studentId.trim();
+
+            let savedSignature = '';
+            const foundSigKey = Object.keys(signatures).find(key => {
+              const parts = key.split('_');
+              if (parts.length >= 3) {
+                const [sigTeacher, sigSubject, sigStudent] = parts;
+                return sigTeacher.trim() === teacherKey && 
+                       sigSubject.trim() === subjectKey && 
+                       matchesStudentId(sigStudent, cardStudentId);
+              }
+              return false;
+            });
+            if (foundSigKey) {
+              savedSignature = signatures[foundSigKey];
+            }
 
             if (savedSignature) {
               return (
@@ -830,6 +848,7 @@ export default function ResultCard({
                     try {
                       await onSaveSignature(subjName, studentId, studentName, dataUrl, teacherCode);
                       setShowSavedFeedback(true);
+                      setShowSavedFeedbackModal(true);
                       setTimeout(() => setShowSavedFeedback(false), 4500);
                     } finally {
                       setIsSavingSig(false);
@@ -985,6 +1004,33 @@ export default function ResultCard({
                 삭제하기
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Student Signature Saved Confirmation Modal */}
+      {showSavedFeedbackModal && (
+        <div id="signature-saved-success-overlay" className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn select-none print:hidden">
+          <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl max-w-sm w-full overflow-hidden p-6 text-center flex flex-col items-center space-y-4">
+            <div className="w-14 h-14 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 border border-emerald-100 animate-bounce">
+              <CheckCircle size={28} className="stroke-[2.5]" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-sm font-black text-slate-900">서명 제출 및 안전 저장 완료</h3>
+              <p className="text-[11px] text-slate-500 font-bold leading-normal">
+                학번 <span className="text-indigo-950 font-black">{studentId}</span> {studentName} 학생의 성적 확인 서명이 데이터베이스에 성공적으로 기록되었습니다.
+              </p>
+            </div>
+            <div className="w-full bg-slate-50 border border-slate-150 rounded-xl p-3 text-center text-[10px] text-slate-500 font-bold leading-relaxed">
+              교과 담당 선생님의 일람표에도 성적 확인 서명이 실시간으로 즉시 전송 및 반영되었습니다. 🔒
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSavedFeedbackModal(false)}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 hover:shadow-md text-white font-extrabold rounded-xl text-xs transition duration-150 cursor-pointer shadow-xs active:scale-98"
+            >
+              확인하였습니다
+            </button>
           </div>
         </div>
       )}

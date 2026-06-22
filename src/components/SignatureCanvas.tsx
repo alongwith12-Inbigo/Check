@@ -139,11 +139,11 @@ export default function SignatureCanvas({ onSave, isLoading = false }: Signature
         </button>
       </div>
 
-      <div className="bg-white border-2 border-dashed border-slate-200 rounded-xl overflow-hidden relative shadow-inner">
+      <div className="bg-white border-2 border-dashed border-slate-200 rounded-xl overflow-hidden relative shadow-inner max-w-[300px] mx-auto">
         <canvas
           ref={canvasRef}
-          width={360}
-          height={140}
+          width={300}
+          height={90}
           onMouseDown={startDrawing}
           onMouseMove={draw}
           onMouseUp={stopDrawing}
@@ -151,11 +151,11 @@ export default function SignatureCanvas({ onSave, isLoading = false }: Signature
           onTouchStart={startDrawing}
           onTouchMove={draw}
           onTouchEnd={stopDrawing}
-          className="w-full h-[140px] block cursor-crosshair touch-none"
+          className="w-[300px] h-[90px] block cursor-crosshair touch-none mx-auto bg-slate-50/10"
         />
         {!hasDrawn && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-300 text-[11px] font-bold">
-            선명하게 서명을 그려주세요
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-300 text-[10px] font-bold">
+            이곳에 선명하게 서명을 그려주세요
           </div>
         )}
       </div>

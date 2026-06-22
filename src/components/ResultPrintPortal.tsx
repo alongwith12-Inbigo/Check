@@ -369,9 +369,25 @@ export default function ResultPrintPortal({
                         courseMaxScore = totalMaxVal;
                       }
 
-                      // Query student signature URL from Firestore signals
-                      const signatureKey = `${loggedTeacher.code.trim()}_${selectedSubject.trim()}_${student.studentId.trim()}`;
-                      const studentSigUrl = signatures[signatureKey];
+                      // Query student signature URL from Firestore signals with robust ID matching
+                      const teacherKey = loggedTeacher.code.trim();
+                      const subjectKey = selectedSubject.trim();
+                      const printStudentId = student.studentId.trim();
+
+                      let studentSigUrl = '';
+                      const foundSigKey = Object.keys(signatures).find(key => {
+                        const parts = key.split('_');
+                        if (parts.length >= 3) {
+                          const [sigTeacher, sigSubject, sigStudent] = parts;
+                          return sigTeacher.trim() === teacherKey && 
+                                 sigSubject.trim() === subjectKey && 
+                                 matchesStudentId(sigStudent, printStudentId);
+                        }
+                        return false;
+                      });
+                      if (foundSigKey) {
+                        studentSigUrl = signatures[foundSigKey];
+                      }
 
                       return (
                         <tr key={student.studentId} className="border-b border-slate-800 hover:bg-slate-50 text-slate-800 font-medium">
