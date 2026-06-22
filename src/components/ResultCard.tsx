@@ -749,7 +749,7 @@ export default function ResultCard({
                 Part 2. 나이스 최종 입력 점수 확인용 성적표 (PDF 자료)
               </h2>
               <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                최종 생활기록부 나이스(NEIS)에 전산 입력될 최종 성적입니다. 오입력이 없는지 눈으로 직접 정밀 확인하는 용도입니다.
+                나이스(NEIS) 확인용
               </p>
             </div>
             <span className="text-[9px] font-black bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded border border-rose-200 shrink-0 select-none">나이스 확정용</span>
@@ -762,7 +762,7 @@ export default function ResultCard({
                 return (
                   <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs font-semibold shadow-xxs">
                     <Info className="mx-auto text-slate-300 mb-1.5" size={24} />
-                    나이스 입력 대조를 위한 최종 성적 안내 PDF 파일자료가 교과 선생님에 의해 아직 등록되지 않았습니다.
+                    나이스 PDF 파일(최종 성적 확인용)이 아직 등록되지 않았습니다.
                   </div>
                 );
               }
@@ -792,7 +792,7 @@ export default function ResultCard({
             ✒️ 수행평가 결과 확인 학생 최종 서명
           </h3>
           <p className="text-[11px] text-slate-500 leading-normal">
-            본인의 수행평가 총점과 상세 세부 성적을 직접 정확히 확인하였으며, 이에 서명합니다.
+            본인의 수행평가 영역별 점수와 총점을 확인하였으며, 이에 서명합니다.
           </p>
 
           {(() => {
@@ -819,7 +819,7 @@ export default function ResultCard({
               return (
                 <div className="bg-emerald-50/50 border border-emerald-250 rounded-2xl p-4 flex flex-col items-center justify-center gap-2.5">
                   <div className="text-xs font-black text-emerald-850 flex items-center gap-1">
-                    🎉 학생 확인 서명이 완료되었습니다 (제출 완료)
+                    🎉 확인 서명이 제출 완료
                   </div>
                   <div className="bg-white border border-slate-200 rounded-xl p-3 max-w-[220px] overflow-hidden flex items-center justify-center shadow-xs">
                     <img src={savedSignature} alt="학생 서명" className="h-14 object-contain" referrerPolicy="no-referrer" />
@@ -975,7 +975,7 @@ export default function ResultCard({
               <span className="text-sm font-black tracking-tight">제출 서명 삭제 확인</span>
             </div>
             <p className="text-xs text-slate-600 font-semibold leading-relaxed">
-              제출한 확인 서명을 삭제하고 다시 새롭게 서명하시겠습니까? {"\n"}
+              제출한 서명을 삭제하고 다시 작성하시겠습니까? {"\n"}
               이 작업은 취소할 수 없으며 즉시 삭제됩니다.
             </p>
             <div className="bg-slate-50 border border-slate-150 p-3 rounded-xl">
@@ -1016,13 +1016,13 @@ export default function ResultCard({
               <CheckCircle size={28} className="stroke-[2.5]" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-sm font-black text-slate-900">서명 제출 및 안전 저장 완료</h3>
+              <h3 className="text-sm font-black text-slate-900">서명 제출 완료</h3>
               <p className="text-[11px] text-slate-500 font-bold leading-normal">
-                학번 <span className="text-indigo-950 font-black">{studentId}</span> {studentName} 학생의 성적 확인 서명이 데이터베이스에 성공적으로 기록되었습니다.
+                학번 <span className="text-indigo-950 font-black">{studentId}</span> {studentName} 서명이 성공적으로 기록되었습니다.
               </p>
             </div>
             <div className="w-full bg-slate-50 border border-slate-150 rounded-xl p-3 text-center text-[10px] text-slate-500 font-bold leading-relaxed">
-              교과 담당 선생님의 일람표에도 성적 확인 서명이 실시간으로 즉시 전송 및 반영되었습니다. 🔒
+              교과 담당 선생님께도 서명이 제출되었습니다. 🔒
             </div>
             <button
               type="button"
