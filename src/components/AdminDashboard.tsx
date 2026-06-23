@@ -1094,7 +1094,7 @@ export default function AdminDashboard({
               <div className="space-y-4">
                 {/* 1. Excel Evaluation List */}
                 {(() => {
-                  const excelEvaluations = myEvaluations.filter(e => e.uploadType !== 'pdf');
+                  const excelEvaluations = myEvaluations.filter(e => e.uploadType !== 'pdf' && e.uploadType !== 'test_excel_sign');
                   return (
                     <div className="space-y-1.5">
                       <span className="block text-[10px] font-black text-slate-500 uppercase tracking-tight flex items-center gap-1 border-b border-slate-100 pb-1">
@@ -1147,28 +1147,28 @@ export default function AdminDashboard({
                   );
                 })()}
 
-                {/* 2. PDF Evaluation List */}
+                {/* 2. NICE Comprehensive Excel List */}
                 {(() => {
-                  const pdfEvaluations = myEvaluations.filter(e => e.uploadType === 'pdf');
+                  const niceEvaluations = myEvaluations.filter(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
                   return (
                     <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                      <span className="block text-[10px] font-black text-amber-800 uppercase tracking-tight flex items-center gap-1 border-b border-amber-100 pb-1">
-                        📄 나이스 확인용 PDF 파일 ({pdfEvaluations.length}개)
+                      <span className="block text-[10px] font-black text-emerald-800 uppercase tracking-tight flex items-center gap-1 border-b border-emerald-100 pb-1">
+                        📊 나이스 등록용 EXCEL 파일 ({niceEvaluations.length}개)
                       </span>
-                      {pdfEvaluations.length === 0 ? (
+                      {niceEvaluations.length === 0 ? (
                         <div className="py-3 text-center text-slate-450 text-[10.5px] italic bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                          등록된 PDF 파일이 없습니다.
+                          등록된 나이스 엑셀 파일이 없습니다.
                         </div>
                       ) : (
                         <div className="space-y-1.5 max-h-[190px] overflow-y-auto pr-1">
-                          {pdfEvaluations.map((item) => {
+                          {niceEvaluations.map((item) => {
                             const isActive = item.id === activeEvaluationId;
                             return (
                               <div 
                                 key={item.id} 
                                 className={`group p-2.5 rounded-xl border text-left cursor-pointer transition-all flex justify-between items-start gap-1 ${
                                   isActive 
-                                    ? 'bg-amber-50/50 border-amber-350 shadow-xs' 
+                                    ? 'bg-emerald-50 border-emerald-300 shadow-xs' 
                                     : 'bg-white border-slate-200 hover:border-slate-350'
                                 }`}
                                 onClick={() => onSelectEvaluationId(item.id || '')}

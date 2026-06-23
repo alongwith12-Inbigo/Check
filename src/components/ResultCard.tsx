@@ -139,7 +139,7 @@ export default function ResultCard({
 
   // Determine if teacher entered evaluation for this student's grade/class
   const getTeacherGradeClassMatch = (evalItem: EvaluationState, targetGradeClass: string) => {
-    if (evalItem.uploadType === 'pdf') {
+    if (evalItem.uploadType === 'pdf' || evalItem.uploadType === 'test_excel_sign') {
       const targetClasses = String(evalItem.targetGradeClass || '')
         .split(',')
         .map(c => c.trim().replace(/\D/g, ''))
@@ -270,7 +270,7 @@ export default function ResultCard({
   let aggregateReflectedMax = 0;
 
   sortedResults.forEach(item => {
-    if (item.uploadType === 'pdf') return;
+    if (item.uploadType === 'pdf' || item.uploadType === 'test_excel_sign') return;
 
     const feedbackKeys = findFeedbackKey(item.headers);
     const totalScoreKey = findTotalScoreKey(item.headers, item.row, feedbackKeys);
@@ -425,7 +425,7 @@ export default function ResultCard({
 
           <div className="space-y-5">
             {(() => {
-              const excelResults = sortedResults.filter(item => item.uploadType !== 'pdf');
+              const excelResults = sortedResults.filter(item => item.uploadType !== 'pdf' && item.uploadType !== 'test_excel_sign');
               if (excelResults.length === 0) {
                 return (
                   <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs font-semibold shadow-xxs">
