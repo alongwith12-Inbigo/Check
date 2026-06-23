@@ -89,15 +89,65 @@ export function findBirthdateKey(headers: string[]): string | undefined {
 export function matchesStudentId(inputId: string, rowId: any): boolean {
   if (rowId === undefined || rowId === null) return false;
   const normInput = String(inputId).replace(/\D/g, '');
-  const normRow = String(rowId).replace(/\D/g, '');
+  const normRowRaw = String(rowId).trim();
+  const normRow = normRowRaw.replace(/\D/g, '');
   
-  if (!normInput || !normRow) {
-    // Fallback to alphanumeric comparison if either has letters
-    const rawInput = String(inputId).replace(/\s+/g, '').toLowerCase();
-    const rawRow = String(rowId).replace(/\s+/g, '').toLowerCase();
-    return rawInput === rawRow;
+  if (!normInput || !normRowRaw) return false;
+
+  // 1. If exact numeric comparison matches (e.g. "10701" === "10701")
+  if (normInput === normRow) return true;
+
+  // 2. Parsed match for class/number formats (e.g., "7/1", "7-1", "07/01", "7반 1번")
+  // Extract all digit chunks from the row cell (e.g., "7/1" -> ["7", "1"])
+  const digitsInRow = normRowRaw.match(/\d+/g);
+  if (digitsInRow) {
+    if (digitsInRow.length === 2) {
+      // E.g., Class 7, Number 1
+      const parsedClass = parseInt(digitsInRow[0], 10);
+      const parsedNum = parseInt(digitsInRow[1], 10);
+      
+      // Deconstruct 5-digit student ID (e.g., "10701" -> Grade 1, Class 7, Number 1)
+      if (normInput.length === 5) {
+        const inputGrade = parseInt(normInput.charAt(0), 10);
+        const inputClass = parseInt(normInput.substring(1, 3), 10);
+        const inputNum = parseInt(normInput.substring(3, 5), 10);
+        
+        if (inputClass === parsedClass && inputNum === parsedNum) {
+          return true;
+        }
+      }
+    } else if (digitsInRow.length === 3) {
+      // E.g., Grade 1, Class 7, Number 1
+      const parsedGrade = parseInt(digitsInRow[0], 10);
+      const parsedClass = parseInt(digitsInRow[1], 10);
+      const parsedNum = parseInt(digitsInRow[2], 10);
+      
+      if (normInput.length === 5) {
+        const inputGrade = parseInt(normInput.charAt(0), 10);
+        const inputClass = parseInt(normInput.substring(1, 3), 10);
+        const inputNum = parseInt(normInput.substring(3, 5), 10);
+        
+        if (inputGrade === parsedGrade && inputClass === parsedClass && inputNum === parsedNum) {
+          return true;
+        }
+      }
+    } else if (digitsInRow.length === 1) {
+      const rowDigits = digitsInRow[0];
+      if (rowDigits === normInput) return true;
+      
+      // E.g. "701" matches "10701"
+      if (rowDigits.length === 3 && normInput.length === 5) {
+        if (normInput.endsWith(rowDigits)) {
+          return true;
+        }
+      }
+    }
   }
-  return normInput === normRow;
+
+  // Fallback to standard alphanumeric string matching
+  const rawInput = String(inputId).replace(/\s+/g, '').toLowerCase();
+  const rawRow = String(rowId).replace(/\s+/g, '').toLowerCase();
+  return rawInput === rawRow;
 }
 
 /**
