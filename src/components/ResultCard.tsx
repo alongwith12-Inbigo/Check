@@ -186,8 +186,8 @@ export default function ResultCard({
   
   const results: StudentResultItem[] = [];
   activeTeacherEvaluations.forEach(evalItem => {
-    // If it's PDF Summary Type
-    if (evalItem.uploadType === 'pdf') {
+    // If it's PDF Summary Type or Test Excel Sign Type
+    if (evalItem.uploadType === 'pdf' || evalItem.uploadType === 'test_excel_sign') {
       const targetClasses = String(evalItem.targetGradeClass || '')
         .split(',')
         .map(c => c.trim().replace(/\D/g, ''))
@@ -214,7 +214,7 @@ export default function ResultCard({
           headers: evalItem.headers || [],
           row: foundRow,
           teacherCode: evalItem.teacherCode || '',
-          uploadType: 'pdf',
+          uploadType: evalItem.uploadType,
           pdfBase64: evalItem.pdfBase64 || '',
           pdfFileName: evalItem.pdfFileName || '',
           targetGradeClass: evalItem.targetGradeClass || ''
@@ -245,7 +245,7 @@ export default function ResultCard({
     }
   });
 
-  const signatureEnabled = results.some(r => r.uploadType === 'pdf');
+  const signatureEnabled = results.some(r => r.uploadType === 'pdf' || r.uploadType === 'test_excel_sign');
 
   const handlePrint = () => {
     window.print();
@@ -757,12 +757,12 @@ export default function ResultCard({
 
           <div className="space-y-5">
             {(() => {
-              const pdfResults = sortedResults.filter(item => item.uploadType === 'pdf');
+              const pdfResults = sortedResults.filter(item => item.uploadType === 'pdf' || item.uploadType === 'test_excel_sign');
               if (pdfResults.length === 0) {
                 return (
                   <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs font-semibold shadow-xxs">
                     <Info className="mx-auto text-slate-300 mb-1.5" size={24} />
-                    나이스 PDF 파일(최종 성적 확인용)이 아직 등록되지 않았습니다.
+                    나이스 PDF 파일 또는 엑셀 최종 성적표(서명용)가 아직 등록되지 않았습니다.
                   </div>
                 );
               }

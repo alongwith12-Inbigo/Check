@@ -144,7 +144,7 @@ export default function ResultPrintPortal({
     window.print();
   };
 
-  const pdfEval = evalsForSubject.find(e => e.uploadType === 'pdf');
+  const pdfEval = evalsForSubject.find(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
   const isPdfMode = !!pdfEval;
 
   const pdfScoreHeaders = isPdfMode && pdfEval ? (pdfEval.headers || []).filter(h => {

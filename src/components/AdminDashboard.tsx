@@ -243,6 +243,15 @@ export default function AdminDashboard({
   const [pdfErrorMsg, setPdfErrorMsg] = useState('');
   const pdfFileInputRef = useRef<HTMLInputElement>(null);
 
+  // 엑셀 서명용 종합 등록 [테스트] 상태
+  const [testExcelSubject, setTestExcelSubject] = useState('');
+  const [testExcelRound, setTestExcelRound] = useState('1');
+  const [testExcelDetailName, setTestExcelDetailName] = useState('종합 성적결과표');
+  const [testExcelTargetGradeClass, setTestExcelTargetGradeClass] = useState('');
+  const [testExcelDragActive, setTestExcelDragActive] = useState(false);
+  const [testExcelErrorMsg, setTestExcelErrorMsg] = useState('');
+  const testExcelFileInputRef = useRef<HTMLInputElement>(null);
+
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -740,6 +749,119 @@ export default function AdminDashboard({
     }
   };
 
+  const processTestExcelFile = async (file: File) => {
+    setTestExcelErrorMsg('');
+    const cleanTgtGC = testExcelTargetGradeClass.trim();
+    if (!cleanTgtGC) {
+      setTestExcelErrorMsg(
+        '⚠️ 대상 학년반 정보를 먼저 입력하십시오.\n' +
+        '예: 1학년 7반 전체를 대상으로 하려면 "107"을 입력해야 매칭 조회가 가능합니다.'
+      );
+      return;
+    }
+
+    const defaultSubject = testExcelSubject.trim();
+    if (!defaultSubject) {
+      setTestExcelErrorMsg('⚠️ 평가 과목명을 먼저 입력하십시오.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' }) as Record<string, any>[];
+        const headersJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as string[];
+        const cleanHeaders = (headersJson || []).filter(h => h && String(h).trim() !== "");
+
+        if (cleanHeaders.length === 0 || rawRows.length === 0) {
+          setTestExcelErrorMsg('엑셀 파일에 유효한 데이터가 존재하지 않습니다.');
+          return;
+        }
+
+        let processedHeaders = [...cleanHeaders];
+        let processedRows = [...rawRows];
+        let studentIdKey = findStudentIdKey(cleanHeaders);
+
+        if (!studentIdKey) {
+          setTestExcelErrorMsg(
+            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 학년/반/번호 연동용 '학번' 열이 포함되어야 합니다.\n\n` + 
+            `감지된 열 목록: [${cleanHeaders.join(', ')}]`
+          );
+          return;
+        }
+
+        const defaultRound = testExcelRound.trim() || '1';
+        const defaultDetail = testExcelDetailName.trim() || '수행평가 결과내용 [테스트]';
+        const initialTitle = `📂 [테스트 엑셀서명] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
+
+        const newEvalMetadata: EvaluationState = {
+          title: initialTitle,
+          subject: defaultSubject,
+          round: defaultRound,
+          evaluationDetailName: defaultDetail,
+          maxScore: '100',
+          reflectRate: '100',
+          headers: processedHeaders,
+          rows: processedRows,
+          uploadedAt: new Date().toLocaleString('ko-KR'),
+          uploadType: 'test_excel_sign',
+          pdfFileName: file.name,
+          targetGradeClass: cleanTgtGC
+        };
+
+        const newId = await onCreateEvaluation(newEvalMetadata);
+        onSelectEvaluationId(newId);
+        setTestExcelErrorMsg('');
+      } catch (err: any) {
+        console.error(err);
+        setTestExcelErrorMsg('엑셀 파일 분석 중 에러가 발생했습니다: ' + (err.message || ''));
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleTestExcelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processTestExcelFile(file);
+    }
+  };
+
+  const handleTestExcelDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setTestExcelDragActive(true);
+    } else if (e.type === "dragleave") {
+      setTestExcelDragActive(false);
+    }
+  };
+
+  const handleTestExcelDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setTestExcelDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+      if (!isExcel) {
+        setTestExcelErrorMsg('기타 형식은 허용되지 않습니다. 엑셀 파일만 업로드해 주세요.');
+        return;
+      }
+      await processTestExcelFile(file);
+    }
+  };
+
+  const triggerTestExcelFileInput = () => {
+    testExcelFileInputRef.current?.click();
+  };
+
   const handlePdfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -1081,8 +1203,8 @@ export default function AdminDashboard({
           
           {/* New uploads or selected settings block */}
           {activeEvaluationId === '' || !activeEval ? (
-            /* Upload layout state for entering new sheet -> 2-Column Responsive Layout */
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            /* Upload layout state for entering new sheet -> 3-Column Responsive Layout */
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               
               {/* Card 1: Excel Upload (영역별 세부 성적 및 피드백) */}
               <div id="excel-upload-container" className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-4">
@@ -1328,6 +1450,90 @@ export default function AdminDashboard({
                 )}
               </div>
 
+              {/* Card 3: [TEST] Excel Upload for Final Sign-off */}
+              <div id="test-excel-sign-container" className="bg-white p-5 rounded-2xl border border-emerald-250 bg-emerald-50/5 shadow-xs flex flex-col justify-between space-y-4">
+                <div className="space-y-4">
+                  <div className="border-b border-emerald-100 pb-3 flex items-center justify-between">
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">신규 시범 적용 공간</span>
+                    <span className="text-[10px] text-emerald-600 font-bold">3단계 [테스트] 엑셀 최종종합 등록</span>
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                      📊 [테스트] 엑셀 종합 성적 & 서명 등록
+                    </h3>
+                    <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
+                      PDF 정밀인식 대신, 나이스 종합 엑셀 일람표를 바로 대조 등록하여 학생들에게 빠른 최종 확인 및 서명 카드를 제공합니다.
+                    </p>
+                  </div>
+
+                  {/* Metadata Fields */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="test-excel-subject-input" className="block text-[11px] font-bold text-slate-700 mb-1">평가 과목명</label>
+                      <input 
+                        id="test-excel-subject-input"
+                        type="text"
+                        value={testExcelSubject}
+                        onChange={(e) => setTestExcelSubject(e.target.value)}
+                        placeholder="예: 정보"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="test-excel-target-class-input" className="block text-[11px] font-bold text-emerald-950 mb-1">👥 대상 학년반</label>
+                      <input 
+                        id="test-excel-target-class-input"
+                        type="text"
+                        value={testExcelTargetGradeClass}
+                        onChange={(e) => setTestExcelTargetGradeClass(e.target.value)}
+                        placeholder="예: 107"
+                        className="w-full px-3 py-2 border border-emerald-300 bg-emerald-50 text-emerald-950 font-black rounded-xl text-xs focus:outline-none text-center"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-50/70 border border-emerald-200/50 p-2.5 rounded-lg text-[10px] text-slate-600 leading-normal">
+                    <span>💡 <strong>필독:</strong> <strong>대상 학년반</strong>(예: 107)을 정확하게 채워주세요. 이 반 소속 학생들에게 직접 매칭 성적 및 최종 학생 서명패드가 즉시 동작합니다.</span>
+                  </div>
+
+                  {/* Excel File Drop Area */}
+                  <div 
+                    id="test-excel-drop-zone"
+                    onDragEnter={handleTestExcelDrag}
+                    onDragOver={handleTestExcelDrag}
+                    onDragLeave={handleTestExcelDrag}
+                    onDrop={handleTestExcelDrop}
+                    onClick={triggerTestExcelFileInput}
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[140px] ${
+                      testExcelDragActive 
+                        ? 'border-emerald-600 bg-emerald-100/40' 
+                        : 'border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/30'
+                    }`}
+                  >
+                    <input 
+                      ref={testExcelFileInputRef}
+                      type="file" 
+                      accept=".xlsx, .xls"
+                      onChange={handleTestExcelFileChange}
+                      className="hidden" 
+                    />
+                    <div className="p-2 bg-emerald-100 rounded-full mb-2 text-emerald-900">
+                      <Upload size={16} className="stroke-[2.5]" />
+                    </div>
+                    <p className="text-xs font-black text-emerald-950">여기에 대조용 EXCEL 파일을 끌어다놓거나 클릭하세요</p>
+                    <p className="text-[10px] text-slate-450 mt-1">.xlsx, .xls 확장자만 업로드 가능합니다.</p>
+                  </div>
+                </div>
+
+                {testExcelErrorMsg && (
+                  <div id="test-excel-error-panel" className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold mt-2">
+                    <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                    <span className="whitespace-pre-line">{testExcelErrorMsg}</span>
+                  </div>
+                )}
+              </div>
+
             </div>
           ) : (
             /* Selected evaluation active configurations panel */
@@ -1337,7 +1543,7 @@ export default function AdminDashboard({
               <div className="md:col-span-1 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-4">
                 <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5 pb-2 border-b border-slate-100 uppercase tracking-tight">
                   <BookOpen size={14} className="text-slate-500" />
-                  {activeEval.uploadType === 'pdf' ? 'PDF 평가 정보 편집' : '수행평가 등록 정보'}
+                  {activeEval.uploadType === 'pdf' || activeEval.uploadType === 'test_excel_sign' ? '최종 서명표 정보 편집' : '수행평가 등록 정보'}
                 </h3>
 
                 <div className="space-y-3">
@@ -1396,7 +1602,7 @@ export default function AdminDashboard({
                     />
                   </div>
 
-                  {activeEval.uploadType === 'pdf' ? (
+                  {activeEval.uploadType === 'pdf' || activeEval.uploadType === 'test_excel_sign' ? (
                     <div>
                       <label htmlFor="eval-target-gc" className="block text-[10px] font-extrabold text-slate-500 mb-1">
                         4. 학년반
@@ -1456,11 +1662,13 @@ export default function AdminDashboard({
                 </div>
 
                 <div className="pt-3 border-t border-slate-100 text-[10px] text-slate-450 space-y-1">
-                  {activeEval.uploadType === 'pdf' ? (
+                  {activeEval.uploadType === 'pdf' || activeEval.uploadType === 'test_excel_sign' ? (
                     <>
                       <div className="flex justify-between">
                         <span>파일 형식:</span>
-                        <strong className="text-amber-700 font-bold">나이스 PDF 자료</strong>
+                        <strong className="text-emerald-700 font-bold">
+                          {activeEval.uploadType === 'pdf' ? '나이스 PDF 자료' : '서명용 엑셀 자료 [테스트]'}
+                        </strong>
                       </div>
                       <div className="flex justify-between">
                         <span>허용 반 목록:</span>
@@ -1498,46 +1706,65 @@ export default function AdminDashboard({
                   </span>
                 </div>
 
-                {activeEval.uploadType === 'pdf' ? (
+                {activeEval.uploadType === 'pdf' || activeEval.uploadType === 'test_excel_sign' ? (
                   <div className="space-y-4">
-                    <div className="bg-amber-50/60 p-3.5 rounded-xl border border-amber-200 text-[11px] text-slate-700 leading-relaxed font-semibold">
-                      <p className="text-amber-955 font-bold flex items-center gap-1 text-xs mb-1">
-                        <CheckCircle2 size={14} className="text-amber-700" />
-                        안내: 전체 성적 PDF 문서 보존
+                    <div className="bg-emerald-50/60 p-3.5 rounded-xl border border-emerald-200 text-[11px] text-slate-700 leading-relaxed font-semibold">
+                      <p className="text-emerald-955 font-bold flex items-center gap-1 text-xs mb-1">
+                        <CheckCircle2 size={14} className="text-emerald-700" />
+                        안내: {activeEval.uploadType === 'pdf' ? '전체 성적 PDF 문서 보존' : '서명용 최종 엑셀 대조 점수 보존 [테스트]'}
                       </p>
                       <span>
-                        이 평가는 요약성적 PDF 업로드 방식으로 제공됩니다. 지정한 학년반 코드와 일치하는 학생들은 로그인 시 엑셀 점수 대신 이 PDF 파일을 모바일 및 PC 브라우저에서 편리하게 즉시 조회하거나 내려받을 수 있습니다.
+                        {activeEval.uploadType === 'pdf'
+                          ? '이 평가는 요약성적 PDF 업로드 방식으로 제공됩니다. 지정한 학년반 코드와 일치하는 학생들은 로그인 시 엑셀 점수 대신 이 PDF 파일을 모바일 및 PC 브라우저에서 편리하게 즉시 조회하거나 내려받을 수 있습니다.'
+                          : '이 평가는 엑셀 서명용 등록 방식으로 제공됩니다. 지정한 학년반 코드와 일치하는 학생들은 로그인 시 복잡한 AI PDF 추출 대기 없이 이 엑셀 결과를 모바일 및 PC 화면에서 빠르게 1:1로 아주 간편하게 조회/서명할 수 있습니다.'
+                        }
                       </span>
                     </div>
 
-                    <div className="border border-slate-200/80 rounded-xl p-4 bg-slate-50 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-red-100 text-red-700 rounded-xl">
-                          <BookOpen size={24} />
+                    {activeEval.uploadType === 'pdf' ? (
+                      <div className="border border-slate-200/80 rounded-xl p-4 bg-slate-50 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-3 bg-red-100 text-red-700 rounded-xl">
+                            <BookOpen size={24} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-black text-slate-800 truncate max-w-[200px] sm:max-w-xs" title={activeEval.pdfFileName}>
+                              {activeEval.pdfFileName || '성적_결과통지표.pdf'}
+                            </p>
+                            <p className="text-[10px] text-slate-450 font-mono">대상 학년반: {activeEval.targetGradeClass || '미지정'}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs font-black text-slate-800 truncate max-w-[200px] sm:max-w-xs" title={activeEval.pdfFileName}>
-                            {activeEval.pdfFileName || '성적_결과통지표.pdf'}
-                          </p>
-                          <p className="text-[10px] text-slate-400 font-mono">대상 학년반: {activeEval.targetGradeClass || '미지정'}</p>
+                        <button
+                          onClick={downloadActiveEvalPdf}
+                          className="px-3.5 py-1.5 bg-indigo-900 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                        >
+                          📥 파일 다운로드
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="border border-emerald-250 rounded-xl p-4 bg-emerald-50/20 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-3 bg-emerald-100 text-emerald-800 rounded-xl">
+                            <FileSpreadsheet size={24} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-black text-slate-800 truncate max-w-[200px] sm:max-w-xs" title={activeEval.pdfFileName}>
+                              {activeEval.pdfFileName || '종합_성적_대조표.xlsx'}
+                            </p>
+                            <p className="text-[10px] text-emerald-700 font-bold font-mono">대상 학년반: {activeEval.targetGradeClass || '미지정'}</p>
+                          </div>
                         </div>
                       </div>
-                      <button
-                        onClick={downloadActiveEvalPdf}
-                        className="px-3.5 py-1.5 bg-indigo-900 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                      >
-                        📥 파일 다운로드
-                      </button>
-                    </div>
+                    )}
 
-                    {isExtractingPdf && (
+                    {isExtractingPdf && activeEval.uploadType === 'pdf' && (
                       <div className="p-3 bg-rose-50 text-rose-950 border border-rose-200/60 rounded-xl flex items-center gap-2.5 text-[11px] font-bold animate-pulse">
                         <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping" />
                         <span>AI OCR 복원 엔진이 일람표 문서의 표 구조와 점수를 분석하고 정밀 대조하는 중입니다...</span>
                       </div>
                     )}
 
-                    {pdfExtractError && !isExtractingPdf && (
+                    {pdfExtractError && !isExtractingPdf && activeEval.uploadType === 'pdf' && (
                       <div className="p-4 bg-rose-50 border border-rose-150 rounded-xl flex items-start gap-2.5 text-[11px] text-rose-850 font-semibold leading-relaxed">
                         <AlertCircle size={15} className="shrink-0 mt-0.5 text-rose-600" />
                         <div className="space-y-1">
@@ -1549,11 +1776,13 @@ export default function AdminDashboard({
                       </div>
                     )}
 
-                    {activeEval.rows && activeEval.rows.length > 0 && !isExtractingPdf && (
+                    {activeEval.rows && activeEval.rows.length > 0 && (!isExtractingPdf || activeEval.uploadType === 'test_excel_sign') && (
                       <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-250 rounded-xl flex items-start gap-1.5 text-[11px] leading-relaxed">
                         <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-700" />
                         <div className="text-emerald-950 font-semibold">
-                          <span className="font-bold block text-emerald-900">클라우드 PDF 자동 동기화 완료</span>
+                          <span className="font-bold block text-emerald-900">
+                            {activeEval.uploadType === 'pdf' ? '클라우드 PDF 자동 동기화 완료' : '클라우드 엑셀 동기화 및 서명 활성 완료'}
+                          </span>
                           성공적으로 학급 일람표에서 <strong className="text-indigo-950 underline">{activeEval.rows.length}명</strong>의 학생 데이터를 자동 추출하여 하단 검증 대조 테이블에 적재 완료했습니다!
                         </div>
                       </div>

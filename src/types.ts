@@ -18,7 +18,7 @@ export interface EvaluationState {
   headers: string[];
   rows: ExcelRow[];
   uploadedAt: string | null;
-  uploadType?: 'excel' | 'pdf';
+  uploadType?: 'excel' | 'pdf' | 'test_excel_sign';
   pdfBase64?: string;
   pdfFileName?: string;
   targetGradeClass?: string;
@@ -55,7 +55,7 @@ export interface StudentResultItem {
   headers: string[];
   row: ExcelRow;
   teacherCode?: string;
-  uploadType?: 'excel' | 'pdf';
+  uploadType?: 'excel' | 'pdf' | 'test_excel_sign';
   pdfBase64?: string;
   pdfFileName?: string;
   targetGradeClass?: string;

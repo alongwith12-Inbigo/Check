@@ -866,7 +866,9 @@ export default function StudentPdfViewer({
       <div className="flex border-b border-rose-100 pb-3 flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-1.5 text-rose-950 font-black">
           <FileText size={16} className="text-rose-600" />
-          <span className="text-xs">나이스 출력 수행평가 점수 (PDF 자동 분석)</span>
+          <span className="text-xs">
+            {pdfBase64 ? '나이스 출력 수행평가 점수 (PDF 자동 분석)' : '나이스 대조용 수행평가 점수 (엑셀 대조 검증)'}
+          </span>
         </div>
         
         {activeData && (
