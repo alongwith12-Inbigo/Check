@@ -1286,16 +1286,16 @@ export default function AdminDashboard({
             <div className="space-y-1.5 my-1 bg-slate-50 border border-slate-150 rounded-xl p-3">
               <div className="flex items-start gap-1.5 text-[10px] text-slate-700 leading-relaxed">
                 <span className="text-indigo-600 font-bold shrink-0">1단계</span>
-                <span><strong>EXCEL 파일 등록:</strong> 수행평가 영역별 점수에 대해 구체적으로 피드백하기 위한 용도입니다. <strong>엑셀 샘플 파일</strong>을 활용해주세요.</span>
+                <span><strong>수행 영역별 등록:</strong> 영역별 세부 점수 및 구체적 피드백을 전달하기 위한 과정입니다. 상단의 <strong>EXCEL 샘플 파일</strong>을 사용하세요.</span>
               </div>
               <div className="border-t border-slate-200/60 my-1"></div>
               <div className="flex items-start gap-1.5 text-[10px] text-slate-700 leading-relaxed">
-                <span className="text-rose-600 font-bold shrink-0">2단계</span>
-                <span><strong>PDF 파일 등록:</strong> 나이스에 입력한 점수를 학생들에게 확인받기 위한 용도입니다. <strong>학생 서명</strong>후 출력이 가능합니다.</span>
+                <span className="text-emerald-600 font-bold shrink-0">2단계</span>
+                <span><strong>나이스 종합 엑셀 등록:</strong> 최종 종합 점수를 대입하여 학생들에게 확인을 요청하고, <strong>서명 패드</strong>를 활성화하기 위한 과정입니다.</span>
               </div>
             </div>
             <p className="text-[10px] text-slate-450 leading-relaxed">
-              💡 별도의 조작 없이 PDF가 업로드 되면 학생 화면에서 서명 패드가 자동 활성화됩니다. 학생들이 서명을 마친 결과는 상단의 <strong>'출력'</strong> 버튼을 클릭하여 1장으로 출력 가능합니다.
+              💡 별도의 복잡한 PDF OCR 가공 없이, 나이스에서 내려받은 종합 엑셀 일람표 그대로 2단계에 업로드해 주기만 하면 학생들에게 직접 매칭되는 최종 확인용 서명카드가 즉시 동작합니다.
             </p>
           </div>
         </div>
@@ -1305,8 +1305,8 @@ export default function AdminDashboard({
           
           {/* New uploads or selected settings block */}
           {activeEvaluationId === '' || !activeEval ? (
-            /* Upload layout state for entering new sheet -> 3-Column Responsive Layout */
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            /* Upload layout state for entering new sheet -> 2-Column Responsive Layout */
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               
               {/* Card 1: Excel Upload (영역별 세부 성적 및 피드백) */}
               <div id="excel-upload-container" className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-4">
@@ -1468,104 +1468,20 @@ export default function AdminDashboard({
                 )}
               </div>
 
-              {/* Card 2: PDF Upload (나이스 종합 성적 & 학생 서명 확정) */}
-              <div id="pdf-upload-container" className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-4">
-                <div className="space-y-4">
-                  <div className="border-b border-rose-100 pb-3 flex items-center justify-between">
-                    <span className="bg-rose-50 text-rose-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">최종 확인 및 서명 제출 단계</span>
-                    <span className="text-[10px] text-rose-400 font-bold">2단계 (나이스 PDF 자료)</span>
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                      📄 나이스 최종 종합 PDF 등록
-                    </h3>
-                    <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
-                      최종 전체 종합 결과가 표기된 나이스 성적 PDF 파일을 업로드합니다. (업로드 시 자동으로 학생 서명 제출 활성화)
-                    </p>
-                  </div>
-
-                  {/* PDF Specific Metadata Fields */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="pdf-subject-input" className="block text-[11px] font-bold text-slate-700 mb-1">평가 과목명</label>
-                      <input 
-                        id="pdf-subject-input"
-                        type="text"
-                        value={pdfSubject}
-                        onChange={(e) => setPdfSubject(e.target.value)}
-                        placeholder="예: 정보"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="pdf-target-grade-class-input" className="block text-[11px] font-bold text-indigo-950 mb-1">👥 대상 학년반</label>
-                      <input 
-                        id="pdf-target-grade-class-input"
-                        type="text"
-                        value={pdfTargetGradeClass}
-                        onChange={(e) => setPdfTargetGradeClass(e.target.value)}
-                        placeholder="예: 107"
-                        className="w-full px-3 py-2 border border-indigo-200 bg-indigo-50/10 text-indigo-950 font-black rounded-xl text-xs focus:outline-none text-center"
-                      />
-                    </div>
-                  </div>
-
-                  <div id="pdf-notifying-banner" className="bg-indigo-50/50 border border-indigo-100 p-2.5 rounded-lg text-[10px] text-slate-600 leading-normal">
-                    <span>💡 <strong>필독:</strong> <strong>대상 학년반</strong>(예: 1학년 7반은 107)을 정확히 입력해 주십시오. </span>
-                  </div>
-
-                  {/* PDF File Drop Area */}
-                  <div 
-                    id="pdf-drop-zone"
-                    onDragEnter={handlePdfDrag}
-                    onDragOver={handlePdfDrag}
-                    onDragLeave={handlePdfDrag}
-                    onDrop={handlePdfDrop}
-                    onClick={triggerPdfFileInput}
-                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[140px] ${
-                      pdfDragActive 
-                        ? 'border-rose-600 bg-rose-50/40' 
-                        : 'border-slate-300 hover:border-rose-500 hover:bg-slate-50/50'
-                    }`}
-                  >
-                    <input 
-                      ref={pdfFileInputRef}
-                      type="file" 
-                      accept=".pdf, .xlsx, .xls"
-                      onChange={handlePdfFileChange}
-                      className="hidden" 
-                    />
-                    <div className="p-2 bg-rose-50 rounded-full mb-2 text-rose-900">
-                      <Upload size={16} className="stroke-[2.5]" />
-                    </div>
-                    <p className="text-xs font-black text-rose-950">여기에 PDF 파일을 끌어다놓거나 클릭하세요</p>
-                    <p className="text-[10px] text-slate-450 mt-1">.pdf 확장자만 업로드 가능합니다.</p>
-                  </div>
-                </div>
-
-                {pdfErrorMsg && (
-                  <div id="pdf-error-panel" className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold mt-2">
-                    <AlertCircle size={15} className="shrink-0 mt-0.5" />
-                    <span className="whitespace-pre-line">{pdfErrorMsg}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Card 3: [TEST] Excel Upload for Final Sign-off */}
-              <div id="test-excel-sign-container" className="bg-white p-5 rounded-2xl border border-emerald-250 bg-emerald-50/5 shadow-xs flex flex-col justify-between space-y-4">
+              {/* Card 2: NICE Comprehensive Excel Upload (나이스 종합 성적 & 학생 서명 확정) */}
+              <div id="test-excel-sign-container" className="bg-white p-5 rounded-2xl border border-emerald-300 shadow-xs flex flex-col justify-between space-y-4">
                 <div className="space-y-4">
                   <div className="border-b border-emerald-100 pb-3 flex items-center justify-between">
-                    <span className="bg-emerald-100 text-emerald-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">신규 시범 적용 공간</span>
-                    <span className="text-[10px] text-emerald-600 font-bold">3단계 [테스트] 엑셀 최종종합 등록</span>
+                    <span className="bg-emerald-100 text-emerald-850 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">최종 확인 및 서명 제출 단계</span>
+                    <span className="text-[10px] text-emerald-600 font-bold">2단계 (나이스 종합 EXCEL)</span>
                   </div>
                   
                   <div>
                     <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                      📊 [테스트] 엑셀 종합 성적 & 서명 등록
+                      📊 나이스 최종 종합 EXCEL 등록
                     </h3>
                     <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
-                      PDF 정밀인식 대신, 나이스 종합 엑셀 일람표를 바로 대조 등록하여 학생들에게 빠른 최종 확인 및 서명 카드를 제공합니다.
+                      나이스에서 다운로드한 종합 성적 일람표 엑셀 파일을 업로드합니다. (업로드 시 자동으로 지정된 학년반 학생의 서명 제출 활성화)
                     </p>
                   </div>
 
@@ -1595,8 +1511,8 @@ export default function AdminDashboard({
                     </div>
                   </div>
 
-                  <div className="bg-emerald-50/70 border border-emerald-200/50 p-2.5 rounded-lg text-[10px] text-slate-600 leading-normal">
-                    <span>💡 <strong>필독:</strong> <strong>대상 학년반</strong>(예: 107)을 정확하게 채워주세요. 이 반 소속 학생들에게 직접 매칭 성적 및 최종 학생 서명패드가 즉시 동작합니다.</span>
+                  <div className="bg-emerald-50/70 border border-emerald-250/30 p-2.5 rounded-lg text-[10px] text-slate-600 leading-normal">
+                    <span>💡 <strong>필독:</strong> <strong>대상 학년반</strong>(예: 107)을 정확하게 입력해 주세요. 이 반 학생들의 화면에 개인 성적과 함께 최종 서명 패드가 자동 활성화됩니다.</span>
                   </div>
 
                   {/* Excel File Drop Area */}
@@ -1769,11 +1685,11 @@ export default function AdminDashboard({
                       <div className="flex justify-between">
                         <span>파일 형식:</span>
                         <strong className="text-emerald-700 font-bold">
-                          {activeEval.uploadType === 'pdf' ? '나이스 PDF 자료' : '서명용 엑셀 자료 [테스트]'}
+                          {activeEval.uploadType === 'pdf' ? '나이스 PDF 자료' : '2단계 나이스 종합 엑셀'}
                         </strong>
                       </div>
                       <div className="flex justify-between">
-                        <span>허용 반 목록:</span>
+                        <span>대상 학년반:</span>
                         <strong className="text-indigo-950 font-extrabold">{activeEval.targetGradeClass || '없음'}</strong>
                       </div>
                     </>
@@ -1813,12 +1729,12 @@ export default function AdminDashboard({
                     <div className="bg-emerald-50/60 p-3.5 rounded-xl border border-emerald-200 text-[11px] text-slate-700 leading-relaxed font-semibold">
                       <p className="text-emerald-955 font-bold flex items-center gap-1 text-xs mb-1">
                         <CheckCircle2 size={14} className="text-emerald-700" />
-                        안내: {activeEval.uploadType === 'pdf' ? '전체 성적 PDF 문서 보존' : '서명용 최종 엑셀 대조 점수 보존 [테스트]'}
+                        안내: {activeEval.uploadType === 'pdf' ? '전체 성적 PDF 문서 보존' : '2단계 나이스 종합 엑셀 보존 완료'}
                       </p>
                       <span>
                         {activeEval.uploadType === 'pdf'
                           ? '이 평가는 요약성적 PDF 업로드 방식으로 제공됩니다. 지정한 학년반 코드와 일치하는 학생들은 로그인 시 엑셀 점수 대신 이 PDF 파일을 모바일 및 PC 브라우저에서 편리하게 즉시 조회하거나 내려받을 수 있습니다.'
-                          : '이 평가는 엑셀 서명용 등록 방식으로 제공됩니다. 지정한 학년반 코드와 일치하는 학생들은 로그인 시 복잡한 AI PDF 추출 대기 없이 이 엑셀 결과를 모바일 및 PC 화면에서 빠르게 1:1로 아주 간편하게 조회/서명할 수 있습니다.'
+                          : '이 평가는 나이스 종합 엑셀 등록 방식으로 제공됩니다. 지정한 학년반 코드와 일치하는 학생들은 로그인 시 모바일 및 PC 화면에서 빠르게 본인의 종합 환산 점수를 1:1로 간편하게 조회하고 곧바로 확인 서명할 수 있습니다.'
                         }
                       </span>
                     </div>
