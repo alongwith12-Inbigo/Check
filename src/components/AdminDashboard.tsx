@@ -572,25 +572,59 @@ export default function AdminDashboard({
           const firstSheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[firstSheetName];
           
-          const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' }) as Record<string, any>[];
-          const headersJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as string[];
-          const cleanHeaders = (headersJson || []).filter(h => h && String(h).trim() !== "");
+          // Find actual header row by scanning for keywords
+          const allRawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+          let headerRowIndex = 0;
+          for (let i = 0; i < Math.min(allRawRows.length, 15); i++) {
+            const row = allRawRows[i];
+            if (row && row.length > 0) {
+              const hasHeaderKeyword = row.some(cell => {
+                const val = String(cell || '').replace(/\s+/g, '');
+                return val === '반/번호' || val === '성명' || val === '학번' || val === '이름' || val === '과정참여' || val.includes('학번');
+              });
+              if (hasHeaderKeyword) {
+                headerRowIndex = i;
+                break;
+              }
+            }
+          }
+
+          const rawRows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: '' }) as Record<string, any>[];
+          const headersJson = allRawRows[headerRowIndex] as string[];
+          const cleanHeaders = (headersJson || []).map(h => String(h || '').trim()).filter(h => h !== '');
 
           if (cleanHeaders.length === 0 || rawRows.length === 0) {
             setPdfErrorMsg('엑셀 파일에 유효한 데이터가 존재하지 않습니다.');
             return;
           }
 
-          let processedHeaders = [...cleanHeaders];
-          let processedRows = [...rawRows];
-          let studentIdKey = findStudentIdKey(cleanHeaders);
+          const studentIdKey = findStudentIdKey(cleanHeaders);
 
           if (!studentIdKey) {
             setPdfErrorMsg(
-              `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 열이 포함되어야 합니다.`
+              `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 또는 '반/번호' 열이 포함되어야 합니다.`
             );
             return;
           }
+
+          // Clean arrays and filter out aggregate footer rows and empty rows
+          const processedHeaders = [...cleanHeaders];
+          const processedRows = rawRows.filter(row => {
+            const idVal = String(row[studentIdKey] || '').trim();
+            if (!idVal) return false;
+            
+            const normalized = idVal.replace(/\s+/g, '');
+            if (normalized.includes('평균') || 
+                normalized.includes('총점') || 
+                normalized.includes('응시') || 
+                normalized.includes('합계') || 
+                normalized.includes('계') || 
+                normalized.includes('소계') ||
+                normalized.includes('###')) {
+              return false;
+            }
+            return true;
+          });
 
           const defaultRound = pdfRound.trim() || '1';
           const defaultDetail = pdfDetailName.trim() || '수행평가 결과내역';
@@ -686,26 +720,60 @@ export default function AdminDashboard({
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' }) as Record<string, any>[];
-        const headersJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as string[];
-        const cleanHeaders = (headersJson || []).filter(h => h && String(h).trim() !== "");
+        // Find actual header row by scanning for keywords
+        const allRawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        let headerRowIndex = 0;
+        for (let i = 0; i < Math.min(allRawRows.length, 15); i++) {
+          const row = allRawRows[i];
+          if (row && row.length > 0) {
+            const hasHeaderKeyword = row.some(cell => {
+              const val = String(cell || '').replace(/\s+/g, '');
+              return val === '반/번호' || val === '성명' || val === '학번' || val === '이름' || val === '과정참여' || val.includes('학번');
+            });
+            if (hasHeaderKeyword) {
+              headerRowIndex = i;
+              break;
+            }
+          }
+        }
+
+        const rawRows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: '' }) as Record<string, any>[];
+        const headersJson = allRawRows[headerRowIndex] as string[];
+        const cleanHeaders = (headersJson || []).map(h => String(h || '').trim()).filter(h => h !== '');
 
         if (cleanHeaders.length === 0 || rawRows.length === 0) {
           setExcelErrorMsg('엑셀 파일에 유효한 데이터가 존재하지 않습니다.');
           return;
         }
 
-        let processedHeaders = [...cleanHeaders];
-        let processedRows = [...rawRows];
-        let studentIdKey = findStudentIdKey(cleanHeaders);
+        const studentIdKey = findStudentIdKey(cleanHeaders);
 
         if (!studentIdKey) {
           setExcelErrorMsg(
-            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 열이 포함되어야 합니다.\n\n` + 
+            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 또는 '반/번호' 열이 포함되어야 합니다.\n\n` + 
             `감지된 열 목록: [${cleanHeaders.join(', ')}]`
           );
           return;
         }
+
+        // Clean arrays and filter out aggregate footer rows and empty rows
+        const processedHeaders = [...cleanHeaders];
+        const processedRows = rawRows.filter(row => {
+          const idVal = String(row[studentIdKey] || '').trim();
+          if (!idVal) return false;
+          
+          const normalized = idVal.replace(/\s+/g, '');
+          if (normalized.includes('평균') || 
+              normalized.includes('총점') || 
+              normalized.includes('응시') || 
+              normalized.includes('합계') || 
+              normalized.includes('계') || 
+              normalized.includes('소계') ||
+              normalized.includes('###')) {
+            return false;
+          }
+          return true;
+        });
 
         const defaultSubject = excelSubject.trim();
         if (!defaultSubject) {
@@ -774,26 +842,60 @@ export default function AdminDashboard({
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' }) as Record<string, any>[];
-        const headersJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as string[];
-        const cleanHeaders = (headersJson || []).filter(h => h && String(h).trim() !== "");
+        // Find actual header row by scanning for keywords
+        const allRawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        let headerRowIndex = 0;
+        for (let i = 0; i < Math.min(allRawRows.length, 15); i++) {
+          const row = allRawRows[i];
+          if (row && row.length > 0) {
+            const hasHeaderKeyword = row.some(cell => {
+              const val = String(cell || '').replace(/\s+/g, '');
+              return val === '반/번호' || val === '성명' || val === '학번' || val === '이름' || val === '과정참여' || val.includes('학번');
+            });
+            if (hasHeaderKeyword) {
+              headerRowIndex = i;
+              break;
+            }
+          }
+        }
+
+        const rawRows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: '' }) as Record<string, any>[];
+        const headersJson = allRawRows[headerRowIndex] as string[];
+        const cleanHeaders = (headersJson || []).map(h => String(h || '').trim()).filter(h => h !== '');
 
         if (cleanHeaders.length === 0 || rawRows.length === 0) {
           setTestExcelErrorMsg('엑셀 파일에 유효한 데이터가 존재하지 않습니다.');
           return;
         }
 
-        let processedHeaders = [...cleanHeaders];
-        let processedRows = [...rawRows];
-        let studentIdKey = findStudentIdKey(cleanHeaders);
+        const studentIdKey = findStudentIdKey(cleanHeaders);
 
         if (!studentIdKey) {
           setTestExcelErrorMsg(
-            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 학년/반/번호 연동용 '학번' 열이 포함되어야 합니다.\n\n` + 
+            `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 학년/반/번호 연동용 '학번' 또는 '반/번호' 열이 포함되어야 합니다.\n\n` + 
             `감지된 열 목록: [${cleanHeaders.join(', ')}]`
           );
           return;
         }
+
+        // Clean arrays and filter out aggregate footer rows and empty rows
+        const processedHeaders = [...cleanHeaders];
+        const processedRows = rawRows.filter(row => {
+          const idVal = String(row[studentIdKey] || '').trim();
+          if (!idVal) return false;
+          
+          const normalized = idVal.replace(/\s+/g, '');
+          if (normalized.includes('평균') || 
+              normalized.includes('총점') || 
+              normalized.includes('응시') || 
+              normalized.includes('합계') || 
+              normalized.includes('계') || 
+              normalized.includes('소계') ||
+              normalized.includes('###')) {
+            return false;
+          }
+          return true;
+        });
 
         const defaultRound = testExcelRound.trim() || '1';
         const defaultDetail = testExcelDetailName.trim() || '수행평가 결과내용 [테스트]';
