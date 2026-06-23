@@ -445,9 +445,7 @@ export default function AdminDashboard({
             setPdfExtractError('PDF 추출 도중 분석 엔진에 에러가 발생했습니다: ' + (err.message || err));
           }
         } finally {
-          if (active) {
-            setIsExtractingPdf(false);
-          }
+          setIsExtractingPdf(false);
         }
       };
       autoExtract();
