@@ -870,7 +870,7 @@ export default function StudentPdfViewer({
         <div className="flex items-center gap-1.5 text-rose-950 font-black">
           <FileText size={16} className="text-rose-600" />
           <span className="text-xs">
-            {pdfBase64 ? '나이스 출력 수행평가 점수 (PDF 자동 분석)' : '나이스 대조용 수행평가 점수 (엑셀 대조 검증)'}
+            {pdfBase64 ? '나이스 출력 수행평가 점수 (PDF 자동 분석)' : '나이스 확인용 수행평가 점수'}
           </span>
         </div>
         
@@ -888,8 +888,8 @@ export default function StudentPdfViewer({
         <div className="flex flex-col items-center justify-center py-12 space-y-4 select-none text-slate-400">
           <Loader2 className="animate-spin text-rose-600" size={32} />
           <div className="text-center space-y-1">
-            <span className="text-xs font-black text-slate-700 block">선생님이 등록한 나이스 확정 일람표 PDF 자료를 정밀 분석 중...</span>
-            <span className="text-[10px] text-slate-400 block font-medium">개인 프라이버시 조율을 위해 본인 성적 이외의 전체 PDF 화면 및 타인 정보 노출은 전면 차단됩니다.</span>
+            <span className="text-xs font-black text-slate-700 block">선생님이 등록한 나이스 확정 일람표 EXCEL 자료를 정밀 분석 중...</span>
+            <span className="text-[10px] text-slate-400 block font-medium">개인 프라이버시 조율을 위해 본인 성적 이외의 전체 EXCEL 화면 및 타인 정보 노출은 전면 차단됩니다.</span>
           </div>
         </div>
       )}
@@ -901,7 +901,7 @@ export default function StudentPdfViewer({
           <div className="space-y-1">
             <p className="font-extrabold whitespace-pre-wrap">{activeError}</p>
             <p className="text-[10px] text-slate-500 font-medium leading-normal pt-1 bg-white/20 border-t border-rose-100/30">
-              💡 만약 일람표 PDF가 이미지(스캔본) 형태로 글자 식별이 불가능하다면 텍스트 기반 일람표를 다시 등록해주시거나, Excel 파일로 최종 성적을 재등록해주시길 교과 선생님께 부탁해주세요.
+              💡 만약 일람표 EXCEL 파일이 이미지(스캔본) 형태로 글자 식별이 불가능하다면 텍스트 기반 일람표를 다시 등록해주시거나, Excel 파일로 최종 성적을 재등록해주시길 교과 선생님께 부탁해주세요.
             </p>
           </div>
         </div>

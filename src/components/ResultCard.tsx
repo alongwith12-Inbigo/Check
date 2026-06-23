@@ -739,14 +739,14 @@ export default function ResultCard({
         </div>
 
         {/* ==========================================
-            [PART 2]: 나이스 최종 입력 점수 확인 (PDF 자료)
+            [PART 2]: 나이스 최종 입력 점수 확인 (EXCEL 자료)
            ========================================== */}
         <div id="part2-pdf-neis-section" className="space-y-4">
           <div className="border-l-4 border-rose-600 pl-3.5 py-1 bg-rose-50/30 rounded-r-2xl pr-4 flex items-center justify-between gap-3 shadow-3xs">
             <div>
               <h2 className="text-xs sm:text-sm font-black text-rose-950 flex items-center gap-1.5">
                 <FileText size={15} className="text-rose-600" />
-                Part 2. 나이스 최종 입력 점수 확인용 성적표 (PDF 자료)
+                Part 2. 나이스 최종 입력 점수 확인 (EXCEL 자료)
               </h2>
               <p className="text-[10px] text-slate-500 font-medium mt-0.5">
                 나이스(NEIS) 확인용
