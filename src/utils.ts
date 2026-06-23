@@ -321,3 +321,37 @@ export function isScoreColumn(headerName: string, sampleValue: any): boolean {
 
   return isKeywordMatch;
 }
+
+/**
+ * Checks if a column header is a student metadata or non-score header
+ * (e.g. 학번, 이름, 성명, 학년, 반, 번호, 비고, 서명, 확인 etc.)
+ */
+export function isMetadataOrNonScoreHeader(header: string): boolean {
+  if (!header) return false;
+  
+  // Normalize header text by removing spaces
+  let normalized = String(header).replace(/\s+/g, '').toLowerCase();
+  
+  // Clean out common parentheticals like (100점), (30점) in brackets/parentheses
+  normalized = normalized.replace(/\([^)]*\)/g, '');
+  normalized = normalized.replace(/\[[^\]]*\]/g, '');
+  
+  const exclusions = [
+    '학번', '성명', '이름', '학년', '성별', '연번', '비고', '확인', '날인', '생년월일', '학급', '순번', '서명', '교사', '강사', '비밀번호'
+  ];
+  
+  if (exclusions.some(k => normalized.includes(k))) {
+    return true;
+  }
+  
+  // Checking for "반/번호", "반번호", "반_번호", "반-번호" or components
+  if (normalized.includes('/') && (normalized.includes('반') || normalized.includes('번호'))) {
+    return true;
+  }
+  if (normalized === '반' || normalized === '번호' || normalized === '반번' || normalized === '반/번호') {
+    return true;
+  }
+  
+  return false;
+}
+

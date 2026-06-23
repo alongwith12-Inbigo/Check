@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { AlertCircle, FileText, Loader2, Award, CheckCircle } from 'lucide-react';
-import { parseClassNumber } from '../utils';
+import { parseClassNumber, isMetadataOrNonScoreHeader } from '../utils';
 
 interface StudentPdfViewerProps {
   pdfBase64: string;
@@ -395,8 +395,8 @@ export default function StudentPdfViewer({
       let totalMaxScore = '';
 
       headers.forEach(h => {
+        if (isMetadataOrNonScoreHeader(h)) return;
         const hCleaned = cleanAndFormatHeaderName(h);
-        if (hCleaned === '학번' || hCleaned === '성명' || hCleaned === '반' || hCleaned === '번호' || h === '학번' || h === '성명') return;
 
         const isTotal = hCleaned.startsWith('합계');
         
@@ -754,9 +754,12 @@ export default function StudentPdfViewer({
 
           for (let col = nameColIdx + 1; col < cleanMergedCells.length; col++) {
             const rawHeader = columnHeaders[col] || '';
+            if (isMetadataOrNonScoreHeader(rawHeader)) {
+              continue;
+            }
             const formattedHeader = cleanAndFormatHeaderName(rawHeader);
 
-            if (formattedHeader === '' || ['반', '번호', '성명', '이름', '학년', '성별', '연번', '비고', '확인', '날인'].some(k => formattedHeader.includes(k))) {
+            if (formattedHeader === '') {
               continue;
             }
 

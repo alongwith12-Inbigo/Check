@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, FileSpreadsheet, Check } from 'lucide-react';
 import { EvaluationState, Teacher, RegisteredStudent } from '../types';
-import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey } from '../utils';
+import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, isMetadataOrNonScoreHeader } from '../utils';
 import { cleanAndFormatHeaderName } from '../utils/pdfExtractor';
 
 interface ResultPrintPortalProps {
@@ -149,7 +149,7 @@ export default function ResultPrintPortal({
 
   const pdfScoreHeaders = isPdfMode && pdfEval ? (pdfEval.headers || []).filter(h => {
     const hCleaned = cleanAndFormatHeaderName(h);
-    if (hCleaned === '학번' || hCleaned === '성명' || hCleaned === '반' || hCleaned === '번호' || h === '학번' || h === '성명') return false;
+    if (isMetadataOrNonScoreHeader(h)) return false;
     const isTotal = [
       '합계', '총점', '총합', '원점수', '합계점수', '득점계'
     ].some(k => hCleaned.replace(/\s+/g, '').includes(k)) || 
