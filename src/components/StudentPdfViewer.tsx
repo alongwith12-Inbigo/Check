@@ -166,6 +166,38 @@ function mergeRowCells(items: { text: string; x: number; y: number }[]): MergedC
   return merged;
 }
 
+/**
+ * Utility to parse an NCS header formatted as: "[CapabilityUnit (Percentage)] SubHeader"
+ */
+export function parseNcsHeaderDetails(h: string) {
+  const match = h.match(/^\[([^\]]+)\]\s*([\s\S]+)$/);
+  if (match) {
+    const groupFull = match[1].trim(); // e.g. "문서작성 (50%)" or "최종수행점수"
+    const subHeader = match[2].trim(); // e.g. "업무 기획"
+    
+    // Extract percentage from groupFull, e.g. "50%"
+    const pctMatch = groupFull.match(/(\d+)\s*%/);
+    const percentage = pctMatch ? `${pctMatch[1]}%` : '';
+    
+    // Extract unitName by removing percentage parentheses or text
+    let unitName = groupFull.replace(/\(\d+%\)/gi, '').replace(/\d+%/gi, '').trim();
+    unitName = unitName.replace(/\(\s*\)/g, '').trim();
+
+    return {
+      isNcs: true,
+      unitName,
+      percentage,
+      subHeader
+    };
+  }
+  return {
+    isNcs: false,
+    unitName: '',
+    percentage: '',
+    subHeader: h
+  };
+}
+
 export function formatPdfHeaderName(rawName: string) {
   const formatted = cleanAndFormatHeaderName(rawName);
   let title = formatted;
@@ -390,6 +422,68 @@ export default function StudentPdfViewer({
   // Compute score details synchronously if valid headers and row are supplied as props
   const parsedDataFromProps = useMemo(() => {
     if (headers && headers.length > 0 && row && Object.keys(row).length > 0) {
+      // Check if this is an NCS curriculum
+      const hasNcsHeader = headers.some(h => h.startsWith('[') && h.includes(']'));
+
+      if (hasNcsHeader) {
+        const ncsGroups: {
+          unitName: string;
+          percentage: string;
+          isFinal: boolean;
+          scores: ExtractedScore[];
+        }[] = [];
+        let finalScore = '0';
+
+        headers.forEach(h => {
+          if (isMetadataOrNonScoreHeader(h)) return;
+
+          let scoreVal = String(row[h] !== undefined ? row[h] : '0').trim();
+          if (/^\d+\.00$/.test(scoreVal)) {
+            scoreVal = parseFloat(scoreVal).toString();
+          } else if (/^\d+\.\d+$/.test(scoreVal)) {
+            const parsedFloat = parseFloat(scoreVal);
+            if (!isNaN(parsedFloat)) {
+              scoreVal = parsedFloat.toString();
+            }
+          }
+
+          const details = parseNcsHeaderDetails(h);
+          if (details.isNcs) {
+            const isFinal = details.unitName.includes('최종') || details.unitName.includes('결과');
+            if (isFinal) {
+              finalScore = scoreVal;
+            } else {
+              let group = ncsGroups.find(g => g.unitName === details.unitName);
+              if (!group) {
+                group = {
+                  unitName: details.unitName,
+                  percentage: details.percentage,
+                  isFinal: false,
+                  scores: []
+                };
+                ncsGroups.push(group);
+              }
+              group.scores.push({
+                areaName: details.subHeader,
+                score: scoreVal,
+                maxScore: ''
+              });
+            }
+          }
+        });
+
+        return {
+          isNcs: true,
+          ncsGroups,
+          finalScore,
+          areaScores: [],
+          totalScore: finalScore,
+          totalMaxScore: '100',
+          matchedPage: 1,
+          totalPages: 1
+        };
+      }
+
       const areaScores: ExtractedScore[] = [];
       let totalScore = '';
       let totalMaxScore = '';
@@ -916,54 +1010,133 @@ export default function StudentPdfViewer({
             <span>학번 <strong>{studentId} {studentName}</strong> 학생의 나이스에 입력된 수행평가 점수입니다.</span>
           </div>
 
-          {/* Cards Grid: Each '네모 한칸' is styled as a clean card resembling spreadsheet table cells */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr gap-4">
-            {activeData.areaScores.map((item, idx) => {
-              const { title, maxScoreText } = formatPdfHeaderName(item.areaName);
+          {activeData.isNcs ? (
+            <div className="space-y-6">
+              {/* NCS Groups Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {(activeData.ncsGroups || []).map((group, groupIdx) => (
+                  <div 
+                    key={groupIdx} 
+                    className="bg-slate-50/60 border border-slate-200 p-5 rounded-2xl flex flex-col justify-between shadow-3xs relative overflow-hidden"
+                  >
+                    {/* Top Accent Strip */}
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-rose-600" />
+                    
+                    <div className="space-y-4">
+                      {/* Name of Competency Unit */}
+                      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-150">
+                        <h4 className="text-xs sm:text-sm font-black text-slate-900 leading-snug break-keep flex items-center gap-1.5">
+                          <span className="inline-block w-2 h-2 rounded-full bg-rose-600 shrink-0" />
+                          {group.unitName}
+                        </h4>
+                        {group.percentage && (
+                          <span className="text-[10px] bg-rose-50 text-rose-800 font-extrabold px-2.5 py-0.5 rounded border border-rose-100 uppercase tracking-wider select-none shrink-0">
+                            반영 {group.percentage}
+                          </span>
+                        )}
+                      </div>
 
-              return (
-                <div 
-                  key={idx}
-                  className="bg-white border border-slate-250 p-4.5 rounded-xl flex flex-col justify-between shadow-3xs transition-all hover:border-slate-350"
-                >
-                  <div className="text-center space-y-1 pb-3 border-b border-slate-100">
-                    {/* Column Header Representation */}
-                    <h4 className="text-xs font-bold text-slate-800 leading-snug break-keep">
-                      {title}
-                    </h4>
-                    <span className="text-[11px] text-slate-400 font-semibold block">
-                      ({maxScoreText || `${item.maxScore}점`})
-                    </span>
+                      {/* Sub scores List or Cards */}
+                      <div className="space-y-2">
+                        {group.scores.map((scoreItem, scoreIdx) => {
+                          const isTotalCol = scoreItem.areaName.replace(/\s+/g, '') === '합계';
+                          return (
+                            <div 
+                              key={scoreIdx}
+                              className={`flex items-center justify-between p-3 rounded-xl border transition ${
+                                isTotalCol 
+                                  ? 'bg-rose-50 border-rose-250 font-black text-rose-950 shadow-3xs' 
+                                  : 'bg-white border-slate-150 text-slate-800 hover:border-slate-300'
+                              }`}
+                            >
+                              <span className="text-xs font-semibold leading-relaxed break-keep">
+                                {scoreItem.areaName}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-base font-black font-sans tracking-tight ${
+                                  isTotalCol ? 'text-rose-600 text-lg' : 'text-slate-900'
+                                }`}>
+                                  {scoreItem.score}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-extrabold">점</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
-
-                  {/* Column Score Representation */}
-                  <div className="pt-3 flex flex-col items-center justify-center">
-                    <span className="text-2xl font-black text-slate-900 font-sans tracking-tight">
-                      {item.score}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Combined Total (합계) renders as the prominent last card in the grid with a sleek neutral grey tint */}
-            <div className="bg-slate-50 border border-slate-300 p-4.5 rounded-xl flex flex-col justify-between shadow-3xs transition-all hover:border-slate-400">
-              <div className="text-center space-y-1 pb-3 border-b border-slate-200">
-                <h4 className="text-xs font-black text-slate-900 leading-snug break-keep">
-                  합 계
-                </h4>
-                <span className="text-[11px] text-slate-500 font-extrabold block">
-                  ({activeData.totalMaxScore}점 만점)
-                </span>
+                ))}
               </div>
 
-              <div className="pt-3 flex flex-col items-center justify-center">
-                <span className="text-2xl font-extrabold text-slate-950 font-sans tracking-tight">
-                  {activeData.totalScore}
-                </span>
+              {/* prominent overall 과목 수행 점수 Card */}
+              <div className="bg-gradient-to-r from-amber-50 to-amber-100/50 border border-amber-200.5 p-5 sm:p-6 rounded-2xl shadow-3xs flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="text-center sm:text-left space-y-1">
+                  <h4 className="text-xs sm:text-sm font-black text-amber-950 leading-snug break-keep flex items-center gap-1.5 justify-center sm:justify-start">
+                    <span>🏆</span> 최종 과목 수행 점수 (NCS 종합합산)
+                  </h4>
+                  <p className="text-[11px] text-amber-800 font-medium leading-relaxed leading-normal">
+                    능력단위별 반영비율이 각각 누적 합산된 최종 종합 환산 점수입니다.
+                  </p>
+                </div>
+
+                <div className="flex items-baseline gap-1 bg-white border border-amber-250 py-2.5 px-5 rounded-xl shadow-2xs shrink-0 select-none">
+                  <span className="text-2xl sm:text-3xl font-black text-amber-950 font-sans tracking-tight">
+                    {activeData.finalScore}
+                  </span>
+                  <span className="text-[11px] font-black text-slate-450 ml-0.5">점 만점</span>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr gap-4">
+              {activeData.areaScores.map((item, idx) => {
+                const { title, maxScoreText } = formatPdfHeaderName(item.areaName);
+
+                return (
+                  <div 
+                    key={idx}
+                    className="bg-white border border-slate-255 p-4.5 rounded-xl flex flex-col justify-between shadow-3xs transition-all hover:border-slate-350"
+                  >
+                    <div className="text-center space-y-1 pb-3 border-b border-slate-100">
+                      {/* Column Header Representation */}
+                      <h4 className="text-xs font-bold text-slate-800 leading-snug break-keep">
+                        {title}
+                      </h4>
+                      <span className="text-[11px] text-slate-400 font-semibold block">
+                        ({maxScoreText || `${item.maxScore}점`})
+                      </span>
+                    </div>
+
+                    {/* Column Score Representation */}
+                    <div className="pt-3 flex flex-col items-center justify-center">
+                      <span className="text-2xl font-black text-slate-900 font-sans tracking-tight">
+                        {item.score}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Combined Total (합계) renders as the prominent last card in the grid with a sleek neutral grey tint */}
+              <div className="bg-slate-50 border border-slate-300 p-4.5 rounded-xl flex flex-col justify-between shadow-3xs transition-all hover:border-slate-400">
+                <div className="text-center space-y-1 pb-3 border-b border-slate-200">
+                  <h4 className="text-xs font-black text-slate-900 leading-snug break-keep">
+                    합 계
+                  </h4>
+                  <span className="text-[11px] text-slate-500 font-extrabold block">
+                    ({activeData.totalMaxScore}점 만점)
+                  </span>
+                </div>
+
+                <div className="pt-3 flex flex-col items-center justify-center">
+                  <span className="text-2xl font-extrabold text-slate-950 font-sans tracking-tight">
+                    {activeData.totalScore}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

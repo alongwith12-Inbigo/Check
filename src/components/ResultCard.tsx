@@ -430,7 +430,7 @@ export default function ResultCard({
                 return (
                   <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs font-semibold shadow-xxs">
                     <Info className="mx-auto text-slate-300 mb-1.5" size={24} />
-                    아직 등록된 수행평가 영역별 세부 엑셀 성적이나 피드백 데이터가 없습니다.
+                    수행평가 영역별 세무 점수는 등록되지 않았습니다.
                   </div>
                 );
               }
@@ -711,10 +711,10 @@ export default function ResultCard({
                 <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-4">
                   <div className="text-center sm:text-left space-y-1">
                     <span className="text-[10.5px] font-extrabold text-indigo-850 uppercase tracking-widest block">
-                      👑 실제 최종 성적 반영 총점
+                      👑 최종 반영 총점
                     </span>
                     <p className="text-[11px] text-slate-500 leading-normal font-semibold">
-                      각 영역별 만점과 실제 성적 반영 비율(%)을 가중 계산하여 종합한 최종 수행평가 성적 누적 점수입니다.
+                      각 영역별 만점과 실제 성적 반영 비율(%)을 반영한 최종 수행평가 성적 점수입니다.
                     </p>
                   </div>
                   <div className="text-center sm:text-right shrink-0 flex flex-col items-center sm:items-end gap-1.5">
