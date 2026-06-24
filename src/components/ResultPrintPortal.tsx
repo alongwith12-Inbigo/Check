@@ -64,7 +64,9 @@ export default function ResultPrintPortal({
       });
     });
 
-    const list = Array.from(classMap.values()).sort((a, b) => a.sortKey - b.sortKey);
+    const list = Array.from(classMap.values())
+      .filter(item => !item.gradeClass.includes('그룹') && item.gradeClass !== '기타')
+      .sort((a, b) => a.sortKey - b.sortKey);
     setUniqueClasses(list);
     if (list.length > 0) {
       if (!list.some(item => item.gradeClass === selectedClass)) {
