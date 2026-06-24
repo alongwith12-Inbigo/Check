@@ -30,7 +30,7 @@ export default function ResultPrintPortal({
   // Filter evaluations list for selected subject
   const evalsForSubject = myEvaluations.filter(e => e.subject === selectedSubject);
 
-  const extractGradeClass = (studentIdStr: string): { gradeClass: string; sortKey: number } => {
+  const extractGradeClass = (studentIdStr: string, targetGradeClass?: string): { gradeClass: string; sortKey: number } => {
     const digits = studentIdStr.replace(/\D/g, '');
     if (digits.length === 5) {
       const grade = parseInt(digits.substring(0, 1), 10);
@@ -39,6 +39,11 @@ export default function ResultPrintPortal({
     } else if (digits.length === 4) {
       const grade = parseInt(digits.substring(0, 1), 10);
       const cls = parseInt(digits.substring(1, 2), 10);
+      return { gradeClass: `${grade}학년 ${cls}반`, sortKey: grade * 100 + cls };
+    } else if (targetGradeClass && targetGradeClass.replace(/\D/g, '').length >= 3) {
+      const tgtDigits = targetGradeClass.replace(/\D/g, '');
+      const grade = parseInt(tgtDigits.substring(0, 1), 10);
+      const cls = parseInt(tgtDigits.substring(1), 10);
       return { gradeClass: `${grade}학년 ${cls}반`, sortKey: grade * 100 + cls };
     } else {
       const part = studentIdStr.trim().substring(0, Math.min(3, studentIdStr.length));
@@ -58,7 +63,7 @@ export default function ResultPrintPortal({
       ev.rows.forEach(r => {
         const val = String(r[sIdKey] || '').trim();
         if (val) {
-          const info = extractGradeClass(val);
+          const info = extractGradeClass(val, ev.targetGradeClass);
           classMap.set(info.gradeClass, info);
         }
       });
@@ -89,9 +94,14 @@ export default function ResultPrintPortal({
     const sIdKey = findStudentIdKey(ev.headers);
     if (!sIdKey) return null;
     const r = ev.rows.find(row => {
-      const val = String(row[sIdKey] || '').trim().replace(/\D/g, '');
-      const studentDigits = rId.replace(/\D/g, '');
-      return val === studentDigits && val !== '';
+      const val = String(row[sIdKey] || '').trim();
+      let fullStudentId = val;
+      if (val.replace(/\D/g, '').length <= 2 && ev.targetGradeClass && ev.targetGradeClass.replace(/\D/g, '').length >= 3) {
+        const tgtDigits = ev.targetGradeClass.replace(/\D/g, '');
+        const numPart = val.replace(/\D/g, '').padStart(2, '0');
+        fullStudentId = tgtDigits + numPart;
+      }
+      return matchesStudentId(rId, fullStudentId) || matchesStudentId(rId, val);
     });
     if (!r) return null;
 
@@ -123,14 +133,21 @@ export default function ResultPrintPortal({
       if (!sIdKey) return;
       ev.rows.forEach(r => {
         const idVal = String(r[sIdKey] || '').trim();
-        if (idVal && extractGradeClass(idVal).gradeClass === selectedClass) {
-          const masterStudent = (allStudents || []).find(s => matchesStudentId(idVal, s.studentId));
+        if (idVal && extractGradeClass(idVal, ev.targetGradeClass).gradeClass === selectedClass) {
+          let fullStudentId = idVal;
+          if (idVal.replace(/\D/g, '').length <= 2 && ev.targetGradeClass && ev.targetGradeClass.replace(/\D/g, '').length >= 3) {
+            const tgtDigits = ev.targetGradeClass.replace(/\D/g, '');
+            const numPart = idVal.replace(/\D/g, '').padStart(2, '0');
+            fullStudentId = tgtDigits + numPart;
+          }
+
+          const masterStudent = (allStudents || []).find(s => matchesStudentId(fullStudentId, s.studentId));
           const nameVal = masterStudent 
             ? masterStudent.name 
             : (sNameKey ? String(r[sNameKey] || '').trim() : '');
 
-          studentMap.set(idVal, {
-            studentId: idVal,
+          studentMap.set(fullStudentId, {
+            studentId: fullStudentId,
             studentName: nameVal || `학생 (${idVal})`
           });
         }
@@ -435,7 +452,16 @@ export default function ResultPrintPortal({
                     {students.map((student, sIdx) => {
                       const studentIdKey = pdfEval ? findStudentIdKey(pdfEval.headers || []) : undefined;
                       const pdfRow = pdfEval && studentIdKey 
-                        ? pdfEval.rows.find(row => matchesStudentId(student.studentId, row[studentIdKey]))
+                        ? pdfEval.rows.find(row => {
+                            const val = String(row[studentIdKey] || '').trim();
+                            let fullStudentId = val;
+                            if (val.replace(/\D/g, '').length <= 2 && pdfEval.targetGradeClass && pdfEval.targetGradeClass.replace(/\D/g, '').length >= 3) {
+                              const tgtDigits = pdfEval.targetGradeClass.replace(/\D/g, '');
+                              const numPart = val.replace(/\D/g, '').padStart(2, '0');
+                              fullStudentId = tgtDigits + numPart;
+                            }
+                            return matchesStudentId(student.studentId, fullStudentId) || matchesStudentId(student.studentId, val);
+                          })
                         : null;
 
                       // Calculate overall integrated reflected total score (Mode A / Mode B)
