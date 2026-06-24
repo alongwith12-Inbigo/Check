@@ -199,6 +199,18 @@ export function parseNcsHeaderDetails(h: string) {
   };
 }
 
+export function cleanAndFormatNcsUnitName(unitName: string, index: number): string {
+  let cleaned = unitName;
+  cleaned = cleaned.replace(/^능력단위\s*\d*\s*:\s*/g, '');
+  cleaned = cleaned.replace(/\([^)]*\)/g, '');
+  cleaned = cleaned.replace(/\)/g, '');
+  cleaned = cleaned.replace(/\(/g, '');
+  cleaned = cleaned.replace(/['"“‘”’]/gi, '');
+  cleaned = cleaned.replace(/[:：]/g, '');
+  cleaned = cleaned.trim();
+  return `능력단위${index}: ${cleaned}`;
+}
+
 export function formatPdfHeaderName(rawName: string) {
   const formatted = cleanAndFormatHeaderName(rawName);
   let title = formatted;
@@ -474,12 +486,38 @@ export default function StudentPdfViewer({
           }
         });
 
+        // Compute calculated weighted sum score
+        let calculatedFinalScore = 0;
+        let hasValidUnitScore = false;
+        ncsGroups.forEach(group => {
+          let unitRawScore = 0;
+          const hapgeItem = group.scores.find(s => s.areaName.trim() === '합계');
+          if (hapgeItem) {
+            unitRawScore = parseFloat(hapgeItem.score) || 0;
+            hasValidUnitScore = true;
+          } else {
+            const nonHapgeScores = group.scores.filter(s => s.areaName.trim() !== '합계');
+            unitRawScore = nonHapgeScores.reduce((sum, s) => sum + (parseFloat(s.score) || 0), 0);
+            if (nonHapgeScores.length > 0) {
+              hasValidUnitScore = true;
+            }
+          }
+          const pctVal = parseFloat(group.percentage.replace(/%/g, '')) || 0;
+          calculatedFinalScore += unitRawScore * (pctVal / 100);
+        });
+
+        const formattedFinalScore = Number.isInteger(calculatedFinalScore) 
+          ? calculatedFinalScore.toString() 
+          : parseFloat(calculatedFinalScore.toFixed(2)).toString();
+
+        const resolvedFinalScore = hasValidUnitScore ? formattedFinalScore : finalScore;
+
         return {
           isNcs: true,
           ncsGroups,
-          finalScore,
+          finalScore: resolvedFinalScore,
           areaScores: [],
-          totalScore: finalScore,
+          totalScore: resolvedFinalScore,
           totalMaxScore: '100',
           matchedPage: 1,
           totalPages: 1
@@ -1029,7 +1067,7 @@ export default function StudentPdfViewer({
                       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-150">
                         <h4 className="text-xs sm:text-sm font-black text-slate-900 leading-snug break-keep flex items-center gap-1.5">
                           <span className="inline-block w-2 h-2 rounded-full bg-rose-600 shrink-0" />
-                          {group.unitName}
+                          {cleanAndFormatNcsUnitName(group.unitName, groupIdx + 1)}
                         </h4>
                         {group.percentage && (
                           <span className="text-[10px] bg-rose-50 text-rose-800 font-extrabold px-2.5 py-0.5 rounded border border-rose-100 uppercase tracking-wider select-none shrink-0">
@@ -1075,18 +1113,21 @@ export default function StudentPdfViewer({
               <div className="bg-gradient-to-r from-amber-50 to-amber-100/50 border border-amber-200.5 p-5 sm:p-6 rounded-2xl shadow-3xs flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-center sm:text-left space-y-1">
                   <h4 className="text-sm sm:text-base font-black text-amber-950 leading-snug break-keep flex flex-wrap items-center gap-1.5 justify-center sm:justify-start">
-                    <span>🏆</span> 최종 <span className="text-base sm:text-lg text-indigo-950 font-black px-2 py-0.5 bg-white border border-amber-250 rounded-lg shadow-3xs">{subject || '과목'}</span> 수행 점수 (NCS 교과)
+                    <span>🏆</span> NCS <span className="text-amber-950 font-black text-base sm:text-lg mx-1">{subject || '과목'}</span> 최종 합산 점수
                   </h4>
                   <p className="text-[11px] text-amber-800 font-medium leading-relaxed leading-normal mt-1">
                     능력단위별 반영비율이 각각 누적 합산된 최종 종합 환산 점수입니다.
                   </p>
                 </div>
 
-                <div className="flex items-baseline gap-1 bg-white border border-amber-250 py-2.5 px-5 rounded-xl shadow-2xs shrink-0 select-none">
-                  <span className="text-2xl sm:text-3xl font-black text-amber-950 font-sans tracking-tight">
+                <div className="text-center sm:text-right shrink-0 select-none">
+                  <span className="text-3xl sm:text-4xl font-extrabold text-amber-950 font-sans tracking-tight">
                     {activeData.finalScore}
                   </span>
-                  <span className="text-[11px] font-black text-slate-450 ml-0.5">점 만점</span>
+                  <span className="text-sm sm:text-base font-bold text-amber-950 mr-1.5">점</span>
+                  <span className="text-[10px] sm:text-xs text-amber-800 font-medium font-sans">
+                    / 100점 만점
+                  </span>
                 </div>
               </div>
             </div>
