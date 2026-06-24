@@ -765,7 +765,8 @@ export default function AdminDashboard({
 
           const ncsRowCells = allRawRows[unitRowIndex] || [];
           const subHeadersRow = allRawRows[subHeaderRowIndex] || [];
-          const colCount = Math.max(ncsRowCells.length, subHeadersRow.length);
+          const sheetRange = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1');
+          const colCount = sheetRange.e.c + 1;
 
           const units: { unitName: string; percentage: string; startCol: number; endCol: number }[] = [];
           let currentUnit: any = null;
@@ -782,10 +783,9 @@ export default function AdminDashboard({
               const percentage = percentMatch ? `${parseFloat(percentMatch[1])}%` : '';
               
               let unitName = cellText;
+              unitName = unitName.replace(/\([^)]*\)/g, '');
               unitName = unitName.replace(/능력단위\s*\d*\s*/gi, '');
               unitName = unitName.replace(/['"“‘”’]/gi, '');
-              unitName = unitName.replace(/\([^)]*%/gi, '');
-              unitName = unitName.replace(/\([^)]*\d+[^)]*\)/gi, '');
               unitName = unitName.replace(/[:：]/g, '');
               unitName = unitName.trim();
 
@@ -793,8 +793,9 @@ export default function AdminDashboard({
                 currentUnit.endCol = c - 1;
                 units.push(currentUnit);
               }
+              const unitIndex = units.length + 1;
               currentUnit = {
-                unitName: unitName || `능력단위 ${units.length + 1}`,
+                unitName: `능력단위${unitIndex}: ${unitName}` || `능력단위${unitIndex}`,
                 percentage: percentage || '50%',
                 startCol: c,
                 endCol: c,
@@ -1001,7 +1002,8 @@ export default function AdminDashboard({
 
           const ncsRowCells = allRawRows[unitRowIndex] || [];
           const subHeadersRow = allRawRows[subHeaderRowIndex] || [];
-          const colCount = Math.max(ncsRowCells.length, subHeadersRow.length);
+          const sheetRange = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1');
+          const colCount = sheetRange.e.c + 1;
 
           const units: { unitName: string; percentage: string; startCol: number; endCol: number }[] = [];
           let currentUnit: any = null;
@@ -1018,10 +1020,9 @@ export default function AdminDashboard({
               const percentage = percentMatch ? `${parseFloat(percentMatch[1])}%` : '';
               
               let unitName = cellText;
+              unitName = unitName.replace(/\([^)]*\)/g, '');
               unitName = unitName.replace(/능력단위\s*\d*\s*/gi, '');
               unitName = unitName.replace(/['"“‘”’]/gi, '');
-              unitName = unitName.replace(/\([^)]*%/gi, '');
-              unitName = unitName.replace(/\([^)]*\d+[^)]*\)/gi, '');
               unitName = unitName.replace(/[:：]/g, '');
               unitName = unitName.trim();
 
@@ -1029,8 +1030,9 @@ export default function AdminDashboard({
                 currentUnit.endCol = c - 1;
                 units.push(currentUnit);
               }
+              const unitIndex = units.length + 1;
               currentUnit = {
-                unitName: unitName || `능력단위 ${units.length + 1}`,
+                unitName: `능력단위${unitIndex}: ${unitName}` || `능력단위${unitIndex}`,
                 percentage: percentage || '50%',
                 startCol: c,
                 endCol: c,
@@ -1125,7 +1127,7 @@ export default function AdminDashboard({
 
         const defaultRound = testExcelRound.trim() || '1';
         const defaultDetail = testExcelDetailName.trim() || '수행평가 결과내용 [테스트]';
-        const initialTitle = `📂 [테스트 엑셀서명] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
+        const initialTitle = `📂 [NEIS] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
 
         const newEvalMetadata: EvaluationState = {
           title: initialTitle,
@@ -1512,16 +1514,16 @@ export default function AdminDashboard({
             <div className="space-y-1.5 my-1 bg-slate-50 border border-slate-150 rounded-xl p-3">
               <div className="flex items-start gap-1.5 text-[10px] text-slate-700 leading-relaxed">
                 <span className="text-indigo-600 font-bold shrink-0">1단계</span>
-                <span><strong>수행 영역별 등록:</strong> 영역별 세부 점수 및 구체적 피드백을 전달하기 위한 과정입니다. 상단의 <strong>EXCEL 샘플 파일</strong>을 사용하세요.</span>
+                <span><strong>수행평가 영역별 EXCEL 파일 등록:</strong> 영역별 세부 점수 및 구체적 피드백을 전달하기 위한 과정입니다. 상단의 <strong>EXCEL 샘플 파일</strong>을 사용하세요.</span>
               </div>
               <div className="border-t border-slate-200/60 my-1"></div>
               <div className="flex items-start gap-1.5 text-[10px] text-slate-700 leading-relaxed">
                 <span className="text-emerald-600 font-bold shrink-0">2단계</span>
-                <span><strong>나이스 종합 엑셀 등록:</strong> 최종 종합 점수를 대입하여 학생들에게 확인을 요청하고, <strong>서명 패드</strong>를 활성화하기 위한 과정입니다.</span>
+                <span><strong>나이스 확인용 EXCEL 파일 등록:</strong> 나이스에서 다운받은 내용으로 학생들에게 확인을 요청하고, <strong>서명 패드</strong>를 활성화하기 위한 과정입니다.</span>
               </div>
             </div>
             <p className="text-[10px] text-slate-450 leading-relaxed">
-              💡 별도의 복잡한 PDF OCR 가공 없이, 나이스에서 내려받은 종합 엑셀 일람표 그대로 2단계에 업로드해 주기만 하면 학생들에게 직접 매칭되는 최종 확인용 서명카드가 즉시 동작합니다.
+              💡 나이스에서 내려받은 Excel Data 파일을 그대로 2단계에 업로드하면 학생이 서명할 수 있는 서명 패드가 활성화됩니다.
             </p>
           </div>
         </div>
@@ -1539,12 +1541,12 @@ export default function AdminDashboard({
                 <div className="space-y-4">
                   <div className="border-b border-indigo-100 pb-3 flex items-center justify-between">
                     <span className="bg-indigo-50 text-indigo-800 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">수행 영역별 등록 단계</span>
-                    <span className="text-[10px] text-slate-450 font-bold">1단계 (EXCEL 자료)</span>
+                    <span className="text-[10px] text-slate-450 font-bold">1단계 (영역별 EXCEL 파일)</span>
                   </div>
                   
                   <div>
                     <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                      📊 영역별 수행평가 엑셀 등록
+                      📊 수행평가 영역별 EXCEL 파일 등록
                     </h3>
                     <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
                       수행영역별 학생 점수 및 서술형 피드백을 한번에 입력하는 엑셀 파일을 업로드합니다.
@@ -1699,15 +1701,15 @@ export default function AdminDashboard({
                 <div className="space-y-4">
                   <div className="border-b border-emerald-100 pb-3 flex items-center justify-between">
                     <span className="bg-emerald-100 text-emerald-850 text-[10px] uppercase font-black px-2.5 py-1 rounded-md">최종 확인 및 서명 제출 단계</span>
-                    <span className="text-[10px] text-emerald-600 font-bold">2단계 (나이스 종합 EXCEL)</span>
+                    <span className="text-[10px] text-emerald-600 font-bold">2단계 (나이스 EXCEL 파일)</span>
                   </div>
                   
                   <div>
                     <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                      📊 나이스 최종 종합 EXCEL 등록
+                      📊 나이스 확인용 EXCEL 등록
                     </h3>
                     <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
-                      나이스에서 다운로드한 종합 성적 일람표 엑셀 파일을 업로드합니다. (업로드 시 자동으로 지정된 학년반 학생의 서명 제출 활성화)
+                      나이스에서 다운로드한 수행평가 일람표 엑셀 파일을 업로드합니다.
                     </p>
                   </div>
 
@@ -1738,7 +1740,7 @@ export default function AdminDashboard({
                   </div>
 
                   <div className="bg-emerald-50/70 border border-emerald-250/30 p-2.5 rounded-lg text-[10px] text-slate-600 leading-normal">
-                    <span>💡 <strong>필독:</strong> <strong>대상 학년반</strong>(예: 107)을 정확하게 입력해 주세요. 이 반 학생들의 화면에 개인 성적과 함께 최종 서명 패드가 자동 활성화됩니다.</span>
+                    <span>💡 <strong>필독:</strong> <strong>대상 학년반</strong>(예: 107)을 정확하게 입력해 주세요. 성적과 함께 최종 서명 패드가 자동 활성화됩니다.</span>
                   </div>
 
                   {/* Excel File Drop Area */}
@@ -1765,7 +1767,7 @@ export default function AdminDashboard({
                     <div className="p-2 bg-emerald-100 rounded-full mb-2 text-emerald-900">
                       <Upload size={16} className="stroke-[2.5]" />
                     </div>
-                    <p className="text-xs font-black text-emerald-950">여기에 대조용 EXCEL 파일을 끌어다놓거나 클릭하세요</p>
+                    <p className="text-xs font-black text-emerald-950">여기에 NEIS에서 저장한 EXCE 파일을 끌어다놓거나 클릭하세요</p>
                     <p className="text-[10px] text-slate-450 mt-1">.xlsx, .xls 확장자만 업로드 가능합니다.</p>
                   </div>
                 </div>

@@ -776,6 +776,7 @@ export default function ResultCard({
                     studentName={studentName}
                     headers={item.headers}
                     row={item.row}
+                    subject={item.subject}
                   />
                 );
               });

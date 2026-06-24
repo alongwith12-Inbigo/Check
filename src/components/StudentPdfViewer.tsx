@@ -9,6 +9,7 @@ interface StudentPdfViewerProps {
   headers?: string[];
   row?: any;
   key?: string;
+  subject?: string;
 }
 
 export interface ExtractedScore {
@@ -417,7 +418,8 @@ export default function StudentPdfViewer({
   studentId, 
   studentName,
   headers,
-  row
+  row,
+  subject
 }: StudentPdfViewerProps) {
   // Compute score details synchronously if valid headers and row are supplied as props
   const parsedDataFromProps = useMemo(() => {
@@ -1072,10 +1074,10 @@ export default function StudentPdfViewer({
               {/* prominent overall 과목 수행 점수 Card */}
               <div className="bg-gradient-to-r from-amber-50 to-amber-100/50 border border-amber-200.5 p-5 sm:p-6 rounded-2xl shadow-3xs flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-center sm:text-left space-y-1">
-                  <h4 className="text-xs sm:text-sm font-black text-amber-950 leading-snug break-keep flex items-center gap-1.5 justify-center sm:justify-start">
-                    <span>🏆</span> 최종 과목 수행 점수 (NCS 종합합산)
+                  <h4 className="text-sm sm:text-base font-black text-amber-950 leading-snug break-keep flex flex-wrap items-center gap-1.5 justify-center sm:justify-start">
+                    <span>🏆</span> 최종 <span className="text-base sm:text-lg text-indigo-950 font-black px-2 py-0.5 bg-white border border-amber-250 rounded-lg shadow-3xs">{subject || '과목'}</span> 수행 점수 (NCS 교과)
                   </h4>
-                  <p className="text-[11px] text-amber-800 font-medium leading-relaxed leading-normal">
+                  <p className="text-[11px] text-amber-800 font-medium leading-relaxed leading-normal mt-1">
                     능력단위별 반영비율이 각각 누적 합산된 최종 종합 환산 점수입니다.
                   </p>
                 </div>
