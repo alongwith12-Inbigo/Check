@@ -4,6 +4,7 @@ import { Printer, X, FileSpreadsheet, Check } from 'lucide-react';
 import { EvaluationState, Teacher, RegisteredStudent } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, isMetadataOrNonScoreHeader } from '../utils';
 import { cleanAndFormatHeaderName } from '../utils/pdfExtractor';
+import { parseNcsHeaderDetails, cleanAndFormatNcsUnitName } from './StudentPdfViewer';
 
 interface ResultPrintPortalProps {
   myEvaluations: EvaluationState[];
@@ -144,6 +145,81 @@ export default function ResultPrintPortal({
     window.print();
   };
 
+  const calculateStudentNcsFinalScore = (headers: string[], row: any, fallbackScore: string): string => {
+    if (!headers || !row) return fallbackScore;
+    const hasNcsHeader = headers.some(h => h.startsWith('[') && h.includes(']'));
+    if (!hasNcsHeader) return fallbackScore;
+
+    const ncsGroups: {
+      unitName: string;
+      percentage: string;
+      scores: { areaName: string; score: string }[];
+    }[] = [];
+
+    headers.forEach(h => {
+      if (isMetadataOrNonScoreHeader(h)) return;
+
+      let scoreVal = String(row[h] !== undefined ? row[h] : '0').trim();
+      if (/^\d+\.00$/.test(scoreVal)) {
+        scoreVal = parseFloat(scoreVal).toString();
+      } else if (/^\d+\.\d+$/.test(scoreVal)) {
+        const parsedFloat = parseFloat(scoreVal);
+        if (!isNaN(parsedFloat)) {
+          scoreVal = parsedFloat.toString();
+        }
+      }
+
+      const details = parseNcsHeaderDetails(h);
+      if (details.isNcs) {
+        const isFinal = details.unitName.includes('최종') || details.unitName.includes('결과');
+        if (!isFinal) {
+          let group = ncsGroups.find(g => g.unitName === details.unitName);
+          if (!group) {
+            group = {
+              unitName: details.unitName,
+              percentage: details.percentage,
+              scores: []
+            };
+            ncsGroups.push(group);
+          }
+          group.scores.push({
+            areaName: details.subHeader,
+            score: scoreVal
+          });
+        }
+      }
+    });
+
+    if (ncsGroups.length === 0) return fallbackScore;
+
+    let calculatedFinalScore = 0;
+    let hasValidUnitScore = false;
+    ncsGroups.forEach(group => {
+      let unitRawScore = 0;
+      const hapgeItem = group.scores.find(s => s.areaName.trim() === '합계');
+      if (hapgeItem) {
+        unitRawScore = parseFloat(hapgeItem.score) || 0;
+        hasValidUnitScore = true;
+      } else {
+        const nonHapgeScores = group.scores.filter(s => s.areaName.trim() !== '합계');
+        unitRawScore = nonHapgeScores.reduce((sum, s) => sum + (parseFloat(s.score) || 0), 0);
+        if (nonHapgeScores.length > 0) {
+          hasValidUnitScore = true;
+        }
+      }
+      const pctVal = parseFloat(group.percentage.replace(/%/g, '')) || 0;
+      calculatedFinalScore += unitRawScore * (pctVal / 100);
+    });
+
+    if (!hasValidUnitScore) return fallbackScore;
+
+    const formattedFinalScore = Number.isInteger(calculatedFinalScore) 
+      ? calculatedFinalScore.toString() 
+      : parseFloat(calculatedFinalScore.toFixed(2)).toString();
+
+    return formattedFinalScore;
+  };
+
   const pdfEval = evalsForSubject.find(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
   const isPdfMode = !!pdfEval;
 
@@ -219,9 +295,9 @@ export default function ResultPrintPortal({
 
           <button
             onClick={handlePrint}
-            disabled={students.length === 0}
+            disabled={students.length === 0 || !isPdfMode}
             className={`flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-xs font-extrabold text-white transition cursor-pointer shadow-sm ${
-              students.length > 0 
+              students.length > 0 && isPdfMode
                 ? 'bg-amber-500 hover:bg-amber-600 active:scale-98' 
                 : 'bg-slate-300 cursor-not-allowed opacity-50'
             }`}
@@ -235,6 +311,28 @@ export default function ResultPrintPortal({
           {students.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 text-xs italic">
               선택한 과목 및 학급에 대한 등록 성적 학적이 매칭되지 않습니다.
+            </div>
+          ) : !isPdfMode ? (
+            <div className="bg-white max-w-2xl mx-auto rounded-2xl border border-rose-200 p-8 sm:p-10 shadow-sm text-center space-y-6">
+              <div className="mx-auto w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center text-rose-600">
+                <FileSpreadsheet size={32} className="stroke-[2.25]" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-base sm:text-lg font-black text-slate-900 font-sans tracking-tight">
+                  2단계 나이스 엑셀 파일 미등록 안내 ⚠️
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed break-keep">
+                  선택한 과목 <span className="text-rose-600 font-extrabold">[{selectedSubject}]</span>은 2단계 [나이스 확인용 EXCEL 파일] (또는 PDF)이 업로드되지 않았습니다.
+                </p>
+                <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto break-keep">
+                  최종 서명 일람표는 서명패드가 활성화되는 2단계 나이스 종합 파일을 기준으로 출력할 수 있습니다. 관리자 화면에서 해당 과목의 2단계 나이스 종합 엑셀 또는 PDF 자료를 업로드해주시기 바랍니다.
+                </p>
+              </div>
+              <div className="bg-rose-50/50 border border-rose-100 rounded-xl p-3.5 max-w-md mx-auto">
+                <span className="text-[11px] text-rose-800 font-bold block">
+                  💡 1단계 영역별 점수 입력 단계에서는 인쇄 기능이 제한됩니다.
+                </span>
+              </div>
             </div>
           ) : (
             /* Printable Form Page Container: Forces clean 1-sheet layout styles on prints */
@@ -284,9 +382,10 @@ export default function ResultPrintPortal({
                           );
                         })
                       ) : (
-                        // Mode B: PDF areas
+                        // Mode B: PDF areas (2단계 나이스 엑셀/PDF)
                         pdfScoreHeaders.map((h, idx) => {
-                          const hCleaned = cleanAndFormatHeaderName(h);
+                          const details = parseNcsHeaderDetails(h);
+                          const hCleaned = cleanAndFormatHeaderName(details.subHeader);
                           
                           // Format cleanly as Title and max score
                           let title = hCleaned;
@@ -297,14 +396,26 @@ export default function ResultPrintPortal({
                             maxScoreText = match[2].trim();
                           }
 
+                          let unitLabel = '';
+                          if (details.isNcs) {
+                            const unitIndexMatch = details.unitName.match(/능력단위\s*(\d+)/i);
+                            const uIndex = unitIndexMatch ? parseInt(unitIndexMatch[1], 10) : (idx + 1);
+                            unitLabel = cleanAndFormatNcsUnitName(details.unitName, uIndex);
+                          }
+
                           return (
-                            <th key={idx} className="border border-slate-800 px-2 py-2.5 text-center min-w-[90px] max-w-[120px]">
-                              <div className="flex flex-col items-center justify-center gap-1.5 leading-tight">
-                                <span className="block text-[11px] font-black text-slate-800 break-words whitespace-normal text-center">
+                            <th key={idx} className="border border-slate-800 px-2 py-2 text-center min-w-[90px] max-w-[120px]">
+                              <div className="flex flex-col items-center justify-center gap-0.5 leading-tight">
+                                {unitLabel && (
+                                  <span className="block text-[8.5px] font-black text-rose-650 tracking-tight mb-0.5 whitespace-nowrap bg-rose-50 border border-rose-100 px-1 py-0.2 rounded">
+                                    {unitLabel}
+                                  </span>
+                                )}
+                                <span className="block text-[10.5px] font-extrabold text-slate-850 break-words whitespace-normal text-center">
                                   {title}
                                 </span>
                                 {maxScoreText && (
-                                  <span className="block text-[9.5px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
+                                  <span className="block text-[9px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.2 mt-0.5">
                                     {maxScoreText}
                                   </span>
                                 )}
@@ -351,7 +462,13 @@ export default function ResultPrintPortal({
                         // PDF Mode
                         const rawTotalVal = pdfRow && pdfTotalHeader ? String(pdfRow[pdfTotalHeader] || '0').trim() : '0';
                         const totalNum = parseFloat(rawTotalVal);
-                        displayedReflectedObtained = isNaN(totalNum) ? rawTotalVal : totalNum.toString();
+                        const fallbackVal = isNaN(totalNum) ? rawTotalVal : totalNum.toString();
+
+                        displayedReflectedObtained = calculateStudentNcsFinalScore(
+                          pdfEval?.headers || [],
+                          pdfRow,
+                          fallbackVal
+                        );
 
                         // Parse max score of total header
                         let totalMaxVal = 100;
