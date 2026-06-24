@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, FileSpreadsheet, Check } from 'lucide-react';
 import { EvaluationState, Teacher, RegisteredStudent } from '../types';
-import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, isMetadataOrNonScoreHeader } from '../utils';
+import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, isMetadataOrNonScoreHeader, parseClassNumber } from '../utils';
 import { cleanAndFormatHeaderName } from '../utils/pdfExtractor';
 import { parseNcsHeaderDetails, cleanAndFormatNcsUnitName } from './StudentPdfViewer';
 
@@ -30,8 +30,45 @@ export default function ResultPrintPortal({
   // Filter evaluations list for selected subject
   const evalsForSubject = myEvaluations.filter(e => e.subject === selectedSubject);
 
+  const normalizeStudentId = (val: string, targetGradeClass?: string): string => {
+    const cleaned = val.trim();
+    if (!cleaned) return '';
+
+    // 1. If it's already a 5-digit number, return it.
+    const onlyDigits = cleaned.replace(/\D/g, '');
+    if (onlyDigits.length === 5) {
+      return onlyDigits;
+    }
+
+    // 2. If it is in a "Class/Number" format like "7/10" or "7-10", parse it
+    const classNumInfo = parseClassNumber(cleaned);
+    if (classNumInfo && targetGradeClass) {
+      const tgtDigits = targetGradeClass.replace(/\D/g, '');
+      if (tgtDigits.length >= 3) {
+        const grade = tgtDigits.substring(0, 1);
+        const cls = classNumInfo.classVal.padStart(2, '0');
+        const num = classNumInfo.numberVal.padStart(2, '0');
+        return `${grade}${cls}${num}`;
+      }
+    }
+
+    // 3. If it's just a number (e.g., "1" or "10") representing the student number,
+    // and we have a targetGradeClass (e.g., "107" or "107반")
+    if (onlyDigits.length <= 2 && targetGradeClass) {
+      const tgtDigits = targetGradeClass.replace(/\D/g, '');
+      if (tgtDigits.length >= 3) {
+        const gradeClassPart = tgtDigits.substring(0, 3); // e.g. "107"
+        const numPart = onlyDigits.padStart(2, '0');
+        return `${gradeClassPart}${numPart}`;
+      }
+    }
+
+    return onlyDigits || cleaned;
+  };
+
   const extractGradeClass = (studentIdStr: string, targetGradeClass?: string): { gradeClass: string; sortKey: number } => {
-    const digits = studentIdStr.replace(/\D/g, '');
+    const normalized = normalizeStudentId(studentIdStr, targetGradeClass);
+    const digits = normalized.replace(/\D/g, '');
     if (digits.length === 5) {
       const grade = parseInt(digits.substring(0, 1), 10);
       const cls = parseInt(digits.substring(1, 3), 10);
@@ -95,12 +132,7 @@ export default function ResultPrintPortal({
     if (!sIdKey) return null;
     const r = ev.rows.find(row => {
       const val = String(row[sIdKey] || '').trim();
-      let fullStudentId = val;
-      if (val.replace(/\D/g, '').length <= 2 && ev.targetGradeClass && ev.targetGradeClass.replace(/\D/g, '').length >= 3) {
-        const tgtDigits = ev.targetGradeClass.replace(/\D/g, '');
-        const numPart = val.replace(/\D/g, '').padStart(2, '0');
-        fullStudentId = tgtDigits + numPart;
-      }
+      const fullStudentId = normalizeStudentId(val, ev.targetGradeClass);
       return matchesStudentId(rId, fullStudentId) || matchesStudentId(rId, val);
     });
     if (!r) return null;
@@ -134,12 +166,7 @@ export default function ResultPrintPortal({
       ev.rows.forEach(r => {
         const idVal = String(r[sIdKey] || '').trim();
         if (idVal && extractGradeClass(idVal, ev.targetGradeClass).gradeClass === selectedClass) {
-          let fullStudentId = idVal;
-          if (idVal.replace(/\D/g, '').length <= 2 && ev.targetGradeClass && ev.targetGradeClass.replace(/\D/g, '').length >= 3) {
-            const tgtDigits = ev.targetGradeClass.replace(/\D/g, '');
-            const numPart = idVal.replace(/\D/g, '').padStart(2, '0');
-            fullStudentId = tgtDigits + numPart;
-          }
+          const fullStudentId = normalizeStudentId(idVal, ev.targetGradeClass);
 
           const masterStudent = (allStudents || []).find(s => matchesStudentId(fullStudentId, s.studentId));
           const nameVal = masterStudent 
@@ -239,10 +266,10 @@ export default function ResultPrintPortal({
     return formattedFinalScore;
   };
 
-  const pdfEval = evalsForSubject.find(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
-  const isPdfMode = !!pdfEval;
+  const niceEval = evalsForSubject.find(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
+  const isNiceMode = !!niceEval;
 
-  const pdfScoreHeaders = isPdfMode && pdfEval ? (pdfEval.headers || []).filter(h => {
+  const niceScoreHeaders = isNiceMode && niceEval ? (niceEval.headers || []).filter(h => {
     const hCleaned = cleanAndFormatHeaderName(h);
     if (isMetadataOrNonScoreHeader(h)) return false;
     const isTotal = [
@@ -252,7 +279,7 @@ export default function ResultPrintPortal({
     return !isTotal;
   }) : [];
 
-  const pdfTotalHeader = isPdfMode && pdfEval ? (pdfEval.headers || []).find(h => {
+  const niceTotalHeader = isNiceMode && niceEval ? (niceEval.headers || []).find(h => {
     const hCleaned = cleanAndFormatHeaderName(h);
     const isTotal = [
       '합계', '총점', '총합', '원점수', '합계점수', '득점계'
@@ -314,9 +341,9 @@ export default function ResultPrintPortal({
 
           <button
             onClick={handlePrint}
-            disabled={students.length === 0 || !isPdfMode}
+            disabled={students.length === 0 || !isNiceMode}
             className={`flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-xs font-extrabold text-white transition cursor-pointer shadow-sm ${
-              students.length > 0 && isPdfMode
+              students.length > 0 && isNiceMode
                 ? 'bg-amber-500 hover:bg-amber-600 active:scale-98' 
                 : 'bg-slate-300 cursor-not-allowed opacity-50'
             }`}
@@ -331,7 +358,7 @@ export default function ResultPrintPortal({
             <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 text-xs italic">
               선택한 과목 및 학급에 대한 등록 성적 학적이 매칭되지 않습니다.
             </div>
-          ) : !isPdfMode ? (
+          ) : !isNiceMode ? (
             <div className="bg-white max-w-2xl mx-auto rounded-2xl border border-rose-200 p-8 sm:p-10 shadow-sm text-center space-y-6">
               <div className="mx-auto w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center text-rose-600">
                 <FileSpreadsheet size={32} className="stroke-[2.25]" />
@@ -341,10 +368,10 @@ export default function ResultPrintPortal({
                   2단계 나이스 엑셀 파일 미등록 안내 ⚠️
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed break-keep">
-                  선택한 과목 <span className="text-rose-600 font-extrabold">[{selectedSubject}]</span>은 2단계 [나이스 확인용 EXCEL 파일] (또는 PDF)이 업로드되지 않았습니다.
+                  선택한 과목 <span className="text-rose-600 font-extrabold">[{selectedSubject}]</span>은 2단계 [나이스 확인용 EXCEL 파일]이 업로드되지 않았습니다.
                 </p>
                 <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto break-keep">
-                  최종 서명 일람표는 서명패드가 활성화되는 2단계 나이스 종합 파일을 기준으로 출력할 수 있습니다. 관리자 화면에서 해당 과목의 2단계 나이스 종합 엑셀 또는 PDF 자료를 업로드해주시기 바랍니다.
+                  최종 서명 일람표는 서명패드가 활성화되는 2단계 나이스 종합 파일을 기준으로 출력할 수 있습니다. 관리자 화면에서 해당 과목의 2단계 나이스 종합 엑셀 자료를 업로드해주시기 바랍니다.
                 </p>
               </div>
               <div className="bg-rose-50/50 border border-rose-100 rounded-xl p-3.5 max-w-md mx-auto">
@@ -379,7 +406,7 @@ export default function ResultPrintPortal({
                       <th className="border border-slate-800 px-3 py-2 text-center w-28">학번</th>
                       <th className="border border-slate-800 px-3 py-2 text-center w-24">성명</th>
                       
-                      {!isPdfMode ? (
+                      {!isNiceMode ? (
                         // Mode A: Excel rounds
                         sortedEvals.map((ev, idx) => {
                           const maxScoreNum = parseFloat(ev.maxScore || '100') || 100;
@@ -401,8 +428,8 @@ export default function ResultPrintPortal({
                           );
                         })
                       ) : (
-                        // Mode B: PDF areas (2단계 나이스 엑셀/PDF)
-                        pdfScoreHeaders.map((h, idx) => {
+                        // Mode B: Nice Excel areas (2단계 나이스 종합 엑셀)
+                        niceScoreHeaders.map((h, idx) => {
                           const details = parseNcsHeaderDetails(h);
                           const hCleaned = cleanAndFormatHeaderName(details.subHeader);
                           
@@ -450,13 +477,13 @@ export default function ResultPrintPortal({
                   </thead>
                   <tbody>
                     {students.map((student, sIdx) => {
-                      const studentIdKey = pdfEval ? findStudentIdKey(pdfEval.headers || []) : undefined;
-                      const pdfRow = pdfEval && studentIdKey 
-                        ? pdfEval.rows.find(row => {
+                      const studentIdKey = niceEval ? findStudentIdKey(niceEval.headers || []) : undefined;
+                      const niceRow = niceEval && studentIdKey 
+                        ? niceEval.rows.find(row => {
                             const val = String(row[studentIdKey] || '').trim();
                             let fullStudentId = val;
-                            if (val.replace(/\D/g, '').length <= 2 && pdfEval.targetGradeClass && pdfEval.targetGradeClass.replace(/\D/g, '').length >= 3) {
-                              const tgtDigits = pdfEval.targetGradeClass.replace(/\D/g, '');
+                            if (val.replace(/\D/g, '').length <= 2 && niceEval.targetGradeClass && niceEval.targetGradeClass.replace(/\D/g, '').length >= 3) {
+                              const tgtDigits = niceEval.targetGradeClass.replace(/\D/g, '');
                               const numPart = val.replace(/\D/g, '').padStart(2, '0');
                               fullStudentId = tgtDigits + numPart;
                             }
@@ -468,7 +495,7 @@ export default function ResultPrintPortal({
                       let displayedReflectedObtained = '';
                       let courseMaxScore = 0;
 
-                      if (!isPdfMode) {
+                      if (!isNiceMode) {
                         let reflectedObtainedSum = 0;
                         let totalReflectedMax = 0;
 
@@ -487,25 +514,25 @@ export default function ResultPrintPortal({
                         displayedReflectedObtained = Number(reflectedObtainedSum.toFixed(2)).toString();
                         courseMaxScore = customMaxStr ? parseFloat(customMaxStr) : totalReflectedMax;
                       } else {
-                        // PDF Mode
-                        const rawTotalVal = pdfRow && pdfTotalHeader ? String(pdfRow[pdfTotalHeader] || '0').trim() : '0';
+                        // 2단계 나이스 종합 엑셀 Mode
+                        const rawTotalVal = niceRow && niceTotalHeader ? String(niceRow[niceTotalHeader] || '0').trim() : '0';
                         const totalNum = parseFloat(rawTotalVal);
                         const fallbackVal = isNaN(totalNum) ? rawTotalVal : totalNum.toString();
 
                         displayedReflectedObtained = calculateStudentNcsFinalScore(
-                          pdfEval?.headers || [],
-                          pdfRow,
+                          niceEval?.headers || [],
+                          niceRow,
                           fallbackVal
                         );
 
                         // Parse max score of total header
                         let totalMaxVal = 100;
-                        if (pdfTotalHeader) {
-                          const maxMatch = pdfTotalHeader.match(/만점\s*([\d.]+)/) || pdfTotalHeader.match(/배점\s*([\d.]+)/) || pdfTotalHeader.match(/만점\s*(\d+)/) || pdfTotalHeader.match(/\((\d+)점\)/) || pdfTotalHeader.match(/\(([\d.]+)점\)/);
+                        if (niceTotalHeader) {
+                          const maxMatch = niceTotalHeader.match(/만점\s*([\d.]+)/) || niceTotalHeader.match(/배점\s*([\d.]+)/) || niceTotalHeader.match(/만점\s*(\d+)/) || niceTotalHeader.match(/\((\d+)점\)/) || niceTotalHeader.match(/\(([\d.]+)점\)/);
                           if (maxMatch && maxMatch[1]) {
                             totalMaxVal = parseFloat(maxMatch[1]);
                           } else {
-                            const numMatch = pdfTotalHeader.match(/\(\s*([\d.]+)\s*\)?/) || pdfTotalHeader.match(/\[\s*([\d.]+)\s*\]?/);
+                            const numMatch = niceTotalHeader.match(/\(\s*([\d.]+)\s*\)?/) || niceTotalHeader.match(/\[\s*([\d.]+)\s*\]?/);
                             if (numMatch && numMatch[1]) {
                               totalMaxVal = parseFloat(numMatch[1]);
                             }
@@ -541,7 +568,7 @@ export default function ResultPrintPortal({
                           <td className="border border-slate-800 px-3 py-1.5 text-center truncate">{student.studentName || '미입력'}</td>
 
                           {/* Individual evaluation rounds / areas */}
-                          {!isPdfMode ? (
+                          {!isNiceMode ? (
                             sortedEvals.map(ev => {
                               const val = getScoreValue(ev, student.studentId);
                               const rateNum = parseFloat(ev.reflectRate || '100') || 100;
@@ -557,8 +584,8 @@ export default function ResultPrintPortal({
                               );
                             })
                           ) : (
-                            pdfScoreHeaders.map((h, hIdx) => {
-                              const scoreVal = pdfRow ? String(pdfRow[h] || '0').trim() : '-';
+                            niceScoreHeaders.map((h, hIdx) => {
+                              const scoreVal = niceRow ? String(niceRow[h] || '0').trim() : '-';
                               let displayedVal = scoreVal;
                               if (/^\d+\.00$/.test(scoreVal)) {
                                 displayedVal = parseFloat(scoreVal).toString();
