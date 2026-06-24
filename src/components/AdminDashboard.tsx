@@ -720,45 +720,159 @@ export default function AdminDashboard({
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        // Find actual header row by scanning for keywords
         const allRawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-        let headerRowIndex = 0;
-        for (let i = 0; i < Math.min(allRawRows.length, 15); i++) {
-          const row = allRawRows[i];
-          if (row && row.length > 0) {
-            const hasHeaderKeyword = row.some(cell => {
-              const val = String(cell || '').replace(/\s+/g, '');
-              return val === '반/번호' || val === '성명' || val === '학번' || val === '이름' || val === '과정참여' || val.includes('학번');
+        
+        let isNcs = false;
+        let ncsKeywordRowIndex = -1;
+
+        // Scan first 12 rows for the main NCS keyword "능력단위" or "능력 단위"
+        for (let r = 0; r < Math.min(allRawRows.length, 12); r++) {
+          const row = allRawRows[r];
+          if (row) {
+            const hasKwd = row.some(cell => {
+              const strVal = String(cell || '');
+              return strVal.includes('능력단위') || strVal.includes('능력 단위');
             });
-            if (hasHeaderKeyword) {
-              headerRowIndex = i;
+            if (hasKwd) {
+              ncsKeywordRowIndex = r;
+              isNcs = true;
               break;
             }
           }
         }
 
-        const rawRows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: '' }) as Record<string, any>[];
-        const headersJson = allRawRows[headerRowIndex] as string[];
-        const cleanHeaders = (headersJson || []).map(h => String(h || '').trim()).filter(h => h !== '');
+        let customHeaders: string[] = [];
+        let finalRows: Record<string, any>[] = [];
+        let headerRowIndex = 0;
 
-        if (cleanHeaders.length === 0 || rawRows.length === 0) {
+        if (isNcs) {
+          // Dynamic NCS rows mapping
+          const unitRowIndex = ncsKeywordRowIndex + 1; // Row 5 (index 4)
+          const subHeaderRowIndex = ncsKeywordRowIndex + 2; // Row 6 (index 5)
+          
+          let dataRowIndex = subHeaderRowIndex + 1; // default starting point (Row 7, index 6)
+          for (let r = subHeaderRowIndex + 1; r < allRawRows.length; r++) {
+            const row = allRawRows[r];
+            if (row && row[0] && row[1]) {
+              const colA = String(row[0]).trim();
+              const colB = String(row[1]).trim();
+              if ((/^\d+[\/\-_]\d+$/.test(colA) || /^\d+$/.test(colA)) && colB.length >= 1 && !colB.includes('이름') && !colB.includes('성명')) {
+                dataRowIndex = r;
+                break;
+              }
+            }
+          }
+
+          const ncsRowCells = allRawRows[unitRowIndex] || [];
+          const subHeadersRow = allRawRows[subHeaderRowIndex] || [];
+          const colCount = Math.max(ncsRowCells.length, subHeadersRow.length);
+
+          const units: { unitName: string; percentage: string; startCol: number; endCol: number }[] = [];
+          let currentUnit: any = null;
+
+          for (let c = 2; c < colCount; c++) {
+            if (c === colCount - 1) {
+              break;
+            }
+            const cellVal = ncsRowCells[c];
+            if (cellVal && String(cellVal).trim() !== '') {
+              const cellText = String(cellVal).trim();
+              
+              const percentMatch = cellText.match(/(\d+(?:\.\d+)?)\s*%/);
+              const percentage = percentMatch ? `${parseFloat(percentMatch[1])}%` : '';
+              
+              let unitName = cellText;
+              unitName = unitName.replace(/능력단위\s*\d*\s*/gi, '');
+              unitName = unitName.replace(/['"“‘”’]/gi, '');
+              unitName = unitName.replace(/\([^)]*%/gi, '');
+              unitName = unitName.replace(/\([^)]*\d+[^)]*\)/gi, '');
+              unitName = unitName.replace(/[:：]/g, '');
+              unitName = unitName.trim();
+
+              if (currentUnit) {
+                currentUnit.endCol = c - 1;
+                units.push(currentUnit);
+              }
+              currentUnit = {
+                unitName: unitName || `능력단위 ${units.length + 1}`,
+                percentage: percentage || '50%',
+                startCol: c,
+                endCol: c,
+              };
+            } else if (currentUnit) {
+              currentUnit.endCol = c;
+            }
+          }
+          if (currentUnit) {
+            units.push(currentUnit);
+          }
+
+          // Build custom unique headers
+          for (let c = 0; c < colCount; c++) {
+            const rawHeader = String(subHeadersRow[c] || '').trim();
+            if (c < 2) {
+              customHeaders.push(rawHeader || (c === 0 ? '학번' : '성명'));
+            } else if (c === colCount - 1) {
+              customHeaders.push(`[최종수행점수] ${rawHeader || '과목수행점수'}`);
+            } else {
+              const unit = units.find(u => c >= u.startCol && c <= u.endCol);
+              if (unit) {
+                customHeaders.push(`[${unit.unitName} (${unit.percentage})] ${rawHeader}`);
+              } else {
+                customHeaders.push(rawHeader || `HEADER_${c}`);
+              }
+            }
+          }
+
+          // Parse rows using custom headers starting at dataRowIndex
+          const parsedRowsWithCustomHeaders = XLSX.utils.sheet_to_json(worksheet, {
+            header: customHeaders,
+            range: dataRowIndex,
+            defval: ''
+          }) as Record<string, any>[];
+
+          finalRows = parsedRowsWithCustomHeaders;
+        } else {
+          // Standard Excel
+          for (let i = 0; i < Math.min(allRawRows.length, 15); i++) {
+            const row = allRawRows[i];
+            if (row && row.length > 0) {
+              const hasHeaderKeyword = row.some(cell => {
+                const val = String(cell || '').replace(/\s+/g, '');
+                return val === '반/번호' || val === '성명' || val === '학번' || val === '이름' || val === '과정참여' || val.includes('학번');
+              });
+              if (hasHeaderKeyword) {
+                headerRowIndex = i;
+                break;
+              }
+            }
+          }
+
+          const rawRows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: '' }) as Record<string, any>[];
+          const headersJson = allRawRows[headerRowIndex] as string[];
+          const cleanHeaders = (headersJson || []).map(h => String(h || '').trim()).filter(h => h !== '');
+          customHeaders = [...cleanHeaders];
+          finalRows = rawRows;
+        }
+
+        if (customHeaders.length === 0 || finalRows.length === 0) {
           setExcelErrorMsg('엑셀 파일에 유효한 데이터가 존재하지 않습니다.');
           return;
         }
 
-        const studentIdKey = findStudentIdKey(cleanHeaders);
+        const studentIdKey = findStudentIdKey(customHeaders);
 
         if (!studentIdKey) {
           setExcelErrorMsg(
             `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 또는 '반/번호' 열이 포함되어야 합니다.\n\n` + 
-            `감지된 열 목록: [${cleanHeaders.join(', ')}]`
+            `감지된 열 목록: [${customHeaders.join(', ')}]`
           );
           return;
         }
 
         // Clean arrays and filter out aggregate footer rows and empty rows
-        const processedHeaders = [...cleanHeaders];
-        const processedRows = rawRows.filter(row => {
+        const processedHeaders = [...customHeaders];
+        const processedRows = finalRows.filter(row => {
           const idVal = String(row[studentIdKey] || '').trim();
           if (!idVal) return false;
           
@@ -842,30 +956,21 @@ export default function AdminDashboard({
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        // Find actual header row by scanning for keywords
         const allRawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-        let headerRowIndex = 0;
-        for (let i = 0; i < Math.min(allRawRows.length, 15); i++) {
-          const row = allRawRows[i];
-          if (row && row.length > 0) {
-            const hasHeaderKeyword = row.some(cell => {
-              const val = String(cell || '').replace(/\s+/g, '');
-              return val === '반/번호' || val === '성명' || val === '학번' || val === '이름' || val === '과정참여' || val.includes('학번');
-            });
-            if (hasHeaderKeyword) {
-              headerRowIndex = i;
-              break;
-            }
-          }
-        }
-
+        
         let isNcs = false;
-        const cellC3Val = worksheet['C3']?.v || worksheet['C3']?.w || '';
-        if (String(cellC3Val).includes('능력단위')) {
-          isNcs = true;
-        } else {
-          for (let r = 0; r < Math.min(allRawRows.length, 6); r++) {
-            if (allRawRows[r]?.[2] && String(allRawRows[r][2]).includes('능력단위')) {
+        let ncsKeywordRowIndex = -1;
+
+        // Scan first 12 rows for the main NCS keyword "능력단위" or "능력 단위"
+        for (let r = 0; r < Math.min(allRawRows.length, 12); r++) {
+          const row = allRawRows[r];
+          if (row) {
+            const hasKwd = row.some(cell => {
+              const strVal = String(cell || '');
+              return strVal.includes('능력단위') || strVal.includes('능력 단위');
+            });
+            if (hasKwd) {
+              ncsKeywordRowIndex = r;
               isNcs = true;
               break;
             }
@@ -874,21 +979,28 @@ export default function AdminDashboard({
 
         let customHeaders: string[] = [];
         let finalRows: Record<string, any>[] = [];
+        let headerRowIndex = 0;
 
         if (isNcs) {
-          let ncsRowIndex = -1;
-          for (let r = 0; r < Math.min(allRawRows.length, 8); r++) {
-            if (allRawRows[r]?.[2] && String(allRawRows[r][2]).includes('능력단위')) {
-              ncsRowIndex = r;
-              break;
+          // Dynamic NCS rows mapping
+          const unitRowIndex = ncsKeywordRowIndex + 1; // Row 5 (index 4)
+          const subHeaderRowIndex = ncsKeywordRowIndex + 2; // Row 6 (index 5)
+          
+          let dataRowIndex = subHeaderRowIndex + 1; // default starting point (Row 7, index 6)
+          for (let r = subHeaderRowIndex + 1; r < allRawRows.length; r++) {
+            const row = allRawRows[r];
+            if (row && row[0] && row[1]) {
+              const colA = String(row[0]).trim();
+              const colB = String(row[1]).trim();
+              if ((/^\d+[\/\-_]\d+$/.test(colA) || /^\d+$/.test(colA)) && colB.length >= 1 && !colB.includes('이름') && !colB.includes('성명')) {
+                dataRowIndex = r;
+                break;
+              }
             }
           }
-          if (ncsRowIndex === -1) {
-            ncsRowIndex = 2; // Default fallback to row 3 (index 2)
-          }
 
-          const ncsRowCells = allRawRows[ncsRowIndex] || [];
-          const subHeadersRow = allRawRows[headerRowIndex] || [];
+          const ncsRowCells = allRawRows[unitRowIndex] || [];
+          const subHeadersRow = allRawRows[subHeaderRowIndex] || [];
           const colCount = Math.max(ncsRowCells.length, subHeadersRow.length);
 
           const units: { unitName: string; percentage: string; startCol: number; endCol: number }[] = [];
@@ -899,12 +1011,11 @@ export default function AdminDashboard({
               break;
             }
             const cellVal = ncsRowCells[c];
-            if (cellVal && String(cellVal).includes('능력단위')) {
+            if (cellVal && String(cellVal).trim() !== '') {
               const cellText = String(cellVal).trim();
               
-              // Parse unit name and percentage
-              const percentMatch = cellText.match(/(\d+)\s*%/);
-              const percentage = percentMatch ? `${percentMatch[1]}%` : '';
+              const percentMatch = cellText.match(/(\d+(?:\.\d+)?)\s*%/);
+              const percentage = percentMatch ? `${parseFloat(percentMatch[1])}%` : '';
               
               let unitName = cellText;
               unitName = unitName.replace(/능력단위\s*\d*\s*/gi, '');
@@ -949,16 +1060,29 @@ export default function AdminDashboard({
             }
           }
 
-          // Output rows starting after headerRowIndex
+          // Parse rows using custom headers starting at dataRowIndex
           const parsedRowsWithCustomHeaders = XLSX.utils.sheet_to_json(worksheet, {
             header: customHeaders,
-            range: headerRowIndex + 1,
+            range: dataRowIndex,
             defval: ''
           }) as Record<string, any>[];
 
           finalRows = parsedRowsWithCustomHeaders;
         } else {
           // Standard Excel
+          for (let i = 0; i < Math.min(allRawRows.length, 15); i++) {
+            const row = allRawRows[i];
+            if (row && row.length > 0) {
+              const hasHeaderKeyword = row.some(cell => {
+                const val = String(cell || '').replace(/\s+/g, '');
+                return val === '반/번호' || val === '성명' || val === '학번' || val === '이름' || val === '과정참여' || val.includes('학번');
+              });
+              if (hasHeaderKeyword) {
+                headerRowIndex = i;
+                break;
+              }
+            }
+          }
           const headersJson = allRawRows[headerRowIndex] as string[];
           const cleanHeaders = (headersJson || []).map(h => String(h || '').trim()).filter(h => h !== '');
           customHeaders = [...cleanHeaders];
@@ -1255,7 +1379,7 @@ export default function AdminDashboard({
                   return (
                     <div className="space-y-1.5 pt-2 border-t border-slate-100">
                       <span className="block text-[10px] font-black text-emerald-800 uppercase tracking-tight flex items-center gap-1 border-b border-emerald-100 pb-1">
-                        📊 나이스 등록용 EXCEL 파일 ({niceEvaluations.length}개)
+                        📊 나이스 확인용 EXCEL 파일 ({niceEvaluations.length}개)
                       </span>
                       {niceEvaluations.length === 0 ? (
                         <div className="py-3 text-center text-slate-450 text-[10.5px] italic bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
