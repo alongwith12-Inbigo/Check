@@ -676,11 +676,7 @@ export default function ResultCard({
                             })}
                           </div>
                         </div>
-                      ) : (
-                        <div className="p-3 bg-slate-50 rounded-xl text-center text-[10px] font-semibold text-slate-400 italic">
-                          등록된 선생님의 상세 의견 피드백이 없습니다.
-                        </div>
-                      )}
+                      ) : null}
 
                     </div>
                   </div>
@@ -765,7 +761,7 @@ export default function ResultCard({
                 return (
                   <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs font-semibold shadow-xxs">
                     <Info className="mx-auto text-slate-300 mb-1.5" size={24} />
-                    나이스 PDF 파일 또는 엑셀 최종 성적표(서명용)가 아직 등록되지 않았습니다.
+                    나이스 확인용 엑셀 파일이 아직 등록되지 않았습니다.
                   </div>
                 );
               }
