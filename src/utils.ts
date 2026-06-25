@@ -332,6 +332,10 @@ export function isMetadataOrNonScoreHeader(header: string): boolean {
   // Normalize header text by removing spaces
   let normalized = String(header).replace(/\s+/g, '').toLowerCase();
   
+  if (normalized.startsWith('col_') || normalized.includes('col_') || normalized.includes('결시명칭')) {
+    return true;
+  }
+  
   // Clean out common parentheticals like (100점), (30점) in brackets/parentheses
   normalized = normalized.replace(/\([^)]*\)/g, '');
   normalized = normalized.replace(/\[[^\]]*\]/g, '');

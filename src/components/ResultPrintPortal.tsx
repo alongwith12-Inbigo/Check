@@ -473,6 +473,7 @@ export default function ResultPrintPortal({
 
                       <th className="border border-slate-800 px-3 py-2 text-center w-24">산출총점</th>
                       <th className="border border-slate-800 px-3 py-2 text-center w-36">확인 서명</th>
+                      <th className="border border-slate-800 px-3 py-2 text-center w-28">비고</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -524,6 +525,24 @@ export default function ResultPrintPortal({
                           niceRow,
                           fallbackVal
                         );
+
+                        // If computed or fallback total score is 0, but the sum of individual area scores is greater than 0, use the sum instead.
+                        const finalObtainedNum = parseFloat(displayedReflectedObtained);
+                        let sumOfAreasObtained = 0;
+                        let hasNonZeroArea = false;
+                        niceScoreHeaders.forEach(h => {
+                          if (niceRow) {
+                            const val = parseFloat(String(niceRow[h] || '0').trim());
+                            if (!isNaN(val)) {
+                              sumOfAreasObtained += val;
+                              if (val > 0) hasNonZeroArea = true;
+                            }
+                          }
+                        });
+
+                        if ((isNaN(finalObtainedNum) || finalObtainedNum === 0) && hasNonZeroArea) {
+                          displayedReflectedObtained = Number(sumOfAreasObtained.toFixed(2)).toString();
+                        }
 
                         // Parse max score of total header
                         let totalMaxVal = 100;
@@ -645,6 +664,11 @@ export default function ResultPrintPortal({
                                  미서명
                               </div>
                             )}
+                          </td>
+
+                          {/* Remarks (비고) col */}
+                          <td className="border border-slate-800 px-2 py-1.5 text-center text-[11.5px] text-slate-700 font-semibold w-28">
+                            {niceRow ? (String(niceRow['비고'] || niceRow['비고란'] || '').trim()) : ''}
                           </td>
                         </tr>
                       );
