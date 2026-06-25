@@ -54,7 +54,7 @@ export default function ResultPrintPortal({
 
     // 3. If it's just a number (e.g., "1" or "10") representing the student number,
     // and we have a targetGradeClass (e.g., "107" or "107반")
-    if (onlyDigits.length <= 2 && targetGradeClass) {
+    if (onlyDigits.length > 0 && onlyDigits.length <= 2 && targetGradeClass) {
       const tgtDigits = targetGradeClass.replace(/\D/g, '');
       if (tgtDigits.length >= 3) {
         const gradeClassPart = tgtDigits.substring(0, 3); // e.g. "107"
@@ -527,17 +527,41 @@ export default function ResultPrintPortal({
 
                         // Parse max score of total header
                         let totalMaxVal = 100;
+                        let isTotalExplicit = false;
                         if (niceTotalHeader) {
                           const maxMatch = niceTotalHeader.match(/만점\s*([\d.]+)/) || niceTotalHeader.match(/배점\s*([\d.]+)/) || niceTotalHeader.match(/만점\s*(\d+)/) || niceTotalHeader.match(/\((\d+)점\)/) || niceTotalHeader.match(/\(([\d.]+)점\)/);
                           if (maxMatch && maxMatch[1]) {
                             totalMaxVal = parseFloat(maxMatch[1]);
+                            isTotalExplicit = true;
                           } else {
                             const numMatch = niceTotalHeader.match(/\(\s*([\d.]+)\s*\)?/) || niceTotalHeader.match(/\[\s*([\d.]+)\s*\]?/);
                             if (numMatch && numMatch[1]) {
                               totalMaxVal = parseFloat(numMatch[1]);
+                              isTotalExplicit = true;
                             }
                           }
                         }
+
+                        // Parse max score from each individual area/score header and sum them up as fallback
+                        let sumOfAreasMaxScore = 0;
+                        niceScoreHeaders.forEach(h => {
+                          let areaMax = 0;
+                          const maxMatch = h.match(/만점\s*([\d.]+)/) || h.match(/배점\s*([\d.]+)/) || h.match(/만점\s*(\d+)/) || h.match(/\((\d+)점\)/) || h.match(/\(([\d.]+)점\)/);
+                          if (maxMatch && maxMatch[1]) {
+                            areaMax = parseFloat(maxMatch[1]);
+                          } else {
+                            const numMatch = h.match(/\(\s*([\d.]+)\s*\)?/) || h.match(/\[\s*([\d.]+)\s*\]?/);
+                            if (numMatch && numMatch[1]) {
+                              areaMax = parseFloat(numMatch[1]);
+                            }
+                          }
+                          sumOfAreasMaxScore += areaMax;
+                        });
+
+                        if ((!isTotalExplicit || totalMaxVal === 100 || totalMaxVal === 0) && sumOfAreasMaxScore > 0) {
+                          totalMaxVal = sumOfAreasMaxScore;
+                        }
+
                         courseMaxScore = totalMaxVal;
                       }
 

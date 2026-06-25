@@ -620,9 +620,23 @@ export default function AdminDashboard({
                 normalized.includes('합계') || 
                 normalized.includes('계') || 
                 normalized.includes('소계') ||
+                normalized.includes('성취기준') ||
+                normalized.includes('기준') ||
+                normalized.includes('과목') ||
+                normalized.includes('영역') ||
                 normalized.includes('###')) {
               return false;
             }
+
+            const digits = idVal.replace(/\D/g, '');
+            if (digits.length === 0) {
+              return false;
+            }
+
+            if (idVal.length > 10 && idVal.match(/[ㄱ-ㅎㅏ-ㅣ가-힣]/)) {
+              return false;
+            }
+
             return true;
           });
 
@@ -884,9 +898,23 @@ export default function AdminDashboard({
               normalized.includes('합계') || 
               normalized.includes('계') || 
               normalized.includes('소계') ||
+              normalized.includes('성취기준') ||
+              normalized.includes('기준') ||
+              normalized.includes('과목') ||
+              normalized.includes('영역') ||
               normalized.includes('###')) {
             return false;
           }
+
+          const digits = idVal.replace(/\D/g, '');
+          if (digits.length === 0) {
+            return false;
+          }
+
+          if (idVal.length > 10 && idVal.match(/[ㄱ-ㅎㅏ-ㅣ가-힣]/)) {
+            return false;
+          }
+
           return true;
         });
 
@@ -1192,9 +1220,23 @@ export default function AdminDashboard({
               normalized.includes('합계') || 
               normalized.includes('계') || 
               normalized.includes('소계') ||
+              normalized.includes('성취기준') ||
+              normalized.includes('기준') ||
+              normalized.includes('과목') ||
+              normalized.includes('영역') ||
               normalized.includes('###')) {
             return false;
           }
+
+          const digits = idVal.replace(/\D/g, '');
+          if (digits.length === 0) {
+            return false;
+          }
+
+          if (idVal.length > 10 && idVal.match(/[ㄱ-ㅎㅏ-ㅣ가-힣]/)) {
+            return false;
+          }
+
           return true;
         });
 
