@@ -1132,50 +1132,62 @@ export default function StudentPdfViewer({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr gap-4">
-              {activeData.areaScores.map((item, idx) => {
-                const { title, maxScoreText } = formatPdfHeaderName(item.areaName);
+            <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm p-6 sm:p-8 space-y-6">
+              {/* Header */}
+              <div className="text-center space-y-2.5 pb-4 border-b border-slate-100">
+                <span className="text-sm sm:text-base font-black text-rose-600 tracking-wide bg-rose-50/70 px-3.5 py-1.5 rounded-lg inline-block">
+                  {subject || '비즈니스엑셀'} 수행평가
+                </span>
+                <p className="text-[11px] sm:text-xs text-slate-500 font-bold leading-normal">
+                  각 영역별 점수와 만점입니다.
+                </p>
+              </div>
 
-                return (
-                  <div 
-                    key={idx}
-                    className="bg-white border border-slate-255 p-4.5 rounded-xl flex flex-col justify-between shadow-3xs transition-all hover:border-slate-350"
-                  >
-                    <div className="text-center space-y-1 pb-3 border-b border-slate-100">
-                      {/* Column Header Representation */}
-                      <h4 className="text-xs font-bold text-slate-800 leading-snug break-keep">
-                        {title}
-                      </h4>
-                      <span className="text-[11px] text-slate-400 font-semibold block">
-                        ({maxScoreText || `${item.maxScore}점`})
-                      </span>
+              {/* Vertical list of evaluation areas */}
+              <div className="space-y-4">
+                {activeData.areaScores.map((item, idx) => {
+                  const { title, maxScoreText } = formatPdfHeaderName(item.areaName);
+                  return (
+                    <div 
+                      key={idx}
+                      className="flex items-center justify-between py-2 border-b border-dashed border-slate-100 last:border-0 last:pb-0"
+                    >
+                      <div className="space-y-0.5 max-w-[70%]">
+                        <h4 className="text-xs sm:text-sm font-bold text-slate-800 leading-snug break-keep">
+                          {title}
+                        </h4>
+                        <span className="text-[11px] text-slate-400 font-semibold block">
+                          만점: {maxScoreText || `${item.maxScore}점`}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-0.5">
+                        <span className="text-xl font-black text-slate-900 font-sans tracking-tight">
+                          {item.score}
+                        </span>
+                        <span className="text-[10.5px] text-slate-400 font-bold">점</span>
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
 
-                    {/* Column Score Representation */}
-                    <div className="pt-3 flex flex-col items-center justify-center">
-                      <span className="text-2xl font-black text-slate-900 font-sans tracking-tight">
-                        {item.score}
-                      </span>
-                    </div>
+              {/* Solid elegant separator line & prominent total score */}
+              <div className="border-t-2 border-slate-100 pt-5">
+                <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 sm:p-5 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="text-xs sm:text-sm font-extrabold text-slate-800">
+                      총 점 (합계)
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-semibold block">
+                      만점 기준: {activeData.totalMaxScore}점 만점
+                    </span>
                   </div>
-                );
-              })}
-
-              {/* Combined Total (합계) renders as the prominent last card in the grid with a sleek neutral grey tint */}
-              <div className="bg-slate-50 border border-slate-300 p-4.5 rounded-xl flex flex-col justify-between shadow-3xs transition-all hover:border-slate-400">
-                <div className="text-center space-y-1 pb-3 border-b border-slate-200">
-                  <h4 className="text-xs font-black text-slate-900 leading-snug break-keep">
-                    합 계
-                  </h4>
-                  <span className="text-[11px] text-slate-500 font-extrabold block">
-                    ({activeData.totalMaxScore}점 만점)
-                  </span>
-                </div>
-
-                <div className="pt-3 flex flex-col items-center justify-center">
-                  <span className="text-2xl font-extrabold text-slate-950 font-sans tracking-tight">
-                    {activeData.totalScore}
-                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl sm:text-4xl font-black text-rose-600 font-sans tracking-tight">
+                      {activeData.totalScore}
+                    </span>
+                    <span className="text-xs font-bold text-rose-600">점</span>
+                  </div>
                 </div>
               </div>
             </div>

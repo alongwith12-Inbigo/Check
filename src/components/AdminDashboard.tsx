@@ -1085,10 +1085,83 @@ export default function AdminDashboard({
               }
             }
           }
+
+          // Detect single area Nice Excel format
+          let isSingleAreaNice = false;
+          let extractedAreaName = '';
+          let extractedMaxScore = '';
+
+          for (let r = 0; r < Math.min(allRawRows.length, 12); r++) {
+            const row = allRawRows[r];
+            if (row) {
+              row.forEach(cell => {
+                const strVal = String(cell || '').trim();
+                if (strVal.startsWith('영역 :') || strVal.startsWith('영역:')) {
+                  const match = strVal.match(/영역\s*:\s*(.*)/);
+                  if (match && match[1]) {
+                    extractedAreaName = match[1].trim();
+                  }
+                }
+              });
+            }
+          }
+
+          if (extractedAreaName) {
+            isSingleAreaNice = true;
+            // Scan for max score around Row 6 (index 5) or anywhere in first 10 rows
+            const maxScoreRowIndex = allRawRows.findIndex((row, rIdx) => rIdx > 0 && rIdx < 12 && row && row.some(cell => String(cell || '').includes('영역만점') || String(cell || '').includes('영역 만점')));
+            if (maxScoreRowIndex !== -1) {
+              const row = allRawRows[maxScoreRowIndex];
+              row.forEach(cell => {
+                const cellStr = String(cell || '').trim();
+                const m = cellStr.match(/영역\s*만점\s*:\s*([\d.]+)/) || cellStr.match(/영역\s*만점\s*([\d.]+)/) || cellStr.match(/만점\s*:\s*([\d.]+)/);
+                if (m && m[1]) {
+                  extractedMaxScore = m[1];
+                }
+              });
+              if (!extractedMaxScore) {
+                let foundKeyword = false;
+                for (let colIdx = 0; colIdx < row.length; colIdx++) {
+                  const cellStr = String(row[colIdx] || '').trim();
+                  if (cellStr.includes('영역만점') || cellStr.includes('영역 만점')) {
+                    foundKeyword = true;
+                    continue;
+                  }
+                  if (foundKeyword && cellStr && !isNaN(Number(cellStr))) {
+                    extractedMaxScore = cellStr;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
           const headersJson = allRawRows[headerRowIndex] as string[];
-          const cleanHeaders = (headersJson || []).map(h => String(h || '').trim()).filter(h => h !== '');
-          customHeaders = [...cleanHeaders];
-          finalRows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: '' }) as Record<string, any>[];
+          const cleanHeaders = (headersJson || []).map(h => String(h || '').trim());
+
+          if (isSingleAreaNice) {
+            // Find "점수" column (case-insensitive and removing spaces)
+            const scoreColIdx = cleanHeaders.findIndex(h => h.replace(/\s+/g, '') === '점수');
+            if (scoreColIdx !== -1) {
+              const formattedHeaderName = extractedMaxScore 
+                ? `${extractedAreaName} (${extractedMaxScore}점)` 
+                : extractedAreaName;
+              cleanHeaders[scoreColIdx] = formattedHeaderName;
+            }
+            // Ensure all headers have valid string keys
+            const mappedHeaders = cleanHeaders.map((h, idx) => h || `COL_${idx}`);
+            customHeaders = [...mappedHeaders];
+            
+            finalRows = XLSX.utils.sheet_to_json(worksheet, {
+              header: customHeaders,
+              range: headerRowIndex + 1,
+              defval: ''
+            }) as Record<string, any>[];
+          } else {
+            const cleanHeadersFiltered = cleanHeaders.filter(h => h !== '');
+            customHeaders = [...cleanHeadersFiltered];
+            finalRows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: '' }) as Record<string, any>[];
+          }
         }
 
         if (customHeaders.length === 0 || finalRows.length === 0) {
