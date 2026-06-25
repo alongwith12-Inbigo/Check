@@ -19,6 +19,231 @@ function getEunNeun(text: string): string {
   return '은';
 }
 
+function romanizeHangul(text: string): string {
+  const CHOSEONG = [
+    'g', 'kk', 'n', 'd', 'tt', 'r', 'm', 'b', 'pp', 's', 'ss', '', 'j', 'jj', 'ch', 'k', 't', 'p', 'h'
+  ];
+  const JUNGSEONG = [
+    'a', 'ae', 'ya', 'yae', 'eo', 'e', 'yeo', 'ye', 'o', 'wa', 'wae', 'oe', 'yo', 'u', 'wo', 'we', 'wi', 'yu', 'eu', 'ui', 'i'
+  ];
+  const JONGSEONG = [
+    '', 'k', 'kk', 'ks', 'n', 'nj', 'nh', 't', 'l', 'lg', 'lm', 'lb', 'ls', 'lt', 'lp', 'lh', 'm', 'p', 'ps', 's', 'ss', 'ng', 'j', 'ch', 'k', 't', 'p', 'h'
+  ];
+
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xAC00 && code <= 0xD7A3) {
+      const offset = code - 0xAC00;
+      const cho = Math.floor(offset / 588);
+      const jung = Math.floor((offset % 588) / 28);
+      const jong = offset % 28;
+      result += CHOSEONG[cho] + JUNGSEONG[jung] + JONGSEONG[jong];
+    } else {
+      result += text.charAt(i).toLowerCase();
+    }
+  }
+  return result;
+}
+
+function getConsonantSkeleton(r: string): string {
+  return r.toLowerCase()
+    .replace(/ph/g, 'p')
+    .replace(/th/g, 't')
+    .replace(/ch/g, 'c')
+    .replace(/sh/g, 's')
+    .replace(/ck/g, 'k')
+    .replace(/[aeiouy]/g, '') // remove vowels
+    .replace(/r/g, 'l')
+    .replace(/z/g, 'j')
+    .replace(/f/g, 'p')
+    .replace(/v/g, 'b')
+    .replace(/w/g, '')
+    .replace(/h/g, '')
+    .replace(/x/g, 'ks')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function cleanAndNormalizeName(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+}
+
+function areNamesLooselyMatching(name1: string, name2: string): boolean {
+  const n1 = cleanAndNormalizeName(name1);
+  const n2 = cleanAndNormalizeName(name2);
+  if (!n1 || !n2) return false;
+
+  // 1. Exact cleaned match or standard substring match
+  if (n1 === n2 || n1.includes(n2) || n2.includes(n1)) return true;
+
+  // 2. Romanized & Sound-alike match for English/Korean phonetic similarities
+  const isN1Korean = /[가-힣]/.test(name1);
+  const isN2Korean = /[가-힣]/.test(name2);
+
+  const r1 = isN1Korean ? romanizeHangul(n1) : n1;
+  const r2 = isN2Korean ? romanizeHangul(n2) : n2;
+
+  const r1Clean = r1.replace(/[^a-z0-9]/g, '');
+  const r2Clean = r2.replace(/[^a-z0-9]/g, '');
+
+  if (r1Clean === r2Clean || r1Clean.includes(r2Clean) || r2Clean.includes(r1Clean)) return true;
+
+  // Compare consonant skeletons for highly robust phonetic matching
+  const sk1 = getConsonantSkeleton(r1);
+  const sk2 = getConsonantSkeleton(r2);
+
+  if (sk1 && sk2) {
+    if (sk1 === sk2 || sk1.includes(sk2) || sk2.includes(sk1)) return true;
+    
+    // Check for sharing a prefix of at least 3 consonants
+    if (sk1.length >= 3 && sk2.length >= 3 && (sk1.startsWith(sk2.substring(0, 3)) || sk2.startsWith(sk1.substring(0, 3)))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function findNiceRowForStudent(
+  student: { studentId: string; studentName: string },
+  rows: any[],
+  headers: string[],
+  selectedClass: string
+): any {
+  if (!rows || rows.length === 0) return null;
+  const studentIdKey = findStudentIdKey(headers);
+  const nameKey = headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized === '이름' || normalized === '성명' || normalized.includes('name') || normalized.includes('학생명');
+  });
+  const classKey = headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized === '반' || normalized.includes('class') || normalized === '학급';
+  });
+  const gradeKey = headers.find(h => {
+    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
+    return normalized === '학년' || normalized.includes('grade') || normalized.includes('학년');
+  });
+
+  // Extract student details
+  // e.g., "20401" -> grade = 2, class = 4, number = 1
+  const studId = student.studentId.replace(/\D/g, '');
+  let studGrade = 0;
+  let studClass = 0;
+  let studNum = 0;
+  if (studId.length === 5) {
+    studGrade = parseInt(studId.substring(0, 1), 10);
+    studClass = parseInt(studId.substring(1, 3), 10);
+    studNum = parseInt(studId.substring(3, 5), 10);
+  } else if (selectedClass) {
+    const classDigits = selectedClass.replace(/\D/g, '');
+    if (classDigits.length >= 2) {
+      studGrade = parseInt(classDigits.substring(0, 1), 10);
+      studClass = parseInt(classDigits.substring(1), 10);
+    }
+  }
+
+  // First pass: exact matches using matchesStudentId
+  if (studentIdKey) {
+    const found = rows.find(row => {
+      const val = String(row[studentIdKey] || '').trim();
+      return val && matchesStudentId(student.studentId, val);
+    });
+    if (found) return found;
+  }
+
+  // Second pass: match by student number + class confirmation
+  for (const row of rows) {
+    let matchesNum = false;
+    if (studentIdKey) {
+      const val = String(row[studentIdKey] || '').trim();
+      const onlyDigits = val.replace(/\D/g, '');
+      if (onlyDigits.length > 0 && onlyDigits.length <= 2) {
+        const parsedRowNum = parseInt(onlyDigits, 10);
+        if (parsedRowNum > 0 && parsedRowNum === studNum) {
+          matchesNum = true;
+        }
+      }
+    }
+
+    // Verify if Grade & Class match for this row
+    let gradeMatched = true;
+    let classMatched = true;
+
+    if (gradeKey) {
+      const rowGradeVal = parseInt(String(row[gradeKey] || '').replace(/\D/g, ''), 10);
+      if (!isNaN(rowGradeVal) && rowGradeVal !== studGrade) {
+        gradeMatched = false;
+      }
+    }
+    if (classKey) {
+      const rowClassVal = parseInt(String(row[classKey] || '').replace(/\D/g, ''), 10);
+      if (!isNaN(rowClassVal) && rowClassVal !== studClass) {
+        classMatched = false;
+      }
+    }
+
+    // If matches number, check if name also matches, or if no conflicting grade/class columns are present
+    if (matchesNum && gradeMatched && classMatched) {
+      if (nameKey) {
+        const rowName = String(row[nameKey] || '').trim();
+        const studName = student.studentName.trim();
+        if (areNamesLooselyMatching(rowName, studName)) {
+          return row;
+        }
+        // Robust fallback: if Grade & Class columns are both present and confirmed matched,
+        // we can trust the unique Student Number match in the class even if names differ slightly (e.g. English vs Korean)
+        if (gradeKey && classKey) {
+          return row;
+        }
+      } else {
+        return row;
+      }
+    }
+  }
+
+  // Third pass: match by Name within the same class context
+  if (nameKey) {
+    for (const row of rows) {
+      const rowName = String(row[nameKey] || '').trim();
+      const studName = student.studentName.trim();
+      if (areNamesLooselyMatching(rowName, studName)) {
+        let gradeMatched = true;
+        let classMatched = true;
+
+        if (gradeKey) {
+          const rowGradeVal = parseInt(String(row[gradeKey] || '').replace(/\D/g, ''), 10);
+          if (!isNaN(rowGradeVal) && rowGradeVal !== studGrade) {
+            gradeMatched = false;
+          }
+        }
+        if (classKey) {
+          const rowClassVal = parseInt(String(row[classKey] || '').replace(/\D/g, ''), 10);
+          if (!isNaN(rowClassVal) && rowClassVal !== studClass) {
+            classMatched = false;
+          }
+        }
+
+        if (gradeMatched && classMatched) {
+          return row;
+        }
+      }
+    }
+  }
+
+  // Loose fallback by Name only (if class columns not matched or missing)
+  if (nameKey) {
+    const studName = student.studentName.trim();
+    const found = rows.find(row => {
+      const rowName = String(row[nameKey] || '').trim();
+      return areNamesLooselyMatching(rowName, studName);
+    });
+    if (found) return found;
+  }
+
+  return null;
+}
+
 interface ResultPrintPortalProps {
   myEvaluations: EvaluationState[];
   signatures: Record<string, string>;
@@ -598,17 +823,8 @@ export default function ResultPrintPortal({
                   <tbody>
                     {students.map((student, sIdx) => {
                       const studentIdKey = niceEval ? findStudentIdKey(niceEval.headers || []) : undefined;
-                      const niceRow = niceEval && studentIdKey 
-                        ? niceEval.rows.find(row => {
-                            const val = String(row[studentIdKey] || '').trim();
-                            let fullStudentId = val;
-                            if (val.replace(/\D/g, '').length <= 2 && niceEval.targetGradeClass && niceEval.targetGradeClass.replace(/\D/g, '').length >= 3) {
-                              const tgtDigits = niceEval.targetGradeClass.replace(/\D/g, '');
-                              const numPart = val.replace(/\D/g, '').padStart(2, '0');
-                              fullStudentId = tgtDigits + numPart;
-                            }
-                            return matchesStudentId(student.studentId, fullStudentId) || matchesStudentId(student.studentId, val);
-                          })
+                      const niceRow = niceEval 
+                        ? findNiceRowForStudent(student, niceEval.rows || [], niceEval.headers || [], selectedClass)
                         : null;
 
                       // Calculate overall integrated reflected total score (Mode A / Mode B)
