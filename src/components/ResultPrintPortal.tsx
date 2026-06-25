@@ -333,6 +333,10 @@ export default function ResultPrintPortal({
     return groups;
   }, [isNiceMode, niceEval, niceScoreHeaders]);
 
+  const isNcsMode = useMemo(() => {
+    return isNiceMode && niceScoreHeaders.some(h => parseNcsHeaderDetails(h).isNcs);
+  }, [isNiceMode, niceScoreHeaders]);
+
   return createPortal(
     <div className="fixed inset-0 bg-slate-900/60 z-50 overflow-y-auto flex items-center justify-center p-2 sm:p-4 print:static print:bg-white print:overflow-visible print:p-0 print-portal-container">
       <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-0 print:static print:w-full">
@@ -446,7 +450,7 @@ export default function ResultPrintPortal({
               <div className="mt-4 overflow-x-auto print:overflow-visible">
                 <table className="w-full text-left border-collapse border border-slate-800 text-[10px] sm:text-xs print:text-[8.5px] table-fixed">
                   <thead>
-                    {isNiceMode ? (
+                    {isNiceMode && isNcsMode ? (
                       <>
                         {/* Row 1: Grouped Capability Units */}
                         <tr className="bg-slate-50 border-b border-slate-800 text-slate-900 font-black font-sans text-center">
@@ -523,25 +527,55 @@ export default function ResultPrintPortal({
                         <th className="border border-slate-800 px-1 py-1.5 text-center w-8 whitespace-nowrap print:w-6">순번</th>
                         <th className="border border-slate-800 px-1 py-1.5 text-center w-16 whitespace-nowrap print:w-14">학번</th>
                         <th className="border border-slate-800 px-1 py-1.5 text-center w-20 whitespace-nowrap print:w-18">성명</th>
-                        {sortedEvals.map((ev, idx) => {
-                          const maxScoreNum = parseFloat(ev.maxScore || '100') || 100;
-                          const rateNum = parseFloat(ev.reflectRate || '100') || 100;
-                          const reflectedMax = Number((maxScoreNum * (rateNum / 100)).toFixed(2)).toString();
-                          return (
-                            <th key={ev.id || idx} className="border border-slate-800 px-1 py-1.5 text-center min-w-[60px] max-w-[100px] leading-tight print:text-[8.5px]">
-                              <div className="flex flex-col items-center justify-center gap-0.5">
-                                {ev.evaluationDetailName && (
-                                  <span className="block text-[9.5px] print:text-[8px] font-black text-slate-800 break-words text-center" title={ev.evaluationDetailName}>
-                                    {ev.evaluationDetailName}
+                        {isNiceMode ? (
+                          niceScoreHeaders.map((h, idx) => {
+                            const details = parseNcsHeaderDetails(h);
+                            const hCleaned = cleanAndFormatHeaderName(details.subHeader);
+                            
+                            let title = hCleaned;
+                            let maxScoreText = '';
+                            const match = hCleaned.match(/^([\s\S]+?)\s*\(([\s\S]+?)\)$/);
+                            if (match) {
+                              title = match[1].trim();
+                              maxScoreText = match[2].trim();
+                            }
+
+                            return (
+                              <th key={idx} className="border border-slate-800 px-1 py-1.5 text-center min-w-[60px] max-w-[100px] leading-tight print:text-[8.5px]">
+                                <div className="flex flex-col items-center justify-center gap-0.5">
+                                  <span className="block text-[9.5px] print:text-[8px] font-black text-slate-800 break-words text-center">
+                                    {title}
                                   </span>
-                                )}
-                                <span className="block text-[8.5px] print:text-[7.5px] text-indigo-950 font-bold bg-indigo-50 border border-indigo-100 rounded px-1 mt-0.5 whitespace-nowrap">
-                                  만점 {reflectedMax}점
-                                </span>
-                              </div>
-                            </th>
-                          );
-                        })}
+                                  {maxScoreText && (
+                                    <span className="block text-[8.5px] print:text-[7.5px] text-indigo-950 font-bold bg-indigo-50 border border-indigo-100 rounded px-1 mt-0.5 whitespace-nowrap">
+                                      {maxScoreText}
+                                    </span>
+                                  )}
+                                </div>
+                              </th>
+                            );
+                          })
+                        ) : (
+                          sortedEvals.map((ev, idx) => {
+                            const maxScoreNum = parseFloat(ev.maxScore || '100') || 100;
+                            const rateNum = parseFloat(ev.reflectRate || '100') || 100;
+                            const reflectedMax = Number((maxScoreNum * (rateNum / 100)).toFixed(2)).toString();
+                            return (
+                              <th key={ev.id || idx} className="border border-slate-800 px-1 py-1.5 text-center min-w-[60px] max-w-[100px] leading-tight print:text-[8.5px]">
+                                <div className="flex flex-col items-center justify-center gap-0.5">
+                                  {ev.evaluationDetailName && (
+                                    <span className="block text-[9.5px] print:text-[8px] font-black text-slate-800 break-words text-center" title={ev.evaluationDetailName}>
+                                      {ev.evaluationDetailName}
+                                    </span>
+                                  )}
+                                  <span className="block text-[8.5px] print:text-[7.5px] text-indigo-950 font-bold bg-indigo-50 border border-indigo-100 rounded px-1 mt-0.5 whitespace-nowrap">
+                                    만점 {reflectedMax}점
+                                  </span>
+                                </div>
+                              </th>
+                            );
+                          })
+                        )}
                         <th className="border border-slate-800 px-1 py-1.5 text-center w-14 whitespace-nowrap print:w-12">산출총점</th>
                         <th className="border border-slate-800 px-1 py-1.5 text-center w-24 whitespace-nowrap print:w-18">확인 서명</th>
                         <th className="border border-slate-800 px-1 py-1.5 text-center min-w-[70px] w-auto">비고</th>
@@ -704,7 +738,7 @@ export default function ResultPrintPortal({
                                 </td>
                               );
                             })
-                          ) : (
+                          ) : isNcsMode ? (
                             ncsGroups.map((group) => 
                               group.headers.map((h, hIdx) => {
                                 const scoreVal = niceRow ? String(niceRow[h] || '0').trim() : '-';
@@ -733,6 +767,25 @@ export default function ResultPrintPortal({
                                 );
                               })
                             )
+                          ) : (
+                            niceScoreHeaders.map((h, hIdx) => {
+                              const scoreVal = niceRow ? String(niceRow[h] || '0').trim() : '-';
+                              let displayedVal = scoreVal;
+                              if (/^\d+\.00$/.test(scoreVal)) {
+                                displayedVal = parseFloat(scoreVal).toString();
+                              } else if (/^\d+\.\d+$/.test(scoreVal)) {
+                                const parsedFloat = parseFloat(scoreVal);
+                                if (!isNaN(parsedFloat)) {
+                                  displayedVal = parsedFloat.toString();
+                                }
+                              }
+
+                              return (
+                                <td key={hIdx} className="border border-slate-800 px-1 py-1 text-center font-mono text-[10.5px] print:text-[9px] print:py-0.5">
+                                  <span className="font-bold text-slate-900">{displayedVal}</span>
+                                </td>
+                              );
+                            })
                           )}
 
                           {/* Cumulative total score */}

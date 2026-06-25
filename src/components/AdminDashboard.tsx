@@ -1242,7 +1242,7 @@ export default function AdminDashboard({
 
         const defaultRound = testExcelRound.trim() || '1';
         const defaultDetail = testExcelDetailName.trim() || '수행평가 결과내용 [테스트]';
-        const initialTitle = `📂 [NEIS] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
+        const initialTitle = `📂 [NEIS] ${defaultSubject} {defaultDetail}`;
 
         const newEvalMetadata: EvaluationState = {
           title: initialTitle,
