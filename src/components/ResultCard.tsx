@@ -712,7 +712,7 @@ export default function ResultCard({
                         👑 최종 반영 총점
                       </span>
                       <p className="text-[11px] text-slate-500 leading-normal font-semibold">
-                        각 영역별 만점과 실제 성적 반영 비율(%)을 반영한 최종 수행평가 성적 점수입니다.
+                        각 영역별 만점과 실제 성적 반영 비율(%)을 반영한 최종 수행평가 점수입니다.
                       </p>
                     </div>
                     <div className="text-center sm:text-right shrink-0 flex flex-col items-center sm:items-end gap-1.5">
