@@ -6,6 +6,19 @@ import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, mat
 import { cleanAndFormatHeaderName } from '../utils/pdfExtractor';
 import { parseNcsHeaderDetails, cleanAndFormatNcsUnitName } from './StudentPdfViewer';
 
+function getEunNeun(text: string): string {
+  if (!text) return '은';
+  const cleanText = text.trim().replace(/[\s\)\}\]]+$/, '');
+  if (cleanText.length === 0) return '은';
+  const lastChar = cleanText.charAt(cleanText.length - 1);
+  const code = lastChar.charCodeAt(0);
+  if (code >= 0xAC00 && code <= 0xD7A3) {
+    const hasBatchim = (code - 0xAC00) % 28 !== 0;
+    return hasBatchim ? '은' : '는';
+  }
+  return '은';
+}
+
 interface ResultPrintPortalProps {
   myEvaluations: EvaluationState[];
   signatures: Record<string, string>;
@@ -417,7 +430,7 @@ export default function ResultPrintPortal({
                   2단계 나이스 엑셀 파일 미등록 안내 ⚠️
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed break-keep">
-                  선택한 과목 <span className="text-rose-600 font-extrabold">[{selectedSubject}]</span>은/는 2단계 [나이스 확인용 EXCEL 파일]이 업로드되지 않았습니다.
+                  선택한 과목 <span className="text-rose-600 font-extrabold">[{selectedSubject}]</span>{getEunNeun(selectedSubject)} 2단계 [나이스 확인용 EXCEL 파일]이 업로드되지 않았습니다.
                 </p>
                 <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto break-keep">
                   [2단계] 나이스 확인용 엑셀 파일을 업로드한 경우에만 출력이 가능합니다.
