@@ -417,15 +417,15 @@ export default function ResultPrintPortal({
                   2단계 나이스 엑셀 파일 미등록 안내 ⚠️
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed break-keep">
-                  선택한 과목 <span className="text-rose-600 font-extrabold">[{selectedSubject}]</span>은 2단계 [나이스 확인용 EXCEL 파일]이 업로드되지 않았습니다.
+                  선택한 과목 <span className="text-rose-600 font-extrabold">[{selectedSubject}]</span>은/는 2단계 [나이스 확인용 EXCEL 파일]이 업로드되지 않았습니다.
                 </p>
                 <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto break-keep">
-                  최종 서명 일람표는 서명패드가 활성화되는 2단계 나이스 종합 파일을 기준으로 출력할 수 있습니다. 관리자 화면에서 해당 과목의 2단계 나이스 종합 엑셀 자료를 업로드해주시기 바랍니다.
+                  [2단계] 나이스 확인용 엑셀 파일을 업로드한 경우에만 출력이 가능합니다.
                 </p>
               </div>
               <div className="bg-rose-50/50 border border-rose-100 rounded-xl p-3.5 max-w-md mx-auto">
                 <span className="text-[11px] text-rose-800 font-bold block">
-                  💡 1단계 영역별 점수 입력 단계에서는 인쇄 기능이 제한됩니다.
+                  💡 [1단계] 수행평가 영역별 점수만 입력한 경우는 인쇄 기능을 제공하지 않습니다.
                 </span>
               </div>
             </div>
