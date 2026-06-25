@@ -1165,11 +1165,11 @@ export default function AdminDashboard({
           }
 
           const headersJson = allRawRows[headerRowIndex] as string[];
-          const cleanHeaders = (headersJson || []).map(h => String(h || '').trim());
+          const cleanHeaders = Array.from(headersJson || []).map(h => String(h || '').trim());
 
           if (isSingleAreaNice) {
             // Find "점수" column (case-insensitive and removing spaces)
-            const scoreColIdx = cleanHeaders.findIndex(h => h.replace(/\s+/g, '') === '점수');
+            const scoreColIdx = cleanHeaders.findIndex(h => h && typeof h === 'string' && h.replace(/\s+/g, '') === '점수');
             if (scoreColIdx !== -1) {
               const formattedHeaderName = extractedMaxScore 
                 ? `${extractedAreaName} (${extractedMaxScore}점)` 
