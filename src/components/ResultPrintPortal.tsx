@@ -402,9 +402,9 @@ export default function ResultPrintPortal({
                 <table className="w-full text-left border-collapse border border-slate-800 text-[11px] sm:text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-800 text-slate-900 font-black font-sans">
-                      <th className="border border-slate-800 px-3 py-2 text-center w-16">순번</th>
-                      <th className="border border-slate-800 px-3 py-2 text-center w-28">학번</th>
-                      <th className="border border-slate-800 px-3 py-2 text-center w-24">성명</th>
+                      <th className="border border-slate-800 px-3 py-2 text-center w-14 whitespace-nowrap">순번</th>
+                      <th className="border border-slate-800 px-3 py-2 text-center w-24 whitespace-nowrap">학번</th>
+                      <th className="border border-slate-800 px-3 py-2 text-center w-24 whitespace-nowrap">성명</th>
                       
                       {!isNiceMode ? (
                         // Mode A: Excel rounds
@@ -413,14 +413,14 @@ export default function ResultPrintPortal({
                           const rateNum = parseFloat(ev.reflectRate || '100') || 100;
                           const reflectedMax = Number((maxScoreNum * (rateNum / 100)).toFixed(2)).toString();
                           return (
-                            <th key={ev.id || idx} className="border border-slate-800 px-2 py-2.5 text-center min-w-[90px] max-w-[120px]">
+                            <th key={ev.id || idx} className="border border-slate-800 px-2 py-2 text-center min-w-[125px]">
                               <div className="flex flex-col items-center justify-center gap-1.5 leading-tight">
                                 {ev.evaluationDetailName && (
                                   <span className="block text-[11px] font-black text-slate-800 break-words whitespace-normal text-center" title={ev.evaluationDetailName}>
                                     {ev.evaluationDetailName}
                                   </span>
                                 )}
-                                <span className="block text-[9.5px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
+                                <span className="block text-[9.5px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 whitespace-nowrap">
                                   만점 {reflectedMax}점
                                 </span>
                               </div>
@@ -450,7 +450,7 @@ export default function ResultPrintPortal({
                           }
 
                           return (
-                            <th key={idx} className="border border-slate-800 px-2 py-2 text-center min-w-[90px] max-w-[120px]">
+                            <th key={idx} className="border border-slate-800 px-2 py-2 text-center min-w-[125px]">
                               <div className="flex flex-col items-center justify-center gap-0.5 leading-tight">
                                 {unitLabel && (
                                   <span className="block text-[8.5px] font-black text-rose-650 tracking-tight mb-0.5 whitespace-nowrap bg-rose-50 border border-rose-100 px-1 py-0.2 rounded">
@@ -461,7 +461,7 @@ export default function ResultPrintPortal({
                                   {title}
                                 </span>
                                 {maxScoreText && (
-                                  <span className="block text-[9px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.2 mt-0.5">
+                                  <span className="block text-[9px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.2 mt-0.5 whitespace-nowrap">
                                     {maxScoreText}
                                   </span>
                                 )}
@@ -471,9 +471,9 @@ export default function ResultPrintPortal({
                         })
                       )}
 
-                      <th className="border border-slate-800 px-3 py-2 text-center w-24">산출총점</th>
-                      <th className="border border-slate-800 px-3 py-2 text-center w-36">확인 서명</th>
-                      <th className="border border-slate-800 px-3 py-2 text-center w-28">비고</th>
+                      <th className="border border-slate-800 px-3 py-2 text-center w-24 whitespace-nowrap">산출총점</th>
+                      <th className="border border-slate-800 px-3 py-2 text-center w-36 whitespace-nowrap">확인 서명</th>
+                      <th className="border border-slate-800 px-3 py-2 text-center min-w-[150px] w-auto whitespace-nowrap">비고</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -606,9 +606,9 @@ export default function ResultPrintPortal({
 
                       return (
                         <tr key={student.studentId} className="border-b border-slate-800 hover:bg-slate-50 text-slate-800 font-medium">
-                          <td className="border border-slate-800 px-3 py-1.5 text-center font-mono">{sIdx + 1}</td>
-                          <td className="border border-slate-800 px-3 py-1.5 text-center font-mono font-black">{student.studentId}</td>
-                          <td className="border border-slate-800 px-3 py-1.5 text-center truncate">{student.studentName || '미입력'}</td>
+                          <td className="border border-slate-800 px-3 py-1 text-center font-mono h-[46px]">{sIdx + 1}</td>
+                          <td className="border border-slate-800 px-3 py-1 text-center font-mono font-black h-[46px]">{student.studentId}</td>
+                          <td className="border border-slate-800 px-3 py-1 text-center truncate h-[46px]">{student.studentName || '미입력'}</td>
 
                           {/* Individual evaluation rounds / areas */}
                           {!isNiceMode ? (
@@ -621,7 +621,7 @@ export default function ResultPrintPortal({
                                 : '-';
 
                               return (
-                                <td key={ev.id} className="border border-slate-800 px-2 py-1.5 text-center font-mono text-[12px]">
+                                <td key={ev.id} className="border border-slate-800 px-2 py-1 text-center font-mono text-[12px] h-[46px]">
                                   <span className="font-extrabold text-slate-900">{displayedVal}</span>
                                 </td>
                               );
@@ -640,7 +640,7 @@ export default function ResultPrintPortal({
                               }
 
                               return (
-                                <td key={hIdx} className="border border-slate-800 px-2 py-1.5 text-center font-mono text-[12px]">
+                                <td key={hIdx} className="border border-slate-800 px-2 py-1 text-center font-mono text-[12px] h-[46px]">
                                   <span className="font-extrabold text-slate-900">{displayedVal}</span>
                                 </td>
                               );
@@ -648,26 +648,26 @@ export default function ResultPrintPortal({
                           )}
 
                           {/* Cumulative total score */}
-                          <td className="border border-slate-800 px-3 py-1.5 text-center font-sans font-black bg-slate-50/50">
+                          <td className="border border-slate-800 px-3 py-1 text-center font-sans font-black bg-slate-50/50 h-[46px]">
                             {displayedReflectedObtained}
                             <span className="text-[10px] text-slate-400 font-normal"> / {courseMaxScore}</span>
                           </td>
 
                           {/* Delineated Signature col */}
-                          <td className="border border-slate-800 px-2 py-1 text-center bg-slate-50/20 w-36">
-                            {studentSigUrl ? (
-                              <div className="flex items-center justify-center p-0.5" title="제출 완료">
+                          <td className="border border-slate-800 px-2 py-1 text-center bg-slate-50/20 w-36 h-[46px]">
+                            <div className="flex items-center justify-center h-[38px] w-full">
+                              {studentSigUrl ? (
                                 <img src={studentSigUrl} alt="서명" className="h-[34px] max-w-[120px] object-contain block print:h-[34px]" referrerPolicy="no-referrer" />
-                              </div>
-                            ) : (
-                              <div className="text-[9px] text-slate-350 border border-dashed border-slate-300 rounded-sm py-1 font-bold print:border-0 print:p-0 print:text-transparent">
-                                 미서명
-                              </div>
-                            )}
+                              ) : (
+                                <div className="text-[9px] text-slate-350 border border-dashed border-slate-300 rounded-sm py-1 px-2 font-bold print:border-0 print:p-0 print:text-transparent">
+                                   미서명
+                                </div>
+                              )}
+                            </div>
                           </td>
 
                           {/* Remarks (비고) col */}
-                          <td className="border border-slate-800 px-2 py-1.5 text-center text-[11.5px] text-slate-700 font-semibold w-28">
+                          <td className="border border-slate-800 px-2 py-1 text-center text-[11.5px] text-slate-700 font-semibold w-auto min-w-[150px] h-[46px]">
                             {niceRow ? (String(niceRow['비고'] || niceRow['비고란'] || '').trim()) : ''}
                           </td>
                         </tr>
