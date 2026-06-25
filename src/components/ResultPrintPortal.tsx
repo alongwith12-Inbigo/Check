@@ -595,14 +595,14 @@ export default function ResultPrintPortal({
 
         {/* Filter Configuration Area */}
         <div className="bg-slate-50 border-b border-slate-200 p-5 shrink-0 print:hidden flex flex-col md:flex-row items-stretch md:items-center gap-4 justify-between">
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:w-auto">
             {/* Subject Selector */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 flex-1 sm:flex-initial">
               <label className="block text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">출력 평가 과목</label>
               <select 
                 value={selectedSubject} 
                 onChange={(e) => setSelectedSubject(e.target.value)}
-                className="bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-650 min-w-[150px]"
+                className="bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-650 min-w-[150px] w-full"
               >
                 {uniqueSubjects.map(sub => (
                   <option key={sub} value={sub}>{sub}</option>
@@ -611,12 +611,12 @@ export default function ResultPrintPortal({
             </div>
 
             {/* Class Selector */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 flex-1 sm:flex-initial">
               <label className="block text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">필터링 학급 (반)</label>
               <select 
                 value={selectedClass} 
                 onChange={(e) => setSelectedClass(e.target.value)}
-                className="bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-650 min-w-[150px]"
+                className="bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-650 min-w-[150px] w-full"
                 disabled={uniqueClasses.length === 0}
               >
                 {uniqueClasses.map(item => (
@@ -684,9 +684,16 @@ export default function ResultPrintPortal({
                 </div>
               </div>
 
+              {/* Mobile Scroll Indicator Helper */}
+              <div className="block sm:hidden text-right mb-1.5 print:hidden select-none">
+                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full animate-pulse">
+                  ↔ 좌우로 스크롤하여 전체 내용을 확인하세요
+                </span>
+              </div>
+
               {/* Roster Sheet Data Table */}
-              <div className="mt-4 overflow-x-auto print:overflow-visible">
-                <table className="w-full text-left border-collapse border border-slate-800 text-[10px] sm:text-xs print:text-[8.5px] table-fixed">
+              <div className="mt-4 overflow-x-auto print:overflow-visible border border-slate-200 sm:border-0 rounded-xl max-w-full">
+                <table className="w-full text-left border-collapse border border-slate-800 text-[10px] sm:text-xs print:text-[8.5px] table-fixed min-w-[720px] sm:min-w-full">
                   <thead>
                     {isNiceMode && isNcsMode ? (
                       <>
@@ -883,14 +890,15 @@ export default function ResultPrintPortal({
                         let totalMaxVal = 100;
                         let isTotalExplicit = false;
                         if (niceTotalHeader) {
-                          const maxMatch = niceTotalHeader.match(/만점\s*([\d.]+)/) || niceTotalHeader.match(/배점\s*([\d.]+)/) || niceTotalHeader.match(/만점\s*(\d+)/) || niceTotalHeader.match(/\((\d+)점\)/) || niceTotalHeader.match(/\(([\d.]+)점\)/);
+                          const totalCleaned = cleanAndFormatHeaderName(niceTotalHeader);
+                          const maxMatch = totalCleaned.match(/\(([\d.]+)점\)$/);
                           if (maxMatch && maxMatch[1]) {
                             totalMaxVal = parseFloat(maxMatch[1]);
                             isTotalExplicit = true;
                           } else {
-                            const numMatch = niceTotalHeader.match(/\(\s*([\d.]+)\s*\)?/) || niceTotalHeader.match(/\[\s*([\d.]+)\s*\]?/);
-                            if (numMatch && numMatch[1]) {
-                              totalMaxVal = parseFloat(numMatch[1]);
+                            const rawMatch = niceTotalHeader.match(/만점\s*([\d.]+)/) || niceTotalHeader.match(/배점\s*([\d.]+)/) || niceTotalHeader.match(/만점\s*(\d+)/) || niceTotalHeader.match(/\((\d+)점\)/) || niceTotalHeader.match(/\(([\d.]+)점\)/);
+                            if (rawMatch && rawMatch[1]) {
+                              totalMaxVal = parseFloat(rawMatch[1]);
                               isTotalExplicit = true;
                             }
                           }
@@ -899,14 +907,15 @@ export default function ResultPrintPortal({
                         // Parse max score from each individual area/score header and sum them up as fallback
                         let sumOfAreasMaxScore = 0;
                         niceScoreHeaders.forEach(h => {
+                          const hCleaned = cleanAndFormatHeaderName(h);
+                          const maxMatch = hCleaned.match(/\(([\d.]+)점\)$/);
                           let areaMax = 0;
-                          const maxMatch = h.match(/만점\s*([\d.]+)/) || h.match(/배점\s*([\d.]+)/) || h.match(/만점\s*(\d+)/) || h.match(/\((\d+)점\)/) || h.match(/\(([\d.]+)점\)/);
                           if (maxMatch && maxMatch[1]) {
                             areaMax = parseFloat(maxMatch[1]);
                           } else {
-                            const numMatch = h.match(/\(\s*([\d.]+)\s*\)?/) || h.match(/\[\s*([\d.]+)\s*\]?/);
-                            if (numMatch && numMatch[1]) {
-                              areaMax = parseFloat(numMatch[1]);
+                            const rawMatch = h.match(/만점\s*([\d.]+)/) || h.match(/배점\s*([\d.]+)/) || h.match(/\((\d+)점\)/) || h.match(/\(([\d.]+)점\)/);
+                            if (rawMatch && rawMatch[1]) {
+                              areaMax = parseFloat(rawMatch[1]);
                             }
                           }
                           sumOfAreasMaxScore += areaMax;
@@ -917,9 +926,12 @@ export default function ResultPrintPortal({
                         
                         if (customMaxStr) {
                           courseMaxScore = parseFloat(customMaxStr);
+                        } else if (niceScoreHeaders.length === 1 && sumOfAreasMaxScore > 0) {
+                          // If there's only one score header, its max score is the course max score
+                          courseMaxScore = sumOfAreasMaxScore;
                         } else if ((!isTotalExplicit || totalMaxVal === 100 || totalMaxVal === 0) && sumOfAreasMaxScore > 0) {
-                          // NCS is naturally 100 overall max score if individual parts sum up to > 0 or if not explicit
-                          courseMaxScore = 100;
+                          // NCS Mode normally has 100 max overall, standard NICE modes fallback to sum of areas
+                          courseMaxScore = isNcsMode ? 100 : sumOfAreasMaxScore;
                         } else {
                           courseMaxScore = totalMaxVal;
                         }
@@ -946,7 +958,7 @@ export default function ResultPrintPortal({
                       }
 
                       return (
-                        <tr key={student.studentId} className="border-b border-slate-800 hover:bg-slate-50 text-slate-800 font-medium leading-none">
+                        <tr key={student.studentId} className="border-b border-slate-800 hover:bg-slate-50 text-slate-800 font-medium leading-normal">
                           <td className="border border-slate-800 px-1 py-1 text-center font-mono print:py-0.5">{sIdx + 1}</td>
                           <td className="border border-slate-800 px-1 py-1 text-center font-mono font-black print:py-0.5">{student.studentId}</td>
                           <td className="border border-slate-800 px-1 py-1 text-center truncate print:py-0.5">{student.studentName || '미입력'}</td>
