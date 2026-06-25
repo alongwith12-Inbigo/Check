@@ -810,7 +810,7 @@ export default function ResultCard({
               if (parts.length >= 3) {
                 const [sigTeacher, sigSubject, sigStudent] = parts;
                 return sigTeacher.trim() === teacherKey && 
-                       sigSubject.trim() === subjectKey && 
+                       sigSubject.replace(/\s+/g, '') === subjectKey.replace(/\s+/g, '') && 
                        matchesStudentId(sigStudent, cardStudentId);
               }
               return false;

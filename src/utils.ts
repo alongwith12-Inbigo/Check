@@ -92,9 +92,9 @@ export function matchesStudentId(inputId: string, rowId: any): boolean {
   const normRowRaw = String(rowId).trim();
   const normRow = normRowRaw.replace(/\D/g, '');
   
-  if (!normInput || !normRowRaw) return false;
+  if (!normInput || !normRow) return false;
 
-  // 1. If exact numeric comparison matches (e.g. "10701" === "10701")
+  // 1. If exact numeric comparison matches (e.g. "30301" === "30301")
   if (normInput === normRow) return true;
 
   // 2. Parsed match for class/number formats (e.g., "7/1", "7-1", "07/01", "7반 1번")
@@ -132,12 +132,11 @@ export function matchesStudentId(inputId: string, rowId: any): boolean {
         }
       }
     } else if (digitsInRow.length === 1) {
-      const rowDigits = digitsInRow[0];
-      if (rowDigits === normInput) return true;
+      if (digitsInRow[0] === normInput) return true;
       
       // E.g. "701" matches "10701"
-      if (rowDigits.length === 3 && normInput.length === 5) {
-        if (normInput.endsWith(rowDigits)) {
+      if (digitsInRow[0].length === 3 && normInput.length === 5) {
+        if (normInput.endsWith(digitsInRow[0])) {
           return true;
         }
       }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, FileSpreadsheet, Check } from 'lucide-react';
 import { EvaluationState, Teacher, RegisteredStudent } from '../types';
@@ -73,14 +73,10 @@ export default function ResultPrintPortal({
       const grade = parseInt(digits.substring(0, 1), 10);
       const cls = parseInt(digits.substring(1, 3), 10);
       return { gradeClass: `${grade}학년 ${cls}반`, sortKey: grade * 100 + cls };
-    } else if (digits.length === 4) {
-      const grade = parseInt(digits.substring(0, 1), 10);
-      const cls = parseInt(digits.substring(1, 2), 10);
-      return { gradeClass: `${grade}학년 ${cls}반`, sortKey: grade * 100 + cls };
     } else if (targetGradeClass && targetGradeClass.replace(/\D/g, '').length >= 3) {
       const tgtDigits = targetGradeClass.replace(/\D/g, '');
       const grade = parseInt(tgtDigits.substring(0, 1), 10);
-      const cls = parseInt(tgtDigits.substring(1), 10);
+      const cls = parseInt(tgtDigits.substring(1, 3), 10);
       return { gradeClass: `${grade}학년 ${cls}반`, sortKey: grade * 100 + cls };
     } else {
       const part = studentIdStr.trim().substring(0, Math.min(3, studentIdStr.length));
@@ -413,7 +409,7 @@ export default function ResultPrintPortal({
                           const rateNum = parseFloat(ev.reflectRate || '100') || 100;
                           const reflectedMax = Number((maxScoreNum * (rateNum / 100)).toFixed(2)).toString();
                           return (
-                            <th key={ev.id || idx} className="border border-slate-800 px-2 py-2 text-center min-w-[125px]">
+                            <th key={ev.id || idx} className="border border-slate-800 px-2 py-2 text-center min-w-[135px] sm:min-w-[155px]">
                               <div className="flex flex-col items-center justify-center gap-1.5 leading-tight">
                                 {ev.evaluationDetailName && (
                                   <span className="block text-[11px] font-black text-slate-800 break-words whitespace-normal text-center" title={ev.evaluationDetailName}>
@@ -450,7 +446,7 @@ export default function ResultPrintPortal({
                           }
 
                           return (
-                            <th key={idx} className="border border-slate-800 px-2 py-2 text-center min-w-[125px]">
+                            <th key={idx} className="border border-slate-800 px-2 py-2 text-center min-w-[135px] sm:min-w-[155px]">
                               <div className="flex flex-col items-center justify-center gap-0.5 leading-tight">
                                 {unitLabel && (
                                   <span className="block text-[8.5px] font-black text-rose-650 tracking-tight mb-0.5 whitespace-nowrap bg-rose-50 border border-rose-100 px-1 py-0.2 rounded">
@@ -595,7 +591,7 @@ export default function ResultPrintPortal({
                         if (parts.length >= 3) {
                           const [sigTeacher, sigSubject, sigStudent] = parts;
                           return sigTeacher.trim() === teacherKey && 
-                                 sigSubject.trim() === subjectKey && 
+                                 sigSubject.replace(/\s+/g, '') === subjectKey.replace(/\s+/g, '') && 
                                  matchesStudentId(sigStudent, printStudentId);
                         }
                         return false;

@@ -545,7 +545,7 @@ export default function App() {
     const tCode = teacherCode || loggedStudent?.teacherCode || selectedTeacherCode || '';
     if (!tCode) return;
     const cleanTeacherCode = tCode.trim();
-    const cleanSubject = subject.trim();
+    const cleanSubject = subject.replace(/\s+/g, '');
     const cleanStudentId = studentId.trim();
     const signatureId = `${cleanTeacherCode}_${cleanSubject}_${cleanStudentId}`;
 
@@ -568,7 +568,7 @@ export default function App() {
     const tCode = teacherCode || loggedStudent?.teacherCode || selectedTeacherCode || '';
     if (!tCode) return;
     const cleanTeacherCode = tCode.trim();
-    const cleanSubject = subject.trim();
+    const cleanSubject = subject.replace(/\s+/g, '');
     const cleanStudentId = studentId.trim();
     const signatureId = `${cleanTeacherCode}_${cleanSubject}_${cleanStudentId}`;
 
