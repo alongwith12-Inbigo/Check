@@ -176,12 +176,15 @@ export function parseNcsHeaderDetails(h: string) {
     const groupFull = match[1].trim(); // e.g. "문서작성 (50%)" or "최종수행점수"
     const subHeader = match[2].trim(); // e.g. "업무 기획"
     
-    // Extract percentage from groupFull, e.g. "50%"
-    const pctMatch = groupFull.match(/(\d+)\s*%/);
+    // Extract percentage from groupFull, supporting decimals like "50.00%" or "50%"
+    const pctMatch = groupFull.match(/([\d.]+)\s*%/);
     const percentage = pctMatch ? `${pctMatch[1]}%` : '';
     
     // Extract unitName by removing percentage parentheses or text
-    let unitName = groupFull.replace(/\(\d+%\)/gi, '').replace(/\d+%/gi, '').trim();
+    let unitName = groupFull
+      .replace(/\([\d.]+\s*%\)/gi, '')
+      .replace(/[\d.]+\s*%/gi, '')
+      .trim();
     unitName = unitName.replace(/\(\s*\)/g, '').trim();
 
     return {

@@ -265,24 +265,73 @@ export default function ResultPrintPortal({
   const niceEval = evalsForSubject.find(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
   const isNiceMode = !!niceEval;
 
-  const niceScoreHeaders = isNiceMode && niceEval ? (niceEval.headers || []).filter(h => {
-    const hCleaned = cleanAndFormatHeaderName(h);
-    if (isMetadataOrNonScoreHeader(h)) return false;
-    const isTotal = [
-      '합계', '총점', '총합', '원점수', '합계점수', '득점계'
-    ].some(k => hCleaned.replace(/\s+/g, '').includes(k)) || 
-    hCleaned.trim() === '계' || hCleaned.trim() === '합' || hCleaned.trim() === '총';
-    return !isTotal;
-  }) : [];
+  // Helper to identify overall total columns
+  const isOverallTotalHeader = (h: string): boolean => {
+    const hClean = h.replace(/\s+/g, '').toLowerCase();
+    const details = parseNcsHeaderDetails(h);
+    
+    // Terms that strongly signify a final/overall course total score, not a specific Capability Unit total
+    const totalTerms = [
+      '최종수행', '과목수행', '산출총점', '최종점수', '종합점수', '득점계', '원점수', '총점', '실득점', '성적'
+    ];
+    const hasTotalTerm = totalTerms.some(term => hClean.includes(term)) ||
+      (details.isNcs && totalTerms.some(term => 
+        details.unitName.replace(/\s+/g, '').toLowerCase().includes(term) || 
+        details.subHeader.replace(/\s+/g, '').toLowerCase().includes(term)
+      ));
+                          
+    if (hasTotalTerm) return true;
+    
+    // Plain total columns without a distinct Capability Unit, e.g. "합계", "총합"
+    const isPlainTotal = ['합계', '총점', '총합', '계', '총', '득점'].some(term => 
+      hClean === term || hClean === `[${term}]` || hClean.endsWith(`]${term}`)
+    );
+    if (isPlainTotal && (!details.isNcs || !details.unitName || 
+        details.unitName.includes('최종') || details.unitName.includes('결과'))) {
+      return true;
+    }
+    
+    return false;
+  };
 
-  const niceTotalHeader = isNiceMode && niceEval ? (niceEval.headers || []).find(h => {
-    const hCleaned = cleanAndFormatHeaderName(h);
-    const isTotal = [
-      '합계', '총점', '총합', '원점수', '합계점수', '득점계'
-    ].some(k => hCleaned.replace(/\s+/g, '').includes(k)) || 
-    hCleaned.trim() === '계' || hCleaned.trim() === '합' || hCleaned.trim() === '총';
-    return isTotal;
-  }) : undefined;
+  const isScoreHeader = (h: string) => {
+    if (isMetadataOrNonScoreHeader(h)) return false;
+    if (isOverallTotalHeader(h)) return false;
+    return true;
+  };
+
+  // Filter actual score columns (including unit-specific "합계" columns if they belong to a unit)
+  const niceScoreHeaders = isNiceMode && niceEval ? (niceEval.headers || []).filter(h => isScoreHeader(h)) : [];
+
+  const niceTotalHeader = isNiceMode && niceEval ? (niceEval.headers || []).find(h => isOverallTotalHeader(h)) : undefined;
+
+  interface NcsGroup {
+    unitName: string;
+    percentage: string;
+    headers: string[];
+  }
+
+  const ncsGroups = useMemo<NcsGroup[]>(() => {
+    if (!isNiceMode || !niceEval) return [];
+    const groups: NcsGroup[] = [];
+    niceScoreHeaders.forEach(h => {
+      const details = parseNcsHeaderDetails(h);
+      const groupName = details.isNcs ? details.unitName : '';
+      const pct = details.isNcs ? details.percentage : '';
+      
+      let group = groups.find(g => g.unitName === groupName);
+      if (!group) {
+        group = {
+          unitName: groupName,
+          percentage: pct,
+          headers: []
+        };
+        groups.push(group);
+      }
+      group.headers.push(h);
+    });
+    return groups;
+  }, [isNiceMode, niceEval, niceScoreHeaders]);
 
   return createPortal(
     <div className="fixed inset-0 bg-slate-900/60 z-50 overflow-y-auto flex items-center justify-center p-2 sm:p-4 print:static print:bg-white print:overflow-visible print:p-0 print-portal-container">
@@ -380,13 +429,13 @@ export default function ResultPrintPortal({
             /* Printable Form Page Container: Forces clean 1-sheet layout styles on prints */
             <div 
               id="printable-score-confirmation-sheet" 
-              className="bg-white rounded-2xl p-6 sm:p-8 shadow-xs max-w-4xl mx-auto border border-slate-300/80 print:shadow-none print:border-0 print:p-0 print:max-w-none print:w-full"
+              className="bg-white rounded-2xl p-4 sm:p-6 shadow-xs max-w-4xl mx-auto border border-slate-300/80 print:shadow-none print:border-0 print:p-0 print:max-w-none print:w-full print:text-[9.5px]"
             >
               
               {/* Printed Heading */}
-              <div className="border-b-4 border-double border-slate-800 pb-3 text-center space-y-2">
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">수행평가 영역별 결과 및 서명 확인 제출표</h1>
-                <div className="flex justify-between items-center text-xs font-bold text-slate-600 font-mono">
+              <div className="border-b-4 border-double border-slate-800 pb-2 text-center space-y-1.5">
+                <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">수행평가 영역별 결과 및 서명 확인 제출표</h1>
+                <div className="flex justify-between items-center text-[10px] font-bold text-slate-600 font-mono print:text-[9.5px]">
                   <span>교과목명: {selectedSubject}</span>
                   <span>학급: {selectedClass}</span>
                   <span>담당교사: {loggedTeacher.name} 선생님</span>
@@ -394,83 +443,110 @@ export default function ResultPrintPortal({
               </div>
 
               {/* Roster Sheet Data Table */}
-              <div className="mt-6 overflow-x-auto print:overflow-visible">
-                <table className="w-full text-left border-collapse border border-slate-800 text-[11px] sm:text-xs">
+              <div className="mt-4 overflow-x-auto print:overflow-visible">
+                <table className="w-full text-left border-collapse border border-slate-800 text-[10px] sm:text-xs print:text-[8.5px] table-fixed">
                   <thead>
-                    <tr className="bg-slate-50 border-b border-slate-800 text-slate-900 font-black font-sans">
-                      <th className="border border-slate-800 px-3 py-2 text-center w-14 whitespace-nowrap">순번</th>
-                      <th className="border border-slate-800 px-3 py-2 text-center w-24 whitespace-nowrap">학번</th>
-                      <th className="border border-slate-800 px-3 py-2 text-center w-24 whitespace-nowrap">성명</th>
-                      
-                      {!isNiceMode ? (
-                        // Mode A: Excel rounds
-                        sortedEvals.map((ev, idx) => {
+                    {isNiceMode ? (
+                      <>
+                        {/* Row 1: Grouped Capability Units */}
+                        <tr className="bg-slate-50 border-b border-slate-800 text-slate-900 font-black font-sans text-center">
+                          <th rowSpan={2} className="border border-slate-800 px-1 py-1 text-center w-8 whitespace-nowrap print:w-6 print:text-[8.5px]">순번</th>
+                          <th rowSpan={2} className="border border-slate-800 px-1 py-1 text-center w-16 whitespace-nowrap print:w-14 print:text-[8.5px]">학번</th>
+                          <th rowSpan={2} className="border border-slate-800 px-1 py-1 text-center w-20 whitespace-nowrap print:w-18 print:text-[8.5px]">성명</th>
+                          
+                          {ncsGroups.map((group, gIdx) => {
+                            const groupDisplayName = group.unitName || '평가 영역';
+                            const cleanName = cleanAndFormatNcsUnitName(groupDisplayName, gIdx + 1);
+                            const displayLabel = group.percentage 
+                              ? `${cleanName} (${group.percentage})` 
+                              : cleanName;
+                              
+                            return (
+                              <th 
+                                key={gIdx} 
+                                colSpan={group.headers.length} 
+                                className="border border-slate-800 px-1 py-1 text-center bg-slate-100/60 font-extrabold print:text-[8.5px]"
+                              >
+                                <span className="block text-[9px] print:text-[8.5px] text-slate-900 font-bold tracking-tight leading-none">
+                                  {displayLabel}
+                                </span>
+                              </th>
+                            );
+                          })}
+                          
+                          <th rowSpan={2} className="border border-slate-800 px-1 py-1 text-center w-14 whitespace-nowrap print:w-12 print:text-[8.5px]">산출총점</th>
+                          <th rowSpan={2} className="border border-slate-800 px-1 py-1 text-center w-24 whitespace-nowrap print:w-18 print:text-[8.5px]">확인 서명</th>
+                          <th rowSpan={2} className="border border-slate-800 px-1 py-1 text-center min-w-[70px] w-auto whitespace-normal print:text-[8.5px]">비고</th>
+                        </tr>
+                        {/* Row 2: Sub-headers */}
+                        <tr className="bg-slate-50 border-b border-slate-800 text-slate-900 font-bold font-sans text-center">
+                          {ncsGroups.map((group) => 
+                            group.headers.map((h, hIdx) => {
+                              const details = parseNcsHeaderDetails(h);
+                              const hCleaned = cleanAndFormatHeaderName(details.subHeader);
+                              
+                              let title = hCleaned;
+                              let maxScoreText = '';
+                              const match = hCleaned.match(/^([\s\S]+?)\s*\(([\s\S]+?)\)$/);
+                              if (match) {
+                                title = match[1].trim();
+                                maxScoreText = match[2].trim();
+                              }
+
+                              const isHapge = title === '합계';
+
+                              return (
+                                <th 
+                                  key={hIdx} 
+                                  className={`border border-slate-800 px-1 py-0.5 text-center font-bold print:text-[8px] leading-tight ${
+                                    isHapge ? 'bg-amber-50/60 text-amber-950 font-extrabold' : ''
+                                  }`}
+                                >
+                                  <div className="flex flex-col items-center justify-center leading-none">
+                                    <span className="block text-[9px] print:text-[8px] text-slate-800">
+                                      {title}
+                                    </span>
+                                    {maxScoreText && (
+                                      <span className="block text-[8px] print:text-[7px] text-slate-500 font-normal mt-0.5 whitespace-nowrap">
+                                        {maxScoreText}
+                                      </span>
+                                    )}
+                                  </div>
+                                </th>
+                              );
+                            })
+                          )}
+                        </tr>
+                      </>
+                    ) : (
+                      <tr className="bg-slate-50 border-b border-slate-800 text-slate-900 font-black font-sans text-center">
+                        <th className="border border-slate-800 px-1 py-1.5 text-center w-8 whitespace-nowrap print:w-6">순번</th>
+                        <th className="border border-slate-800 px-1 py-1.5 text-center w-16 whitespace-nowrap print:w-14">학번</th>
+                        <th className="border border-slate-800 px-1 py-1.5 text-center w-20 whitespace-nowrap print:w-18">성명</th>
+                        {sortedEvals.map((ev, idx) => {
                           const maxScoreNum = parseFloat(ev.maxScore || '100') || 100;
                           const rateNum = parseFloat(ev.reflectRate || '100') || 100;
                           const reflectedMax = Number((maxScoreNum * (rateNum / 100)).toFixed(2)).toString();
                           return (
-                            <th key={ev.id || idx} className="border border-slate-800 px-2 py-2 text-center min-w-[135px] sm:min-w-[155px]">
-                              <div className="flex flex-col items-center justify-center gap-1.5 leading-tight">
+                            <th key={ev.id || idx} className="border border-slate-800 px-1 py-1.5 text-center min-w-[60px] max-w-[100px] leading-tight print:text-[8.5px]">
+                              <div className="flex flex-col items-center justify-center gap-0.5">
                                 {ev.evaluationDetailName && (
-                                  <span className="block text-[11px] font-black text-slate-800 break-words whitespace-normal text-center" title={ev.evaluationDetailName}>
+                                  <span className="block text-[9.5px] print:text-[8px] font-black text-slate-800 break-words text-center" title={ev.evaluationDetailName}>
                                     {ev.evaluationDetailName}
                                   </span>
                                 )}
-                                <span className="block text-[9.5px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 whitespace-nowrap">
+                                <span className="block text-[8.5px] print:text-[7.5px] text-indigo-950 font-bold bg-indigo-50 border border-indigo-100 rounded px-1 mt-0.5 whitespace-nowrap">
                                   만점 {reflectedMax}점
                                 </span>
                               </div>
                             </th>
                           );
-                        })
-                      ) : (
-                        // Mode B: Nice Excel areas (2단계 나이스 종합 엑셀)
-                        niceScoreHeaders.map((h, idx) => {
-                          const details = parseNcsHeaderDetails(h);
-                          const hCleaned = cleanAndFormatHeaderName(details.subHeader);
-                          
-                          // Format cleanly as Title and max score
-                          let title = hCleaned;
-                          let maxScoreText = '';
-                          const match = hCleaned.match(/^([\s\S]+?)\s*\(([\s\S]+?)\)$/);
-                          if (match) {
-                            title = match[1].trim();
-                            maxScoreText = match[2].trim();
-                          }
-
-                          let unitLabel = '';
-                          if (details.isNcs) {
-                            const unitIndexMatch = details.unitName.match(/능력단위\s*(\d+)/i);
-                            const uIndex = unitIndexMatch ? parseInt(unitIndexMatch[1], 10) : (idx + 1);
-                            unitLabel = cleanAndFormatNcsUnitName(details.unitName, uIndex);
-                          }
-
-                          return (
-                            <th key={idx} className="border border-slate-800 px-2 py-2 text-center min-w-[135px] sm:min-w-[155px]">
-                              <div className="flex flex-col items-center justify-center gap-0.5 leading-tight">
-                                {unitLabel && (
-                                  <span className="block text-[8.5px] font-black text-rose-650 tracking-tight mb-0.5 whitespace-nowrap bg-rose-50 border border-rose-100 px-1 py-0.2 rounded">
-                                    {unitLabel}
-                                  </span>
-                                )}
-                                <span className="block text-[10.5px] font-extrabold text-slate-850 break-words whitespace-normal text-center">
-                                  {title}
-                                </span>
-                                {maxScoreText && (
-                                  <span className="block text-[9px] text-indigo-950 font-black bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.2 mt-0.5 whitespace-nowrap">
-                                    {maxScoreText}
-                                  </span>
-                                )}
-                              </div>
-                            </th>
-                          );
-                        })
-                      )}
-
-                      <th className="border border-slate-800 px-3 py-2 text-center w-24 whitespace-nowrap">산출총점</th>
-                      <th className="border border-slate-800 px-3 py-2 text-center w-36 whitespace-nowrap">확인 서명</th>
-                      <th className="border border-slate-800 px-3 py-2 text-center min-w-[150px] w-auto whitespace-nowrap">비고</th>
-                    </tr>
+                        })}
+                        <th className="border border-slate-800 px-1 py-1.5 text-center w-14 whitespace-nowrap print:w-12">산출총점</th>
+                        <th className="border border-slate-800 px-1 py-1.5 text-center w-24 whitespace-nowrap print:w-18">확인 서명</th>
+                        <th className="border border-slate-800 px-1 py-1.5 text-center min-w-[70px] w-auto">비고</th>
+                      </tr>
+                    )}
                   </thead>
                   <tbody>
                     {students.map((student, sIdx) => {
@@ -573,11 +649,17 @@ export default function ResultPrintPortal({
                           sumOfAreasMaxScore += areaMax;
                         });
 
-                        if ((!isTotalExplicit || totalMaxVal === 100 || totalMaxVal === 0) && sumOfAreasMaxScore > 0) {
-                          totalMaxVal = sumOfAreasMaxScore;
+                        const customSettingKey = `${loggedTeacher.code.trim()}_${selectedSubject.trim()}`;
+                        const customMaxStr = subjectMaxScores[customSettingKey] || '';
+                        
+                        if (customMaxStr) {
+                          courseMaxScore = parseFloat(customMaxStr);
+                        } else if ((!isTotalExplicit || totalMaxVal === 100 || totalMaxVal === 0) && sumOfAreasMaxScore > 0) {
+                          // NCS is naturally 100 overall max score if individual parts sum up to > 0 or if not explicit
+                          courseMaxScore = 100;
+                        } else {
+                          courseMaxScore = totalMaxVal;
                         }
-
-                        courseMaxScore = totalMaxVal;
                       }
 
                       // Query student signature URL from Firestore signals with robust ID matching
@@ -601,10 +683,10 @@ export default function ResultPrintPortal({
                       }
 
                       return (
-                        <tr key={student.studentId} className="border-b border-slate-800 hover:bg-slate-50 text-slate-800 font-medium">
-                          <td className="border border-slate-800 px-3 py-1 text-center font-mono h-[46px]">{sIdx + 1}</td>
-                          <td className="border border-slate-800 px-3 py-1 text-center font-mono font-black h-[46px]">{student.studentId}</td>
-                          <td className="border border-slate-800 px-3 py-1 text-center truncate h-[46px]">{student.studentName || '미입력'}</td>
+                        <tr key={student.studentId} className="border-b border-slate-800 hover:bg-slate-50 text-slate-800 font-medium leading-none">
+                          <td className="border border-slate-800 px-1 py-1 text-center font-mono print:py-0.5">{sIdx + 1}</td>
+                          <td className="border border-slate-800 px-1 py-1 text-center font-mono font-black print:py-0.5">{student.studentId}</td>
+                          <td className="border border-slate-800 px-1 py-1 text-center truncate print:py-0.5">{student.studentName || '미입력'}</td>
 
                           {/* Individual evaluation rounds / areas */}
                           {!isNiceMode ? (
@@ -617,45 +699,55 @@ export default function ResultPrintPortal({
                                 : '-';
 
                               return (
-                                <td key={ev.id} className="border border-slate-800 px-2 py-1 text-center font-mono text-[12px] h-[46px]">
+                                <td key={ev.id} className="border border-slate-800 px-1 py-1 text-center font-mono text-[10.5px] print:text-[9px] print:py-0.5">
                                   <span className="font-extrabold text-slate-900">{displayedVal}</span>
                                 </td>
                               );
                             })
                           ) : (
-                            niceScoreHeaders.map((h, hIdx) => {
-                              const scoreVal = niceRow ? String(niceRow[h] || '0').trim() : '-';
-                              let displayedVal = scoreVal;
-                              if (/^\d+\.00$/.test(scoreVal)) {
-                                displayedVal = parseFloat(scoreVal).toString();
-                              } else if (/^\d+\.\d+$/.test(scoreVal)) {
-                                const parsedFloat = parseFloat(scoreVal);
-                                if (!isNaN(parsedFloat)) {
-                                  displayedVal = parsedFloat.toString();
+                            ncsGroups.map((group) => 
+                              group.headers.map((h, hIdx) => {
+                                const scoreVal = niceRow ? String(niceRow[h] || '0').trim() : '-';
+                                let displayedVal = scoreVal;
+                                if (/^\d+\.00$/.test(scoreVal)) {
+                                  displayedVal = parseFloat(scoreVal).toString();
+                                } else if (/^\d+\.\d+$/.test(scoreVal)) {
+                                  const parsedFloat = parseFloat(scoreVal);
+                                  if (!isNaN(parsedFloat)) {
+                                    displayedVal = parsedFloat.toString();
+                                  }
                                 }
-                              }
 
-                              return (
-                                <td key={hIdx} className="border border-slate-800 px-2 py-1 text-center font-mono text-[12px] h-[46px]">
-                                  <span className="font-extrabold text-slate-900">{displayedVal}</span>
-                                </td>
-                              );
-                            })
+                                const details = parseNcsHeaderDetails(h);
+                                const isHapge = details.subHeader.trim() === '합계';
+
+                                return (
+                                  <td 
+                                    key={hIdx} 
+                                    className={`border border-slate-800 px-1 py-0.5 text-center font-mono text-[10.5px] print:text-[9px] print:py-0.5 ${
+                                      isHapge ? 'bg-amber-50/10 text-amber-950 font-extrabold' : ''
+                                    }`}
+                                  >
+                                    <span className="font-bold text-slate-900">{displayedVal}</span>
+                                  </td>
+                                );
+                              })
+                            )
                           )}
 
                           {/* Cumulative total score */}
-                          <td className="border border-slate-800 px-3 py-1 text-center font-sans font-black bg-slate-50/50 h-[46px]">
+                          <td className="border border-slate-800 px-1 py-1 text-center font-sans font-black bg-slate-50/50 print:py-0.5">
                             {displayedReflectedObtained}
-                            <span className="text-[10px] text-slate-400 font-normal"> / {courseMaxScore}</span>
+                            <span className="text-[9px] print:text-[8px] text-slate-400 font-normal">/{courseMaxScore}</span>
                           </td>
 
                           {/* Delineated Signature col */}
-                          <td className="border border-slate-800 px-2 py-1 text-center bg-slate-50/20 w-36 h-[46px]">
-                            <div className="flex items-center justify-center h-[38px] w-full">
+                          <td className="border border-slate-800 px-1 py-1 text-center bg-slate-50/10 print:py-0.5">
+                            <div className="flex items-center justify-center h-[26px] w-full">
                               {studentSigUrl ? (
-                                <img src={studentSigUrl} alt="서명" className="h-[34px] max-w-[120px] object-contain block print:h-[34px]" referrerPolicy="no-referrer" />
+                                <img src={studentSigUrl} alt="서명" className="h-[22px] max-w-[65px] object-contain block print:h-[22px]" referrerPolicy="no-referrer" />
                               ) : (
-                                <div className="text-[9px] text-slate-350 border border-dashed border-slate-300 rounded-sm py-1 px-2 font-bold print:border-0 print:p-0 print:text-transparent">
+                                <div className="text-[8px] text-slate-300 border border-dashed border-slate-200 rounded-sm py-0.5 px-1 font-bold print:border-0 print:p-0 print:text-transparent">
                                    미서명
                                 </div>
                               )}
@@ -663,7 +755,7 @@ export default function ResultPrintPortal({
                           </td>
 
                           {/* Remarks (비고) col */}
-                          <td className="border border-slate-800 px-2 py-1 text-center text-[11.5px] text-slate-700 font-semibold w-auto min-w-[150px] h-[46px]">
+                          <td className="border border-slate-800 px-1 py-1 text-center text-[10px] print:text-[8px] text-slate-700 font-semibold truncate print:py-0.5">
                             {niceRow ? (String(niceRow['비고'] || niceRow['비고란'] || '').trim()) : ''}
                           </td>
                         </tr>
@@ -674,7 +766,7 @@ export default function ResultPrintPortal({
               </div>
 
               {/* Printable footer area */}
-              <div className="mt-8 pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center text-[10px] text-slate-450 leading-relaxed gap-2 print:border-slate-800">
+              <div className="mt-4 pt-2 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center text-[9px] text-slate-400 leading-relaxed gap-2 print:border-slate-800 print:text-[8.5px]">
                 <span>※ 본 성적 일람표는 {new Date().toLocaleDateString('ko-KR')} 일자로 출력되었습니다.</span>
                 <span className="font-bold border-b border-slate-800 pb-0.5 text-slate-700">담당 교사 서명: __________________ (인)</span>
               </div>
