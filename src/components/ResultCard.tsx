@@ -821,13 +821,13 @@ export default function ResultCard({
               return (
                 <div className="bg-emerald-50/50 border border-emerald-250 rounded-2xl p-4 flex flex-col items-center justify-center gap-2.5">
                   <div className="text-xs font-black text-emerald-850 flex items-center gap-1">
-                    🎉 확인 서명이 제출 완료
+                    서명 제출 완료
                   </div>
                   <div className="bg-white border border-slate-200 rounded-xl p-3 max-w-[220px] overflow-hidden flex items-center justify-center shadow-xs">
                     <img src={savedSignature} alt="학생 서명" className="h-14 object-contain" referrerPolicy="no-referrer" />
                   </div>
                   <div className="flex flex-col items-center gap-1">
-                    <span className="text-[10px] text-slate-400 font-mono font-bold">서명 제출 일시 기록됨</span>
+                    <span className="text-[10px] text-slate-400 font-mono font-bold">서명 정보 저장</span>
                     <button
                       type="button"
                       onClick={() => {
@@ -835,7 +835,7 @@ export default function ResultCard({
                       }}
                       className="mt-1 text-[11px] font-black text-red-500 hover:text-red-700 bg-white border border-red-200 hover:bg-red-50 rounded-lg px-2.5 py-1.5 transition cursor-pointer shadow-2xs active:scale-95"
                     >
-                      🗑️ 서명 삭제 후 다시 작성하기
+                      🗑️ 삭제/재서명
                     </button>
                   </div>
                 </div>
