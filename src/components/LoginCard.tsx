@@ -8,27 +8,27 @@ import {
   Info,
   CalendarCheck
 } from 'lucide-react';
-import { EvaluationState, StudentSession, RegisteredStudent } from '../types';
-import { findStudentIdKey, findBirthdateKey, matchesStudentId, matchesBirthdate } from '../utils';
+import { StudentSession, ExcelUpload } from '../types';
 
 interface LoginCardProps {
   onLoginSuccess: (session: StudentSession) => void;
-  allStudents: RegisteredStudent[];
-  allEvaluations: EvaluationState[];
+  onValidateStudent: (studentId: string, birthdateOrPassword: string) => Promise<{ success: boolean; error?: string; session?: StudentSession }>;
+  excelUploads: ExcelUpload[];
 }
 
 export default function LoginCard({ 
   onLoginSuccess,
-  allStudents,
-  allEvaluations
+  onValidateStudent,
+  excelUploads
 }: LoginCardProps) {
   const [studentId, setStudentId] = useState('');
   const [birthdate, setBirthdate] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [showInstructions, setShowInstructions] = useState(false);
   const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -42,86 +42,19 @@ export default function LoginCard({
       return;
     }
 
-    // Find matching registered student from the Admin's master student registry
-    const studentInRoster = allStudents.find(student => 
-      matchesStudentId(studentId, student.studentId)
-    );
-
-    let matchedRegisteredStudent: RegisteredStudent | undefined = undefined;
-    let detectedStudentName = '';
-
-    // If master registry exists, strictly enforce verification against it
-    if (allStudents.length > 0) {
-      if (!studentInRoster) {
-        setErrorMsg(
-          '입력하신 학번의 학생 정보를 찾을 수 없습니다.\n' +
-          '문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
-        );
-        return;
-      }
-
-      // Check password if set; otherwise check birthdate
-      const hasCustomPassword = studentInRoster.password && studentInRoster.password.trim() !== '';
-      if (hasCustomPassword) {
-        if (studentInRoster.password === birthdate.trim()) {
-          matchedRegisteredStudent = studentInRoster;
-        } else {
-          setErrorMsg('비밀번호가 일치하지 않습니다. 비밀번호를 분실한 경우 학급 정보도우미를 통해 문의해주세요.');
-          return;
-        }
+    setIsValidating(true);
+    try {
+      const res = await onValidateStudent(studentId, birthdate);
+      if (res.success && res.session) {
+        onLoginSuccess(res.session);
       } else {
-        if (matchesBirthdate(birthdate, studentInRoster.birthdate)) {
-          matchedRegisteredStudent = studentInRoster;
-        } else {
-          setErrorMsg(
-            '입력하신 학번과 생년월일이 일치하는 학생 정보를 찾을 수 없습니다.\n' +
-            '문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
-          );
-          return;
-        }
+        setErrorMsg(res.error || '로그인에 실패했습니다.');
       }
-    } else {
-      // If master registry is empty, fall back to checking raw rows in allEvaluations 
-      // (Any spreadsheet match that has Student ID and Birthdate matching)
-      let foundInEvaluations = false;
-
-      for (const evalItem of allEvaluations) {
-        const studentIdKey = findStudentIdKey(evalItem.headers);
-        const birthdateKey = findBirthdateKey(evalItem.headers);
-        if (!studentIdKey || !birthdateKey) continue;
-
-        const foundRow = evalItem.rows.find(row => 
-          matchesStudentId(studentId, row[studentIdKey]) && matchesBirthdate(birthdate, row[birthdateKey])
-        );
-
-        if (foundRow) {
-          foundInEvaluations = true;
-          detectedStudentName = String(foundRow['이름'] || foundRow['성명'] || foundRow['학생명'] || foundRow['학생이름'] || '').trim();
-          break;
-        }
-      }
-
-      if (!foundInEvaluations) {
-        setErrorMsg(
-          '입력하신 학번 또는 생년월일과 일치하는 성적 기록을 찾을 수 없습니다.\n' +
-          '학적 명부가 비어 있는 상태이므로, 선생님이 엑셀에 입력한 정보와 맞는지 확인하십시오.'
-        );
-        return;
-      }
+    } catch (err) {
+      setErrorMsg('로그인 중 서버와의 연결에 실패했습니다.');
+    } finally {
+      setIsValidating(false);
     }
-
-    const finalName = matchedRegisteredStudent 
-      ? matchedRegisteredStudent.name 
-      : (detectedStudentName || `학생 (${studentId})`);
-    
-    onLoginSuccess({
-      studentId: studentId.trim(),
-      birthdate: matchedRegisteredStudent ? matchedRegisteredStudent.birthdate : birthdate.trim(),
-      studentName: finalName,
-      teacherName: '',
-      results: [],
-      teacherCode: ''
-    });
   };
 
   return (
@@ -162,7 +95,8 @@ export default function LoginCard({
                 placeholder="예: 10305"
                 value={studentId}
                 onChange={(e) => setStudentId(e.target.value)}
-                className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800"
+                disabled={isValidating}
+                className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800 disabled:opacity-50"
               />
             </div>
 
@@ -177,7 +111,8 @@ export default function LoginCard({
                 placeholder="예: 20081231 또는 설정한 비밀번호"
                 value={birthdate}
                 onChange={(e) => setBirthdate(e.target.value)}
-                className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800 tracking-widest"
+                disabled={isValidating}
+                className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all font-semibold text-slate-800 tracking-widest disabled:opacity-50"
               />
             </div>
 
@@ -203,7 +138,8 @@ export default function LoginCard({
                   type="checkbox"
                   checked={agreedToPrivacy}
                   onChange={(e) => setAgreedToPrivacy(e.target.checked)}
-                  className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-4.5 h-4.5 cursor-pointer"
+                  disabled={isValidating}
+                  className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-4.5 h-4.5 cursor-pointer disabled:opacity-50"
                 />
                 <span className="text-[11px] font-bold text-slate-800 leading-tight">
                   개인정보 수집 및 이용에 동의합니다. (필수 체크)
@@ -220,13 +156,23 @@ export default function LoginCard({
 
             <button 
               type="submit"
+              disabled={isValidating}
               className={`w-full py-3.5 border text-white rounded-xl text-sm font-extrabold flex items-center justify-center gap-1 shadow-sm hover:shadow-md transition-all cursor-pointer ${
-                agreedToPrivacy 
-                  ? 'bg-indigo-900 border-indigo-900 hover:bg-indigo-950' 
-                  : 'bg-slate-350 border-slate-300 hover:bg-slate-400 opacity-90'
+                isValidating
+                  ? 'bg-indigo-350 border-indigo-300 cursor-not-allowed opacity-80'
+                  : agreedToPrivacy 
+                    ? 'bg-indigo-900 border-indigo-900 hover:bg-indigo-950' 
+                    : 'bg-slate-350 border-slate-300 hover:bg-slate-400 opacity-90'
               }`}
             >
-              동의 및 로그인
+              {isValidating ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>조회 및 확인 중...</span>
+                </div>
+              ) : (
+                '동의 및 로그인'
+              )}
             </button>
           </div>
 

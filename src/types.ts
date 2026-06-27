@@ -54,6 +54,7 @@ export interface StudentResultItem {
   reflectRate?: string;
   headers: string[];
   row: ExcelRow;
+  rows?: ExcelRow[];
   teacherCode?: string;
   uploadType?: 'excel' | 'pdf' | 'test_excel_sign';
   pdfBase64?: string;

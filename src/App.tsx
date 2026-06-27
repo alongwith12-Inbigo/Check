@@ -11,8 +11,9 @@ import ResultCard from './components/ResultCard';
 import AdminDashboard from './components/AdminDashboard';
 import AdminManager from './components/AdminManager';
 import { EvaluationState, Teacher, StudentSession, RegisteredStudent, ExcelUpload } from './types';
-import { doc, onSnapshot, setDoc, collection, deleteDoc, deleteField, writeBatch } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc, getDocs, collection, deleteDoc, deleteField, writeBatch, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import { findStudentIdKey, findBirthdateKey, matchesStudentId, matchesBirthdate } from './utils';
 import { 
   Smile, 
   HelpCircle, 
@@ -155,6 +156,11 @@ export default function App() {
 
   // Subscribe to Subject Settings in real-time from Firestore
   useEffect(() => {
+    if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
+      setSubjectMaxScores({});
+      setSubjectCompletionStates({});
+      return;
+    }
     const collRef = collection(db, 'subjectSettings');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const scores: Record<string, string> = {};
@@ -171,10 +177,14 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
 
   // Subscribe to Teacher Settings in real-time from Firestore
   useEffect(() => {
+    if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
+      setTeacherSettings({});
+      return;
+    }
     const collRef = collection(db, 'teacherSettings');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const settings: Record<string, boolean> = {};
@@ -188,12 +198,28 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
 
   // Subscribe to Student Signatures in real-time from Firestore
   useEffect(() => {
-    const collRef = collection(db, 'signatures');
-    const unsubscribe = onSnapshot(collRef, (snap) => {
+    if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
+      setSignatures({});
+      return;
+    }
+
+    let q;
+    if (loggedStudent) {
+      // Students only listen to their own signatures to prevent PII leakage and minimize read counts
+      q = query(collection(db, 'signatures'), where('studentId', '==', loggedStudent.studentId));
+    } else if (loggedTeacher) {
+      // Teachers only listen to signatures for their own teacherCode
+      q = query(collection(db, 'signatures'), where('teacherCode', '==', loggedTeacher.code));
+    } else {
+      // Admins listen to all signatures
+      q = collection(db, 'signatures');
+    }
+
+    const unsubscribe = onSnapshot(q, (snap) => {
       const sigs: Record<string, string> = {};
       snap.forEach((d) => {
         const data = d.data();
@@ -205,7 +231,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
 
   // Subscribe to Application Level Privacy Policy Settings from Firestore
   useEffect(() => {
@@ -293,6 +319,10 @@ export default function App() {
 
   // 1. Subscribe to Teachers directory in real-time from Firestore
   useEffect(() => {
+    if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
+      setTeachers([]);
+      return;
+    }
     const collRef = collection(db, 'teachers');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const list: Teacher[] = [];
@@ -312,10 +342,14 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
 
   // 1.5. Subscribe to Students directory in real-time from Firestore
   useEffect(() => {
+    if (!loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
+      setAllStudents([]);
+      return;
+    }
     const collRef = collection(db, 'students');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const list: RegisteredStudent[] = [];
@@ -336,10 +370,14 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [loggedTeacher, isAdminLoggedIn, isAdminOpen]);
 
   // 1.6. Subscribe to Excel Uploads metadata in real-time
   useEffect(() => {
+    if (!isAdminLoggedIn && !isAdminOpen) {
+      setExcelUploads([]);
+      return;
+    }
     const collRef = collection(db, 'excelUploads');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const list: ExcelUpload[] = [];
@@ -358,12 +396,29 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isAdminLoggedIn, isAdminOpen]);
 
   // 2. Subscribe to All Evaluations in real-time from Firestore
   useEffect(() => {
-    const collRef = collection(db, 'evaluation');
-    const unsubscribe = onSnapshot(collRef, (snap) => {
+    if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
+      setAllEvaluations([]);
+      return;
+    }
+
+    let q;
+    if (loggedStudent) {
+      // Students listen to all evaluations to allow seamless teacher selection in-memory
+      // and prevent multiple unsubscribe/resubscribe operations
+      q = collection(db, 'evaluation');
+    } else if (loggedTeacher) {
+      // Teachers only listen to their own evaluations
+      q = query(collection(db, 'evaluation'), where('teacherCode', '==', loggedTeacher.code));
+    } else {
+      // Admins listen to all evaluations
+      q = collection(db, 'evaluation');
+    }
+
+    const unsubscribe = onSnapshot(q, (snap) => {
       const list: EvaluationState[] = [];
       snap.forEach((d) => {
         const data = d.data();
@@ -391,7 +446,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
 
   // Sync student's selectedTeacherCode to first teacher when list updates
   useEffect(() => {
@@ -713,6 +768,129 @@ export default function App() {
     setLoggedStudent(null);
   };
 
+  const handleValidateStudent = async (studentId: string, birthdateOrPassword: string): Promise<{ success: boolean; error?: string; session?: StudentSession }> => {
+    const trimmedId = studentId.trim();
+    const trimmedBirthOrPass = birthdateOrPassword.trim();
+
+    // 1. Check if student roster exists in excelUploads
+    const hasRoster = excelUploads.some(u => u.id === 'students');
+
+    if (hasRoster) {
+      try {
+        // Target fetch for only this specific student
+        const studentDocRef = doc(db, 'students', trimmedId);
+        const studentDocSnap = await getDoc(studentDocRef);
+
+        if (!studentDocSnap.exists()) {
+          return {
+            success: false,
+            error: '입력하신 학번의 학생 정보를 찾을 수 없습니다.\n문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
+          };
+        }
+
+        const studentData = studentDocSnap.data();
+        const hasCustomPassword = studentData.password && studentData.password.trim() !== '';
+
+        if (hasCustomPassword) {
+          if (studentData.password === trimmedBirthOrPass) {
+            return {
+              success: true,
+              session: {
+                studentId: trimmedId,
+                birthdate: studentData.birthdate || '',
+                studentName: studentData.name || '',
+                teacherName: '',
+                results: [],
+                teacherCode: ''
+              }
+            };
+          } else {
+            return {
+              success: false,
+              error: '비밀번호가 일치하지 않습니다. 비밀번호를 분실한 경우 학급 정보도우미를 통해 문의해주세요.'
+            };
+          }
+        } else {
+          if (matchesBirthdate(trimmedBirthOrPass, studentData.birthdate || '')) {
+            return {
+              success: true,
+              session: {
+                studentId: trimmedId,
+                birthdate: studentData.birthdate || '',
+                studentName: studentData.name || '',
+                teacherName: '',
+                results: [],
+                teacherCode: ''
+              }
+            };
+          } else {
+            return {
+              success: false,
+              error: '입력하신 학번과 생년월일이 일치하는 학생 정보를 찾을 수 없습니다.\n문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
+            };
+          }
+        }
+      } catch (error) {
+        console.error("Student validation failed:", error);
+        return {
+          success: false,
+          error: '서버 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+        };
+      }
+    } else {
+      // Fallback: If no master roster is registered, fetch all evaluations once (lazy-fetch!) and scan
+      try {
+        const evaluationsSnap = await getDocs(collection(db, 'evaluation'));
+        let foundInEvaluations = false;
+        let detectedStudentName = '';
+        let detectedBirthdate = '';
+
+        evaluationsSnap.forEach((d) => {
+          if (foundInEvaluations) return;
+          const evalItem = d.data() as EvaluationState;
+          const studentIdKey = findStudentIdKey(evalItem.headers);
+          const birthdateKey = findBirthdateKey(evalItem.headers);
+          if (!studentIdKey || !birthdateKey) return;
+
+          const foundRow = evalItem.rows.find(row => 
+            matchesStudentId(trimmedId, row[studentIdKey]) && matchesBirthdate(trimmedBirthOrPass, row[birthdateKey])
+          );
+
+          if (foundRow) {
+            foundInEvaluations = true;
+            detectedStudentName = String(foundRow['이름'] || foundRow['성명'] || foundRow['학생명'] || foundRow['학생이름'] || '').trim();
+            detectedBirthdate = String(foundRow[birthdateKey] || '').trim();
+          }
+        });
+
+        if (foundInEvaluations) {
+          return {
+            success: true,
+            session: {
+              studentId: trimmedId,
+              birthdate: detectedBirthdate || trimmedBirthOrPass,
+              studentName: detectedStudentName || `학생 (${trimmedId})`,
+              teacherName: '',
+              results: [],
+              teacherCode: ''
+            }
+          };
+        } else {
+          return {
+            success: false,
+            error: '입력하신 학번 또는 생년월일과 일치하는 성적 기록을 찾을 수 없습니다.\n학적 명부가 비어 있는 상태이므로, 선생님이 엑셀에 입력한 정보와 맞는지 확인하십시오.'
+          };
+        }
+      } catch (error) {
+        console.error("Fallback validation failed:", error);
+        return {
+          success: false,
+          error: '서버 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+        };
+      }
+    }
+  };
+
   const handleStudentLogin = (sessionData: StudentSession) => {
     setLoggedStudent(sessionData);
   };
@@ -1026,8 +1204,8 @@ export default function App() {
 
               <LoginCard 
                 onLoginSuccess={handleStudentLogin}
-                allStudents={allStudents}
-                allEvaluations={allEvaluations}
+                onValidateStudent={handleValidateStudent}
+                excelUploads={excelUploads}
               />
             </motion.div>
           )}

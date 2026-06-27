@@ -83,16 +83,59 @@ export function findBirthdateKey(headers: string[]): string | undefined {
   });
 }
 
+export function parseGradeAndClass(targetGradeClass: string): { grade: number; classVal: number } | null {
+  if (!targetGradeClass) return null;
+  const clean = targetGradeClass.trim();
+  
+  // 1. Check for Korean "학년" and "반" (e.g., "1학년 8반", "1학년8반")
+  const korMatch = clean.match(/(\d+)\s*학년\s*(\d+)\s*반/);
+  if (korMatch) {
+    return { grade: parseInt(korMatch[1], 10), classVal: parseInt(korMatch[2], 10) };
+  }
+
+  // 2. Check for dash pattern (e.g., "1-8", "3-7")
+  const dashMatch = clean.match(/(\d+)\s*-\s*(\d+)/);
+  if (dashMatch) {
+    return { grade: parseInt(dashMatch[1], 10), classVal: parseInt(dashMatch[2], 10) };
+  }
+
+  // 3. Check for 3-digit format (e.g., "108" -> grade 1, class 8; "307" -> grade 3, class 7)
+  const numMatch = clean.match(/\d+/);
+  if (numMatch) {
+    const code = numMatch[0];
+    if (code.length === 3) {
+      return { grade: parseInt(code[0], 10), classVal: parseInt(code.substring(1), 10) };
+    } else if (code.length === 4) {
+      return { grade: parseInt(code.substring(0, 2), 10), classVal: parseInt(code.substring(2), 10) };
+    } else if (code.length === 2) {
+      return { grade: parseInt(code[0], 10), classVal: parseInt(code[1], 10) };
+    }
+  }
+
+  return null;
+}
+
 /**
  * Robust matching for student IDs. Normalizes spaces/symbols/headers to digits.
  */
-export function matchesStudentId(inputId: string, rowId: any): boolean {
+export function matchesStudentId(inputId: string, rowId: any, targetGradeClass?: string): boolean {
   if (rowId === undefined || rowId === null) return false;
   const normInput = String(inputId).replace(/\D/g, '');
   const normRowRaw = String(rowId).trim();
-  const normRow = normRowRaw.replace(/\D/g, '');
+  let normRow = normRowRaw.replace(/\D/g, '');
   
   if (!normInput || !normRow) return false;
+
+  // Reconstruct 5-digit ID if the rowId contains only a 1 or 2-digit student number
+  if (normRow.length > 0 && normRow.length <= 2 && targetGradeClass) {
+    const parsed = parseGradeAndClass(targetGradeClass);
+    if (parsed) {
+      const grade = String(parsed.grade);
+      const cls = String(parsed.classVal).padStart(2, '0');
+      const num = normRow.padStart(2, '0');
+      normRow = `${grade}${cls}${num}`;
+    }
+  }
 
   // 1. If exact numeric comparison matches (e.g. "30301" === "30301")
   if (normInput === normRow) return true;
@@ -261,7 +304,7 @@ export function findNameKey(headers: string[]): string | undefined {
 /**
   * Finds the total score key (the last score-bearing column, excluding feedback and student identifiers)
   */
-export function findTotalScoreKey(headers: string[], row: Record<string, any>, feedbackKeys: string[]): string | undefined {
+export function findTotalScoreKey(headers: string[], rows: Record<string, any>[] | Record<string, any>, feedbackKeys: string[]): string | undefined {
   const studentIdKey = findStudentIdKey(headers);
   const birthdateKey = findBirthdateKey(headers);
   const nameKey = findNameKey(headers);
@@ -269,13 +312,15 @@ export function findTotalScoreKey(headers: string[], row: Record<string, any>, f
   const classKey = findClassKey(headers);
   const numberKey = findNumberKey(headers);
 
+  const rowList = Array.isArray(rows) ? rows : [rows];
+
   // Filter out identifiers and feedback rows
   const potentialScoreKeys = headers.filter(h => {
     if (h === studentIdKey || h === birthdateKey || h === nameKey || h === gradeKey || h === classKey || h === numberKey) return false;
     if (feedbackKeys.includes(h)) return false;
     
     // Check if the column exists in isScoreColumn
-    return isScoreColumn(h, row[h]);
+    return isScoreColumn(h, rowList, h);
   });
 
   if (potentialScoreKeys.length === 0) return undefined;
@@ -290,7 +335,7 @@ export function findTotalScoreKey(headers: string[], row: Record<string, any>, f
  * A score column is something like "점수", "총점", "1차", "태도", "수행", "평가"
  * Or if the student's value in this column is dynamically determined to be numeric.
  */
-export function isScoreColumn(headerName: string, sampleValue: any): boolean {
+export function isScoreColumn(headerName: string, rowsOrSample: Record<string, any>[] | any, colKey?: string): boolean {
   const normalized = String(headerName).replace(/\s+/g, '').toLowerCase();
   
   // High-probability keywords for grades/scores
@@ -310,15 +355,32 @@ export function isScoreColumn(headerName: string, sampleValue: any): boolean {
                          normalized.includes('가중') ||
                          normalized.includes('결과');
 
-  // Also check if the sample value is a valid percentage or positive number
-  if (sampleValue !== null && sampleValue !== undefined && sampleValue !== '') {
-    const num = Number(sampleValue);
-    if (!isNaN(num) && typeof sampleValue !== 'boolean') {
-      return true;
+  if (isKeywordMatch) return true;
+
+  // If we receive an array of rows
+  if (Array.isArray(rowsOrSample) && colKey) {
+    for (const r of rowsOrSample) {
+      if (r) {
+        const val = r[colKey];
+        if (val !== null && val !== undefined && val !== '') {
+          const num = Number(val);
+          if (!isNaN(num) && typeof val !== 'boolean') {
+            return true;
+          }
+        }
+      }
+    }
+  } else {
+    // Fallback if we receive a single sample value
+    if (rowsOrSample !== null && rowsOrSample !== undefined && rowsOrSample !== '') {
+      const num = Number(rowsOrSample);
+      if (!isNaN(num) && typeof rowsOrSample !== 'boolean') {
+        return true;
+      }
     }
   }
 
-  return isKeywordMatch;
+  return false;
 }
 
 /**

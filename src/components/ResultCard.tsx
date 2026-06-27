@@ -76,7 +76,7 @@ export default function ResultCard({
   for (const ev of allEvaluations) {
     const idKey = findStudentIdKey(ev.headers);
     if (!idKey) continue;
-    const row = ev.rows.find(r => matchesStudentId(studentId, r[idKey]));
+    const row = ev.rows.find(r => matchesStudentId(studentId, r[idKey], ev.targetGradeClass));
     if (row) {
       const nKey = ev.headers.find(h => {
         const norm = String(h).replace(/\s+/g, '').toLowerCase();
@@ -200,7 +200,7 @@ export default function ResultCard({
         const studentIdKey = findStudentIdKey(evalItem.headers || []);
         let foundRow: any = {};
         if (studentIdKey && evalItem.rows && evalItem.rows.length > 0) {
-          foundRow = evalItem.rows.find(row => matchesStudentId(studentId, row[studentIdKey])) || {};
+          foundRow = evalItem.rows.find(row => matchesStudentId(studentId, row[studentIdKey], evalItem.targetGradeClass)) || {};
         }
 
         results.push({
@@ -213,6 +213,7 @@ export default function ResultCard({
           reflectRate: evalItem.reflectRate || '105', // Default reflection placeholder
           headers: evalItem.headers || [],
           row: foundRow,
+          rows: evalItem.rows || [],
           teacherCode: evalItem.teacherCode || '',
           uploadType: evalItem.uploadType,
           pdfBase64: evalItem.pdfBase64 || '',
@@ -227,7 +228,7 @@ export default function ResultCard({
     const studentIdKey = findStudentIdKey(evalItem.headers);
     if (!studentIdKey) return;
 
-    const foundRow = evalItem.rows.find(row => matchesStudentId(studentId, row[studentIdKey]));
+    const foundRow = evalItem.rows.find(row => matchesStudentId(studentId, row[studentIdKey], evalItem.targetGradeClass));
     if (foundRow) {
       results.push({
         evaluationId: evalItem.id || '',
@@ -239,6 +240,7 @@ export default function ResultCard({
         reflectRate: evalItem.reflectRate || '100',
         headers: evalItem.headers,
         row: foundRow,
+        rows: evalItem.rows || [],
         teacherCode: evalItem.teacherCode || '',
         uploadType: 'excel'
       });
@@ -275,7 +277,7 @@ export default function ResultCard({
     if (item.uploadType === 'pdf' || item.uploadType === 'test_excel_sign') return;
 
     const feedbackKeys = findFeedbackKey(item.headers);
-    const totalScoreKey = findTotalScoreKey(item.headers, item.row, feedbackKeys);
+    const totalScoreKey = findTotalScoreKey(item.headers, item.rows || [item.row], feedbackKeys);
 
     if (totalScoreKey) {
       const rawScoreVal = parseFloat(String(item.row[totalScoreKey] || '0').trim());
@@ -360,12 +362,12 @@ export default function ResultCard({
                     })()
                   : e.rows.some(r => {
                       const studentIdKey = findStudentIdKey(e.headers);
-                      return studentIdKey && matchesStudentId(studentId, r[studentIdKey]);
+                      return studentIdKey && matchesStudentId(studentId, r[studentIdKey], e.targetGradeClass);
                     })
                 )).length;
                 return (
                   <option key={tea.code} value={tea.code}>
-                    [{tea.code}] {tea.name} 선생님 ({teaEvalsCount}개 영역)
+                    [{tea.code}] {tea.name} 선생님
                   </option>
                 );
               })}
@@ -443,7 +445,7 @@ export default function ResultCard({
                   : '';
                 
                 const feedbackKeys = findFeedbackKey(headers);
-                const totalScoreKey = findTotalScoreKey(headers, row, feedbackKeys);
+                const totalScoreKey = findTotalScoreKey(headers, item.rows || [row], feedbackKeys);
                 
                 const studentIdKey = findStudentIdKey(headers);
                 const birthdateKey = findBirthdateKey(headers);
@@ -455,7 +457,7 @@ export default function ResultCard({
                 // Score metrics (sub-scores)
                 const scoreKeys = headers.filter(h => {
                   if (h === studentIdKey || h === birthdateKey || h === nameKey || h === gradeKey || h === classKey || h === numberKey || feedbackKeys.includes(h)) return false;
-                  return isScoreColumn(h, row[h]);
+                  return isScoreColumn(h, item.rows || [row], h);
                 });
 
                 // Score keys for the list, excluding the total score key to avoid duplicate columns

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, FileSpreadsheet, Check } from 'lucide-react';
 import { EvaluationState, Teacher, RegisteredStudent } from '../types';
-import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, isMetadataOrNonScoreHeader, parseClassNumber } from '../utils';
+import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, isMetadataOrNonScoreHeader, parseClassNumber, parseGradeAndClass } from '../utils';
 import { cleanAndFormatHeaderName } from '../utils/pdfExtractor';
 import { parseNcsHeaderDetails, cleanAndFormatNcsUnitName } from './StudentPdfViewer';
 
@@ -17,231 +17,6 @@ function getEunNeun(text: string): string {
     return hasBatchim ? '은' : '는';
   }
   return '은';
-}
-
-function romanizeHangul(text: string): string {
-  const CHOSEONG = [
-    'g', 'kk', 'n', 'd', 'tt', 'r', 'm', 'b', 'pp', 's', 'ss', '', 'j', 'jj', 'ch', 'k', 't', 'p', 'h'
-  ];
-  const JUNGSEONG = [
-    'a', 'ae', 'ya', 'yae', 'eo', 'e', 'yeo', 'ye', 'o', 'wa', 'wae', 'oe', 'yo', 'u', 'wo', 'we', 'wi', 'yu', 'eu', 'ui', 'i'
-  ];
-  const JONGSEONG = [
-    '', 'k', 'kk', 'ks', 'n', 'nj', 'nh', 't', 'l', 'lg', 'lm', 'lb', 'ls', 'lt', 'lp', 'lh', 'm', 'p', 'ps', 's', 'ss', 'ng', 'j', 'ch', 'k', 't', 'p', 'h'
-  ];
-
-  let result = '';
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    if (code >= 0xAC00 && code <= 0xD7A3) {
-      const offset = code - 0xAC00;
-      const cho = Math.floor(offset / 588);
-      const jung = Math.floor((offset % 588) / 28);
-      const jong = offset % 28;
-      result += CHOSEONG[cho] + JUNGSEONG[jung] + JONGSEONG[jong];
-    } else {
-      result += text.charAt(i).toLowerCase();
-    }
-  }
-  return result;
-}
-
-function getConsonantSkeleton(r: string): string {
-  return r.toLowerCase()
-    .replace(/ph/g, 'p')
-    .replace(/th/g, 't')
-    .replace(/ch/g, 'c')
-    .replace(/sh/g, 's')
-    .replace(/ck/g, 'k')
-    .replace(/[aeiouy]/g, '') // remove vowels
-    .replace(/r/g, 'l')
-    .replace(/z/g, 'j')
-    .replace(/f/g, 'p')
-    .replace(/v/g, 'b')
-    .replace(/w/g, '')
-    .replace(/h/g, '')
-    .replace(/x/g, 'ks')
-    .replace(/[^a-z0-9]/g, '');
-}
-
-function cleanAndNormalizeName(name: string): string {
-  return name.trim().toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
-}
-
-function areNamesLooselyMatching(name1: string, name2: string): boolean {
-  const n1 = cleanAndNormalizeName(name1);
-  const n2 = cleanAndNormalizeName(name2);
-  if (!n1 || !n2) return false;
-
-  // 1. Exact cleaned match or standard substring match
-  if (n1 === n2 || n1.includes(n2) || n2.includes(n1)) return true;
-
-  // 2. Romanized & Sound-alike match for English/Korean phonetic similarities
-  const isN1Korean = /[가-힣]/.test(name1);
-  const isN2Korean = /[가-힣]/.test(name2);
-
-  const r1 = isN1Korean ? romanizeHangul(n1) : n1;
-  const r2 = isN2Korean ? romanizeHangul(n2) : n2;
-
-  const r1Clean = r1.replace(/[^a-z0-9]/g, '');
-  const r2Clean = r2.replace(/[^a-z0-9]/g, '');
-
-  if (r1Clean === r2Clean || r1Clean.includes(r2Clean) || r2Clean.includes(r1Clean)) return true;
-
-  // Compare consonant skeletons for highly robust phonetic matching
-  const sk1 = getConsonantSkeleton(r1);
-  const sk2 = getConsonantSkeleton(r2);
-
-  if (sk1 && sk2) {
-    if (sk1 === sk2 || sk1.includes(sk2) || sk2.includes(sk1)) return true;
-    
-    // Check for sharing a prefix of at least 3 consonants
-    if (sk1.length >= 3 && sk2.length >= 3 && (sk1.startsWith(sk2.substring(0, 3)) || sk2.startsWith(sk1.substring(0, 3)))) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function findNiceRowForStudent(
-  student: { studentId: string; studentName: string },
-  rows: any[],
-  headers: string[],
-  selectedClass: string
-): any {
-  if (!rows || rows.length === 0) return null;
-  const studentIdKey = findStudentIdKey(headers);
-  const nameKey = headers.find(h => {
-    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
-    return normalized === '이름' || normalized === '성명' || normalized.includes('name') || normalized.includes('학생명');
-  });
-  const classKey = headers.find(h => {
-    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
-    return normalized === '반' || normalized.includes('class') || normalized === '학급';
-  });
-  const gradeKey = headers.find(h => {
-    const normalized = String(h).replace(/\s+/g, '').toLowerCase();
-    return normalized === '학년' || normalized.includes('grade') || normalized.includes('학년');
-  });
-
-  // Extract student details
-  // e.g., "20401" -> grade = 2, class = 4, number = 1
-  const studId = student.studentId.replace(/\D/g, '');
-  let studGrade = 0;
-  let studClass = 0;
-  let studNum = 0;
-  if (studId.length === 5) {
-    studGrade = parseInt(studId.substring(0, 1), 10);
-    studClass = parseInt(studId.substring(1, 3), 10);
-    studNum = parseInt(studId.substring(3, 5), 10);
-  } else if (selectedClass) {
-    const classDigits = selectedClass.replace(/\D/g, '');
-    if (classDigits.length >= 2) {
-      studGrade = parseInt(classDigits.substring(0, 1), 10);
-      studClass = parseInt(classDigits.substring(1), 10);
-    }
-  }
-
-  // First pass: exact matches using matchesStudentId
-  if (studentIdKey) {
-    const found = rows.find(row => {
-      const val = String(row[studentIdKey] || '').trim();
-      return val && matchesStudentId(student.studentId, val);
-    });
-    if (found) return found;
-  }
-
-  // Second pass: match by student number + class confirmation
-  for (const row of rows) {
-    let matchesNum = false;
-    if (studentIdKey) {
-      const val = String(row[studentIdKey] || '').trim();
-      const onlyDigits = val.replace(/\D/g, '');
-      if (onlyDigits.length > 0 && onlyDigits.length <= 2) {
-        const parsedRowNum = parseInt(onlyDigits, 10);
-        if (parsedRowNum > 0 && parsedRowNum === studNum) {
-          matchesNum = true;
-        }
-      }
-    }
-
-    // Verify if Grade & Class match for this row
-    let gradeMatched = true;
-    let classMatched = true;
-
-    if (gradeKey) {
-      const rowGradeVal = parseInt(String(row[gradeKey] || '').replace(/\D/g, ''), 10);
-      if (!isNaN(rowGradeVal) && rowGradeVal !== studGrade) {
-        gradeMatched = false;
-      }
-    }
-    if (classKey) {
-      const rowClassVal = parseInt(String(row[classKey] || '').replace(/\D/g, ''), 10);
-      if (!isNaN(rowClassVal) && rowClassVal !== studClass) {
-        classMatched = false;
-      }
-    }
-
-    // If matches number, check if name also matches, or if no conflicting grade/class columns are present
-    if (matchesNum && gradeMatched && classMatched) {
-      if (nameKey) {
-        const rowName = String(row[nameKey] || '').trim();
-        const studName = student.studentName.trim();
-        if (areNamesLooselyMatching(rowName, studName)) {
-          return row;
-        }
-        // Robust fallback: if Grade & Class columns are both present and confirmed matched,
-        // we can trust the unique Student Number match in the class even if names differ slightly (e.g. English vs Korean)
-        if (gradeKey && classKey) {
-          return row;
-        }
-      } else {
-        return row;
-      }
-    }
-  }
-
-  // Third pass: match by Name within the same class context
-  if (nameKey) {
-    for (const row of rows) {
-      const rowName = String(row[nameKey] || '').trim();
-      const studName = student.studentName.trim();
-      if (areNamesLooselyMatching(rowName, studName)) {
-        let gradeMatched = true;
-        let classMatched = true;
-
-        if (gradeKey) {
-          const rowGradeVal = parseInt(String(row[gradeKey] || '').replace(/\D/g, ''), 10);
-          if (!isNaN(rowGradeVal) && rowGradeVal !== studGrade) {
-            gradeMatched = false;
-          }
-        }
-        if (classKey) {
-          const rowClassVal = parseInt(String(row[classKey] || '').replace(/\D/g, ''), 10);
-          if (!isNaN(rowClassVal) && rowClassVal !== studClass) {
-            classMatched = false;
-          }
-        }
-
-        if (gradeMatched && classMatched) {
-          return row;
-        }
-      }
-    }
-  }
-
-  // Loose fallback by Name only (if class columns not matched or missing)
-  if (nameKey) {
-    const studName = student.studentName.trim();
-    const found = rows.find(row => {
-      const rowName = String(row[nameKey] || '').trim();
-      return areNamesLooselyMatching(rowName, studName);
-    });
-    if (found) return found;
-  }
-
-  return null;
 }
 
 interface ResultPrintPortalProps {
@@ -281,23 +56,24 @@ export default function ResultPrintPortal({
     // 2. If it is in a "Class/Number" format like "7/10" or "7-10", parse it
     const classNumInfo = parseClassNumber(cleaned);
     if (classNumInfo && targetGradeClass) {
-      const tgtDigits = targetGradeClass.replace(/\D/g, '');
-      if (tgtDigits.length >= 3) {
-        const grade = tgtDigits.substring(0, 1);
-        const cls = classNumInfo.classVal.padStart(2, '0');
+      const parsed = parseGradeAndClass(targetGradeClass);
+      if (parsed) {
+        const grade = String(parsed.grade);
+        const cls = String(parsed.classVal).padStart(2, '0');
         const num = classNumInfo.numberVal.padStart(2, '0');
         return `${grade}${cls}${num}`;
       }
     }
 
     // 3. If it's just a number (e.g., "1" or "10") representing the student number,
-    // and we have a targetGradeClass (e.g., "107" or "107반")
+    // and we have a targetGradeClass (e.g., "108" or "1-8")
     if (onlyDigits.length > 0 && onlyDigits.length <= 2 && targetGradeClass) {
-      const tgtDigits = targetGradeClass.replace(/\D/g, '');
-      if (tgtDigits.length >= 3) {
-        const gradeClassPart = tgtDigits.substring(0, 3); // e.g. "107"
+      const parsed = parseGradeAndClass(targetGradeClass);
+      if (parsed) {
+        const grade = String(parsed.grade);
+        const cls = String(parsed.classVal).padStart(2, '0');
         const numPart = onlyDigits.padStart(2, '0');
-        return `${gradeClassPart}${numPart}`;
+        return `${grade}${cls}${numPart}`;
       }
     }
 
@@ -311,15 +87,17 @@ export default function ResultPrintPortal({
       const grade = parseInt(digits.substring(0, 1), 10);
       const cls = parseInt(digits.substring(1, 3), 10);
       return { gradeClass: `${grade}학년 ${cls}반`, sortKey: grade * 100 + cls };
-    } else if (targetGradeClass && targetGradeClass.replace(/\D/g, '').length >= 3) {
-      const tgtDigits = targetGradeClass.replace(/\D/g, '');
-      const grade = parseInt(tgtDigits.substring(0, 1), 10);
-      const cls = parseInt(tgtDigits.substring(1, 3), 10);
-      return { gradeClass: `${grade}학년 ${cls}반`, sortKey: grade * 100 + cls };
-    } else {
-      const part = studentIdStr.trim().substring(0, Math.min(3, studentIdStr.length));
-      return { gradeClass: part ? `${part}그룹` : '기타', sortKey: 9999 };
     }
+    
+    if (targetGradeClass) {
+      const parsed = parseGradeAndClass(targetGradeClass);
+      if (parsed) {
+        return { gradeClass: `${parsed.grade}학년 ${parsed.classVal}반`, sortKey: parsed.grade * 100 + parsed.classVal };
+      }
+    }
+
+    const part = studentIdStr.trim().substring(0, Math.min(3, studentIdStr.length));
+    return { gradeClass: part ? `${part}그룹` : '기타', sortKey: 9999 };
   };
 
   // Find unique class cohorts for selected subject
@@ -367,12 +145,12 @@ export default function ResultPrintPortal({
     const r = ev.rows.find(row => {
       const val = String(row[sIdKey] || '').trim();
       const fullStudentId = normalizeStudentId(val, ev.targetGradeClass);
-      return matchesStudentId(rId, fullStudentId) || matchesStudentId(rId, val);
+      return matchesStudentId(rId, fullStudentId, ev.targetGradeClass) || matchesStudentId(rId, val, ev.targetGradeClass);
     });
     if (!r) return null;
 
     const feedbackKeys = findFeedbackKey(ev.headers);
-    const totalScoreKey = findTotalScoreKey(ev.headers, r, feedbackKeys);
+    const totalScoreKey = findTotalScoreKey(ev.headers, ev.rows || [r], feedbackKeys);
 
     if (!totalScoreKey) return null;
     const rawVal = parseFloat(String(r[totalScoreKey] || '0').trim());
@@ -500,7 +278,37 @@ export default function ResultPrintPortal({
     return formattedFinalScore;
   };
 
-  const niceEval = evalsForSubject.find(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
+  // Find the evaluation for the selected class if possible, otherwise fallback to any nice eval
+  const niceEval = useMemo(() => {
+    const niceEvals = evalsForSubject.filter(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
+    if (niceEvals.length === 0) return undefined;
+    if (!selectedClass) return niceEvals[0];
+
+    // Try to find one where targetGradeClass matches selectedClass
+    const parsedSel = parseGradeAndClass(selectedClass);
+    if (parsedSel) {
+      const matched = niceEvals.find(e => {
+        const parsedEv = parseGradeAndClass(e.targetGradeClass || '');
+        return parsedEv && parsedEv.grade === parsedSel.grade && parsedEv.classVal === parsedSel.classVal;
+      });
+      if (matched) return matched;
+    }
+
+    // Fallback: search row values
+    const matchedByRows = niceEvals.find(e => {
+      const sIdKey = findStudentIdKey(e.headers);
+      if (!sIdKey) return false;
+      return e.rows.some(r => {
+        const val = String(r[sIdKey] || '').trim();
+        if (!val) return false;
+        const info = extractGradeClass(val, e.targetGradeClass);
+        return info.gradeClass === selectedClass;
+      });
+    });
+
+    return matchedByRows || niceEvals[0];
+  }, [evalsForSubject, selectedClass]);
+
   const isNiceMode = !!niceEval;
 
   // Helper to identify overall total columns
@@ -595,14 +403,14 @@ export default function ResultPrintPortal({
 
         {/* Filter Configuration Area */}
         <div className="bg-slate-50 border-b border-slate-200 p-5 shrink-0 print:hidden flex flex-col md:flex-row items-stretch md:items-center gap-4 justify-between">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-4">
             {/* Subject Selector */}
-            <div className="space-y-1.5 flex-1 sm:flex-initial">
+            <div className="space-y-1.5">
               <label className="block text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">출력 평가 과목</label>
               <select 
                 value={selectedSubject} 
                 onChange={(e) => setSelectedSubject(e.target.value)}
-                className="bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-650 min-w-[150px] w-full"
+                className="bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-650 min-w-[150px]"
               >
                 {uniqueSubjects.map(sub => (
                   <option key={sub} value={sub}>{sub}</option>
@@ -611,12 +419,12 @@ export default function ResultPrintPortal({
             </div>
 
             {/* Class Selector */}
-            <div className="space-y-1.5 flex-1 sm:flex-initial">
+            <div className="space-y-1.5">
               <label className="block text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">필터링 학급 (반)</label>
               <select 
                 value={selectedClass} 
                 onChange={(e) => setSelectedClass(e.target.value)}
-                className="bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-650 min-w-[150px] w-full"
+                className="bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-650 min-w-[150px]"
                 disabled={uniqueClasses.length === 0}
               >
                 {uniqueClasses.map(item => (
@@ -684,16 +492,9 @@ export default function ResultPrintPortal({
                 </div>
               </div>
 
-              {/* Mobile Scroll Indicator Helper */}
-              <div className="block sm:hidden text-right mb-1.5 print:hidden select-none">
-                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full animate-pulse">
-                  ↔ 좌우로 스크롤하여 전체 내용을 확인하세요
-                </span>
-              </div>
-
               {/* Roster Sheet Data Table */}
-              <div className="mt-4 overflow-x-auto print:overflow-visible border border-slate-200 sm:border-0 rounded-xl max-w-full">
-                <table className="w-full text-left border-collapse border border-slate-800 text-[10px] sm:text-xs print:text-[8.5px] table-fixed min-w-[720px] sm:min-w-full">
+              <div className="mt-4 overflow-x-auto print:overflow-visible">
+                <table className="w-full text-left border-collapse border border-slate-800 text-[10px] sm:text-xs print:text-[8.5px] table-fixed">
                   <thead>
                     {isNiceMode && isNcsMode ? (
                       <>
@@ -830,8 +631,12 @@ export default function ResultPrintPortal({
                   <tbody>
                     {students.map((student, sIdx) => {
                       const studentIdKey = niceEval ? findStudentIdKey(niceEval.headers || []) : undefined;
-                      const niceRow = niceEval 
-                        ? findNiceRowForStudent(student, niceEval.rows || [], niceEval.headers || [], selectedClass)
+                      const niceRow = niceEval && studentIdKey 
+                        ? niceEval.rows.find(row => {
+                            const val = String(row[studentIdKey] || '').trim();
+                            const fullStudentId = normalizeStudentId(val, niceEval.targetGradeClass);
+                            return matchesStudentId(student.studentId, fullStudentId, niceEval.targetGradeClass) || matchesStudentId(student.studentId, val, niceEval.targetGradeClass);
+                          })
                         : null;
 
                       // Calculate overall integrated reflected total score (Mode A / Mode B)
@@ -890,15 +695,14 @@ export default function ResultPrintPortal({
                         let totalMaxVal = 100;
                         let isTotalExplicit = false;
                         if (niceTotalHeader) {
-                          const totalCleaned = cleanAndFormatHeaderName(niceTotalHeader);
-                          const maxMatch = totalCleaned.match(/\(([\d.]+)점\)$/);
+                          const maxMatch = niceTotalHeader.match(/만점\s*([\d.]+)/) || niceTotalHeader.match(/배점\s*([\d.]+)/) || niceTotalHeader.match(/만점\s*(\d+)/) || niceTotalHeader.match(/\((\d+)점\)/) || niceTotalHeader.match(/\(([\d.]+)점\)/);
                           if (maxMatch && maxMatch[1]) {
                             totalMaxVal = parseFloat(maxMatch[1]);
                             isTotalExplicit = true;
                           } else {
-                            const rawMatch = niceTotalHeader.match(/만점\s*([\d.]+)/) || niceTotalHeader.match(/배점\s*([\d.]+)/) || niceTotalHeader.match(/만점\s*(\d+)/) || niceTotalHeader.match(/\((\d+)점\)/) || niceTotalHeader.match(/\(([\d.]+)점\)/);
-                            if (rawMatch && rawMatch[1]) {
-                              totalMaxVal = parseFloat(rawMatch[1]);
+                            const numMatch = niceTotalHeader.match(/\(\s*([\d.]+)\s*\)?/) || niceTotalHeader.match(/\[\s*([\d.]+)\s*\]?/);
+                            if (numMatch && numMatch[1]) {
+                              totalMaxVal = parseFloat(numMatch[1]);
                               isTotalExplicit = true;
                             }
                           }
@@ -907,15 +711,14 @@ export default function ResultPrintPortal({
                         // Parse max score from each individual area/score header and sum them up as fallback
                         let sumOfAreasMaxScore = 0;
                         niceScoreHeaders.forEach(h => {
-                          const hCleaned = cleanAndFormatHeaderName(h);
-                          const maxMatch = hCleaned.match(/\(([\d.]+)점\)$/);
                           let areaMax = 0;
+                          const maxMatch = h.match(/만점\s*([\d.]+)/) || h.match(/배점\s*([\d.]+)/) || h.match(/만점\s*(\d+)/) || h.match(/\((\d+)점\)/) || h.match(/\(([\d.]+)점\)/);
                           if (maxMatch && maxMatch[1]) {
                             areaMax = parseFloat(maxMatch[1]);
                           } else {
-                            const rawMatch = h.match(/만점\s*([\d.]+)/) || h.match(/배점\s*([\d.]+)/) || h.match(/\((\d+)점\)/) || h.match(/\(([\d.]+)점\)/);
-                            if (rawMatch && rawMatch[1]) {
-                              areaMax = parseFloat(rawMatch[1]);
+                            const numMatch = h.match(/\(\s*([\d.]+)\s*\)?/) || h.match(/\[\s*([\d.]+)\s*\]?/);
+                            if (numMatch && numMatch[1]) {
+                              areaMax = parseFloat(numMatch[1]);
                             }
                           }
                           sumOfAreasMaxScore += areaMax;
@@ -926,12 +729,9 @@ export default function ResultPrintPortal({
                         
                         if (customMaxStr) {
                           courseMaxScore = parseFloat(customMaxStr);
-                        } else if (niceScoreHeaders.length === 1 && sumOfAreasMaxScore > 0) {
-                          // If there's only one score header, its max score is the course max score
-                          courseMaxScore = sumOfAreasMaxScore;
                         } else if ((!isTotalExplicit || totalMaxVal === 100 || totalMaxVal === 0) && sumOfAreasMaxScore > 0) {
-                          // NCS Mode normally has 100 max overall, standard NICE modes fallback to sum of areas
-                          courseMaxScore = isNcsMode ? 100 : sumOfAreasMaxScore;
+                          // NCS is naturally 100 overall max score if individual parts sum up to > 0 or if not explicit
+                          courseMaxScore = 100;
                         } else {
                           courseMaxScore = totalMaxVal;
                         }
@@ -958,7 +758,7 @@ export default function ResultPrintPortal({
                       }
 
                       return (
-                        <tr key={student.studentId} className="border-b border-slate-800 hover:bg-slate-50 text-slate-800 font-medium leading-normal">
+                        <tr key={student.studentId} className="border-b border-slate-800 hover:bg-slate-50 text-slate-800 font-medium leading-none">
                           <td className="border border-slate-800 px-1 py-1 text-center font-mono print:py-0.5">{sIdx + 1}</td>
                           <td className="border border-slate-800 px-1 py-1 text-center font-mono font-black print:py-0.5">{student.studentId}</td>
                           <td className="border border-slate-800 px-1 py-1 text-center truncate print:py-0.5">{student.studentName || '미입력'}</td>

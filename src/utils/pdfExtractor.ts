@@ -1,4 +1,4 @@
-import { findStudentIdKey, findNameKey, parseClassNumber } from '../utils';
+import { findStudentIdKey, findNameKey, parseClassNumber, parseGradeAndClass } from '../utils';
 
 interface ExtractedScore {
   areaName: string;
@@ -193,31 +193,14 @@ export async function extractDataFromPdf(
     const pdf = await loadingTask.promise;
     const totalPages = pdf.numPages;
 
-    // Robust parsing of grade and class from targetGradeClass (e.g. "107")
+    // Robust parsing of grade and class from targetGradeClass
     let parsedGrade = '1';
     let parsedClass = '7';
 
-    const cleanInput = targetGradeClass.trim();
-    const numMatch = cleanInput.match(/\d+/);
-    if (numMatch) {
-      const code = numMatch[0]; // e.g. "107"
-      if (code.length === 3) {
-        parsedGrade = code[0];
-        parsedClass = parseInt(code.substring(1), 10).toString();
-      } else if (code.length === 4) {
-        parsedGrade = code.substring(0, 2);
-        parsedClass = parseInt(code.substring(2), 10).toString();
-      } else if (code.length === 2) {
-        parsedGrade = code[0];
-        parsedClass = parseInt(code[1], 10).toString();
-      } else {
-        parsedClass = parseInt(code, 10).toString();
-      }
-    } else {
-      const gradeM = cleanInput.match(/(\d+)\s*학년/);
-      const classM = cleanInput.match(/(\d+)\s*반/);
-      if (gradeM) parsedGrade = gradeM[1];
-      if (classM) parsedClass = classM[1];
+    const parsed = parseGradeAndClass(targetGradeClass);
+    if (parsed) {
+      parsedGrade = String(parsed.grade);
+      parsedClass = String(parsed.classVal);
     }
 
     // Class and Number parser
