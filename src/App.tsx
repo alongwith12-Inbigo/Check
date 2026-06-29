@@ -772,22 +772,12 @@ export default function App() {
     const trimmedId = studentId.trim();
     const trimmedBirthOrPass = birthdateOrPassword.trim();
 
-    // 1. Check if student roster exists in excelUploads
-    const hasRoster = excelUploads.some(u => u.id === 'students');
+    try {
+      // 1. Try to fetch the student from the master roster first
+      const studentDocRef = doc(db, 'students', trimmedId);
+      const studentDocSnap = await getDoc(studentDocRef);
 
-    if (hasRoster) {
-      try {
-        // Target fetch for only this specific student
-        const studentDocRef = doc(db, 'students', trimmedId);
-        const studentDocSnap = await getDoc(studentDocRef);
-
-        if (!studentDocSnap.exists()) {
-          return {
-            success: false,
-            error: '입력하신 학번의 학생 정보를 찾을 수 없습니다.\n문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
-          };
-        }
-
+      if (studentDocSnap.exists()) {
         const studentData = studentDocSnap.data();
         const hasCustomPassword = studentData.password && studentData.password.trim() !== '';
 
@@ -830,50 +820,60 @@ export default function App() {
             };
           }
         }
-      } catch (error) {
-        console.error("Student validation failed:", error);
-        return {
-          success: false,
-          error: '서버 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
-        };
       }
-    } else {
-      // Fallback: If no master roster is registered, fetch all evaluations once (lazy-fetch!) and scan
-      try {
-        const evaluationsSnap = await getDocs(collection(db, 'evaluation'));
-        let foundInEvaluations = false;
-        let detectedStudentName = '';
-        let detectedBirthdate = '';
+    } catch (error) {
+      console.error("Master roster check failed or not available:", error);
+    }
 
-        evaluationsSnap.forEach((d) => {
-          if (foundInEvaluations) return;
-          const evalItem = d.data() as EvaluationState;
-          const studentIdKey = findStudentIdKey(evalItem.headers);
-          const birthdateKey = findBirthdateKey(evalItem.headers);
-          if (!studentIdKey || !birthdateKey) return;
+    // 2. Fallback: If no student document is found in 'students', scan the evaluations for lazy matching
+    try {
+      const evaluationsSnap = await getDocs(collection(db, 'evaluation'));
+      let foundInEvaluations = false;
+      let detectedStudentName = '';
+      let detectedBirthdate = '';
 
-          const foundRow = evalItem.rows.find(row => 
-            matchesStudentId(trimmedId, row[studentIdKey]) && matchesBirthdate(trimmedBirthOrPass, row[birthdateKey])
-          );
+      evaluationsSnap.forEach((d) => {
+        if (foundInEvaluations) return;
+        const evalItem = d.data() as EvaluationState;
+        const studentIdKey = findStudentIdKey(evalItem.headers);
+        const birthdateKey = findBirthdateKey(evalItem.headers);
+        if (!studentIdKey || !birthdateKey) return;
 
-          if (foundRow) {
-            foundInEvaluations = true;
-            detectedStudentName = String(foundRow['이름'] || foundRow['성명'] || foundRow['학생명'] || foundRow['학생이름'] || '').trim();
-            detectedBirthdate = String(foundRow[birthdateKey] || '').trim();
+        const foundRow = evalItem.rows.find(row => 
+          matchesStudentId(trimmedId, row[studentIdKey]) && matchesBirthdate(trimmedBirthOrPass, row[birthdateKey])
+        );
+
+        if (foundRow) {
+          foundInEvaluations = true;
+          detectedStudentName = String(foundRow['이름'] || foundRow['성명'] || foundRow['학생명'] || foundRow['학생이름'] || '').trim();
+          detectedBirthdate = String(foundRow[birthdateKey] || '').trim();
+        }
+      });
+
+      if (foundInEvaluations) {
+        return {
+          success: true,
+          session: {
+            studentId: trimmedId,
+            birthdate: detectedBirthdate || trimmedBirthOrPass,
+            studentName: detectedStudentName || `학생 (${trimmedId})`,
+            teacherName: '',
+            results: [],
+            teacherCode: ''
           }
-        });
+        };
+      } else {
+        // If we found nothing at all, return the appropriate error message depending on whether a roster exists
+        let hasRoster = false;
+        try {
+          const rosterMetaSnap = await getDoc(doc(db, 'excelUploads', 'students'));
+          hasRoster = rosterMetaSnap.exists();
+        } catch (e) {}
 
-        if (foundInEvaluations) {
+        if (hasRoster) {
           return {
-            success: true,
-            session: {
-              studentId: trimmedId,
-              birthdate: detectedBirthdate || trimmedBirthOrPass,
-              studentName: detectedStudentName || `학생 (${trimmedId})`,
-              teacherName: '',
-              results: [],
-              teacherCode: ''
-            }
+            success: false,
+            error: '입력하신 학번의 학생 정보를 찾을 수 없습니다.\n문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
           };
         } else {
           return {
@@ -881,13 +881,13 @@ export default function App() {
             error: '입력하신 학번 또는 생년월일과 일치하는 성적 기록을 찾을 수 없습니다.\n학적 명부가 비어 있는 상태이므로, 선생님이 엑셀에 입력한 정보와 맞는지 확인하십시오.'
           };
         }
-      } catch (error) {
-        console.error("Fallback validation failed:", error);
-        return {
-          success: false,
-          error: '서버 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
-        };
       }
+    } catch (error) {
+      console.error("Fallback validation failed:", error);
+      return {
+        success: false,
+        error: '서버 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+      };
     }
   };
 
