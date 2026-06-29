@@ -317,12 +317,34 @@ export default function App() {
     }
   };
 
-  // 1. Subscribe to Teachers directory in real-time from Firestore
+  // 1. Subscribe to Teachers directory (Optimized: One-time fetch for students, real-time for teachers/admins)
   useEffect(() => {
     if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
       setTeachers([]);
       return;
     }
+
+    if (loggedStudent) {
+      // Students only need a one-time fetch of teachers
+      getDocs(collection(db, 'teachers')).then((snap) => {
+        const list: Teacher[] = [];
+        snap.forEach((d) => {
+          const data = d.data();
+          list.push({
+            code: d.id,
+            name: data.name || '',
+            password: data.password || '',
+            isPasswordChanged: data.isPasswordChanged || false,
+          });
+        });
+        list.sort((a, b) => a.code.localeCompare(b.code));
+        setTeachers(list);
+      }).catch((err) => {
+        console.warn("One-time teachers fetch failed: ", err);
+      });
+      return;
+    }
+
     const collRef = collection(db, 'teachers');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const list: Teacher[] = [];
@@ -344,12 +366,35 @@ export default function App() {
     return () => unsubscribe();
   }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
 
-  // 1.5. Subscribe to Students directory in real-time from Firestore
+  // 1.5. Subscribe to Students directory (Optimized: One-time fetch for teachers, real-time for admins only)
   useEffect(() => {
     if (!loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
       setAllStudents([]);
       return;
     }
+
+    if (loggedTeacher) {
+      // Teachers only need a one-time fetch of students to prevent excessive read operations
+      getDocs(collection(db, 'students')).then((snap) => {
+        const list: RegisteredStudent[] = [];
+        snap.forEach((d) => {
+          const data = d.data();
+          list.push({
+            studentId: d.id,
+            name: data.name || '',
+            birthdate: data.birthdate || '',
+            password: data.password || '',
+            isPasswordChanged: data.isPasswordChanged || false,
+          });
+        });
+        list.sort((a, b) => a.studentId.localeCompare(b.studentId));
+        setAllStudents(list);
+      }).catch((err) => {
+        console.warn("One-time students fetch failed: ", err);
+      });
+      return;
+    }
+
     const collRef = collection(db, 'students');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const list: RegisteredStudent[] = [];
@@ -398,19 +443,47 @@ export default function App() {
     return () => unsubscribe();
   }, [isAdminLoggedIn, isAdminOpen]);
 
-  // 2. Subscribe to All Evaluations in real-time from Firestore
+  // 2. Subscribe to All Evaluations (Optimized: One-time fetch for students, targeted query real-time for teachers)
   useEffect(() => {
     if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
       setAllEvaluations([]);
       return;
     }
 
-    let q;
     if (loggedStudent) {
-      // Students listen to all evaluations to allow seamless teacher selection in-memory
-      // and prevent multiple unsubscribe/resubscribe operations
-      q = collection(db, 'evaluation');
-    } else if (loggedTeacher) {
+      // Students do not need a live listener on evaluations. A single fetch when they log in is more than sufficient
+      // and saves thousands of unneeded real-time document reads
+      getDocs(collection(db, 'evaluation')).then((snap) => {
+        const list: EvaluationState[] = [];
+        snap.forEach((d) => {
+          const data = d.data();
+          list.push({
+            id: d.id,
+            teacherCode: data.teacherCode || '',
+            title: data.title || '',
+            subject: data.subject || '',
+            round: data.round || '',
+            evaluationDetailName: data.evaluationDetailName || '',
+            maxScore: data.maxScore !== undefined ? String(data.maxScore) : '',
+            reflectRate: data.reflectRate !== undefined ? String(data.reflectRate) : '100',
+            headers: data.headers || [],
+            rows: data.rows || [],
+            uploadedAt: data.uploadedAt || null,
+            uploadType: data.uploadType || 'excel',
+            pdfBase64: data.pdfBase64 || '',
+            pdfFileName: data.pdfFileName || '',
+            targetGradeClass: data.targetGradeClass || '',
+          });
+        });
+        setAllEvaluations(list);
+      }).catch((err) => {
+        console.warn("One-time evaluations fetch failed: ", err);
+      });
+      return;
+    }
+
+    let q;
+    if (loggedTeacher) {
       // Teachers only listen to their own evaluations
       q = query(collection(db, 'evaluation'), where('teacherCode', '==', loggedTeacher.code));
     } else {
