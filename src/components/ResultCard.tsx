@@ -161,16 +161,14 @@ export default function ResultCard({
     return teacherEvals.some(ev => getTeacherGradeClassMatch(ev, studentGradeClass));
   });
 
-  // State to hold the chosen teacher code
-  const [selectedTeacherCode, setSelectedTeacherCode] = useState<string>(() => {
-    return matchedTeachers[0]?.code || '';
-  });
+  // State to hold the chosen teacher code (initially empty to let student choose from subject list first)
+  const [selectedTeacherCode, setSelectedTeacherCode] = useState<string>('');
 
   // Keep selected teacher code in sync if list updates
   React.useEffect(() => {
     if (matchedTeachers.length > 0) {
-      if (!matchedTeachers.some(t => t.code === selectedTeacherCode)) {
-        setSelectedTeacherCode(matchedTeachers[0].code);
+      if (selectedTeacherCode !== '' && !matchedTeachers.some(t => t.code === selectedTeacherCode)) {
+        setSelectedTeacherCode('');
       }
     } else {
       setSelectedTeacherCode('');
@@ -324,13 +322,22 @@ export default function ResultCard({
       
       {/* Top action bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center print:hidden gap-3 px-2 bg-white/70 backdrop-blur-md p-4 rounded-2xl border border-slate-200">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button 
             onClick={onBack}
-            className="group flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-950 transition cursor-pointer shrink-0"
+            className="group flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-950 transition cursor-pointer shrink-0 bg-slate-50 border border-slate-200 hover:bg-slate-100 px-3.5 py-2.5 rounded-xl"
           >
             <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition" /> 뒤로 가기
           </button>
+
+          {selectedTeacherCode !== '' && (
+            <button 
+              onClick={() => setSelectedTeacherCode('')}
+              className="flex items-center gap-1.5 text-xs font-black text-indigo-750 hover:text-indigo-950 transition-all shrink-0 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3.5 py-2.5 rounded-xl hover:scale-[1.02] shadow-sm cursor-pointer"
+            >
+              📚 다른 과목 선택
+            </button>
+          )}
 
           <button 
             onClick={() => setIsChangePasswordOpen(true)}
@@ -350,6 +357,7 @@ export default function ResultCard({
               onChange={(e) => setSelectedTeacherCode(e.target.value)}
               className="px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 w-full sm:w-auto min-w-[200px]"
             >
+              <option value="">-- 과목 선택하기 --</option>
               {matchedTeachers.map((tea) => {
                 const teaEvalsCount = allEvaluations.filter(e => e.teacherCode === tea.code && (
                   e.uploadType === 'pdf' 
@@ -365,9 +373,12 @@ export default function ResultCard({
                       return studentIdKey && matchesStudentId(studentId, r[studentIdKey], e.targetGradeClass);
                     })
                 )).length;
+                const teacherEvalsForSubject = allEvaluations.filter(e => e.teacherCode === tea.code && getTeacherGradeClassMatch(e, studentGradeClass));
+                const subjectsForTea = Array.from(new Set(teacherEvalsForSubject.map(e => e.subject).filter(Boolean)));
+                const teaSubjName = subjectsForTea[0] || '교과 미지정';
                 return (
                   <option key={tea.code} value={tea.code}>
-                    [{tea.code}] {tea.name} 선생님
+                    {teaSubjName} - {tea.name} 선생님
                   </option>
                 );
               })}
@@ -381,7 +392,7 @@ export default function ResultCard({
       </div>
 
       {/* Main Student identity overview banner */}
-      <div className="bg-slate-900 text-white rounded-2xl p-6 sm:p-8 relative overflow-hidden shadow-md flex flex-col md:flex-row md:items-center justify-between gap-6 print:border print:border-slate-300 print:text-black print:bg-white">
+      <div className="bg-slate-900 text-white rounded-2xl p-6 sm:p-8 relative overflow-hidden shadow-md flex flex-col md:flex-row md:items-center justify-between gap-6 print:border print:border-slate-300 print:text-black print:bg-white animate-fadeIn">
         <div className="absolute top-0 right-0 p-4 opacity-5 print:hidden">
           <Award size={120} className="stroke-[1.5]" />
         </div>
@@ -391,15 +402,23 @@ export default function ResultCard({
             🏫 수행평가 결과 조회
           </span>
           <h1 className="text-xl sm:text-2.5xl font-black tracking-tight leading-snug font-sans">
-            {teacherName} 선생님 담당 교과 성적표
+            {selectedTeacherCode === '' ? '수행평가 결과 조회 및 서명 제출' : `${teacherName} 선생님 담당 교과 성적표`}
           </h1>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-300 font-semibold print:text-slate-700">
-            <span className="flex items-center gap-1"><Layers size={13} /> 등록된 수행평가 수: <strong>{totalEvalsCount}개</strong></span>
+            {selectedTeacherCode === '' ? (
+              <span className="flex items-center gap-1">
+                <BookOpen size={13} className="text-slate-300" /> 조회 및 서명 가능 교과: <strong>{matchedTeachers.length}개</strong>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <Layers size={13} /> 등록된 수행평가 수: <strong>{totalEvalsCount}개</strong>
+              </span>
+            )}
           </div>
         </div>
 
         <div className="bg-white/10 border border-white/10 p-4 sm:p-5 rounded-2xl min-w-[200px] text-center md:text-left relative z-10 print:border-slate-300 print:bg-slate-50">
-          <span className="text-[10px] text-slate-300 font-black tracking-wider uppercase block print:text-slate-500 font-sans">점수 조회 학생</span>
+          <span className="text-[10px] text-slate-300 font-black tracking-wider uppercase block print:text-slate-500 font-sans font-extrabold">점수 조회 학생</span>
           <div className="text-base sm:text-lg font-extrabold text-white mt-1 flex flex-col gap-0.5 print:text-black">
             <span>학번 : <strong className="font-black text-amber-300 print:text-indigo-900">{studentId}</strong></span>
             <span>성명 : <strong className="font-black text-amber-300 print:text-indigo-900">{studentName}</strong></span>
@@ -407,461 +426,556 @@ export default function ResultCard({
         </div>
       </div>
 
-      {/* Visual Division: Part 1 and Part 2 */}
-      <div className="space-y-10">
-        
-        {/* ==========================================
-            [PART 1]: 영역별 구체적인 점수 및 피드백 (Excel 자료)
-           ========================================== */}
-        <div id="part1-excel-feedback-section" className="space-y-4">
-          <div className="border-l-4 border-indigo-600 pl-3.5 py-1 bg-indigo-50/30 rounded-r-2xl pr-4 flex items-center justify-between gap-3 shadow-3xs">
-            <div>
-              <h2 className="text-xs sm:text-sm font-black text-indigo-950 flex items-center gap-1.5">
-                <BookOpen size={15} className="text-indigo-600" />
-                Part 1. 수행평가 영역별 상세 점수 및 피드백 (Excel 자료)
-              </h2>
-              <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                왜 점수가 감점되었는지, 어떤 평가를 받았는지 상세 세부 내역과 정보교과 선생님의 개별 피드백을 안내합니다.
-              </p>
+      {selectedTeacherCode === '' ? (
+        <div className="space-y-5 animate-fadeIn print:hidden">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-xs">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4">
+              <span className="p-1.5 bg-indigo-50 text-indigo-700 rounded-lg">
+                <BookOpen size={18} />
+              </span>
+              <div>
+                <h2 className="text-sm sm:text-base font-black text-indigo-950">성적 및 서명 제출 현황</h2>
+                <p className="text-[11px] text-slate-500 font-medium">조회할 과목을 선택하여 상세 점수를 확인하고 최종 확인 서명을 제출해 주세요.</p>
+              </div>
             </div>
-            <span className="text-[9px] font-black bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded border border-indigo-200 shrink-0 select-none">문항별 상세분석용</span>
-          </div>
 
-          <div className="space-y-5">
-            {(() => {
-              if (excelResults.length === 0) {
-                return (
-                  <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs font-semibold shadow-xxs">
-                    <Info className="mx-auto text-slate-300 mb-1.5" size={24} />
-                    수행평가 영역별 세부 점수는 등록되지 않았습니다.
-                  </div>
-                );
-              }
+            {matchedTeachers.length === 0 ? (
+              <div className="text-center py-10 text-slate-400 text-xs font-semibold">
+                ⚠️ 등록된 수행평가 과목이 없습니다.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {matchedTeachers.map((tea) => {
+                  const teacherEvals = allEvaluations.filter(e => e.teacherCode === tea.code && getTeacherGradeClassMatch(e, studentGradeClass));
+                  const subjects = Array.from(new Set(teacherEvals.map(e => e.subject).filter(Boolean)));
+                  const subjectName = subjects[0] || '미지정 과목';
+                  const evalCount = teacherEvals.length;
 
-              return excelResults.map((item, index) => {
-                const { headers, row, evaluationTitle, subject, round, evaluationDetailName, maxScore } = item;
-                const formattedRound = round
-                  ? (round.endsWith('차') || round.endsWith('차수') ? round : `${round}차`)
-                  : '';
-                
-                const feedbackKeys = findFeedbackKey(headers);
-                const totalScoreKey = findTotalScoreKey(headers, item.rows || [row], feedbackKeys);
-                
-                const studentIdKey = findStudentIdKey(headers);
-                const birthdateKey = findBirthdateKey(headers);
-                const nameKey = findNameKey(headers);
-                const gradeKey = findGradeKey(headers);
-                const classKey = findClassKey(headers);
-                const numberKey = findNumberKey(headers);
+                  const isSigRequired = teacherEvals.some(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
 
-                // Score metrics (sub-scores)
-                const scoreKeys = headers.filter(h => {
-                  if (h === studentIdKey || h === birthdateKey || h === nameKey || h === gradeKey || h === classKey || h === numberKey || feedbackKeys.includes(h)) return false;
-                  return isScoreColumn(h, item.rows || [row], h);
-                });
+                  const teacherKey = tea.code.trim();
+                  const subjectKey = subjectName.trim();
+                  const cardStudentId = studentId.trim();
 
-                // Score keys for the list, excluding the total score key to avoid duplicate columns
-                const subScoreKeys = scoreKeys.filter(k => k !== totalScoreKey);
+                  const isSigSubmitted = Object.keys(signatures).some(key => {
+                    const parts = key.split('_');
+                    if (parts.length >= 3) {
+                      const [sigTeacher, sigSubject, sigStudent] = parts;
+                      return sigTeacher.trim() === teacherKey && 
+                             sigSubject.replace(/\s+/g, '') === subjectKey.replace(/\s+/g, '') && 
+                             matchesStudentId(sigStudent, cardStudentId);
+                    }
+                    return false;
+                  });
 
-                // Checks if any feedback actually exists and has been entered
-                const hasAnyFeedback = feedbackKeys.some(key => {
-                  const feedbackVal = row[key];
-                  return feedbackVal !== undefined && feedbackVal !== null && String(feedbackVal).trim() !== '';
-                });
-
-                return (
-                  <div 
-                    key={item.evaluationId} 
-                    className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden print:border print:border-slate-350 print:shadow-none break-inside-avoid-page"
-                  >
-                    {/* Header Title Section for individual evaluations */}
-                    <div className="bg-slate-50 border-b border-slate-150 p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:bg-slate-100">
-                      <div className="flex items-start gap-2.5">
-                        <div className="p-2 bg-indigo-50 text-indigo-900 rounded-xl mt-0.5 print:bg-slate-200">
-                          <ClipboardCheck size={16} />
+                  return (
+                    <button
+                      key={tea.code}
+                      type="button"
+                      onClick={() => setSelectedTeacherCode(tea.code)}
+                      className="group flex flex-col justify-between p-5 bg-slate-50/50 hover:bg-white border border-slate-200 hover:border-indigo-500 hover:shadow-md rounded-2xl text-left transition-all duration-200 cursor-pointer relative overflow-hidden"
+                    >
+                      <div className="space-y-3 w-full">
+                        <div className="flex justify-between items-start">
+                          <span className="px-3 py-1 bg-indigo-50 text-indigo-950 group-hover:bg-indigo-600 group-hover:text-white rounded-xl text-xs font-black transition duration-200">
+                            {subjectName}
+                          </span>
+                          {isSigRequired ? (
+                            isSigSubmitted ? (
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[10px] font-bold">
+                                ✓ 서명 완료
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-250 rounded-lg text-[10px] font-bold animate-pulse">
+                                ✍︎ 서명 필요
+                              </span>
+                            )
+                          ) : (
+                            <span className="px-2 py-0.5 bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-[10px] font-bold">
+                              조회 전용
+                            </span>
+                          )}
                         </div>
+
                         <div>
-                          <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-md uppercase print:bg-white">
-                            수행영역 {index + 1}
-                          </span>
-                          <h2 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
-                            {subject} 수행평가 : {evaluationDetailName}
-                          </h2>
-                        </div>
-                      </div>
-
-                      {maxScore && (
-                        <span className="text-[11px] bg-slate-200/60 border border-slate-300 font-bold px-3 py-1 rounded-xl text-slate-700 font-mono self-start sm:self-center">
-                          영역 만점: {maxScore}점
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Dynamic Card Body for metrics */}
-                    <div className="p-6 sm:p-7 space-y-6">
-                      
-                      {/* 1. Sub-scores visual metric cards row */}
-                      {subScoreKeys.length > 0 && (
-                        <div className="space-y-2">
-                          <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                            영역별 세부 채점 내역
-                          </span>
-                          
-                          <div className="flex flex-wrap gap-2 sm:gap-2.5 w-full justify-start items-stretch">
-                            {subScoreKeys.map(key => {
-                              const val = row[key];
-                              
-                              const formatKey = (val: any) => {
-                                const str = String(val || '');
-                                const match = str.match(/^([\s\S]+?)\s*([\(\[][^()\[\]]+[\)\]])$/);
-                                if (match) {
-                                  return {
-                                    title: match[1].trim(),
-                                    scoreLimit: match[2].trim()
-                                  };
-                                }
-                                return { title: str, scoreLimit: null };
-                              };
-
-                              const { title, scoreLimit } = formatKey(key);
-
-                              const itemWidthClass = 
-                                subScoreKeys.length === 1 ? "w-full" :
-                                subScoreKeys.length === 2 ? "w-[calc(50%-4px)] sm:w-[calc(50%-6px)]" :
-                                subScoreKeys.length === 3 ? "w-[calc(50%-4px)] sm:w-[calc(33.33%-7px)]" :
-                                "w-[calc(50%-4px)] sm:w-[calc(25%-8px)]";
-
-                              return (
-                                <div 
-                                  key={key} 
-                                  className={`${itemWidthClass} min-w-[100px] bg-slate-50/70 border border-slate-200 rounded-lg sm:rounded-xl p-2.5 sm:p-3.5 text-center transition-colors hover:border-slate-300 print:bg-white print:border-slate-200 flex flex-col justify-between shadow-xs shrink-0 grow`}
-                                >
-                                  <div>
-                                    <span className="block text-[9.5px] sm:text-[10.5px] font-bold text-slate-500 leading-tight break-keep" title={key}>
-                                      {title}
-                                    </span>
-                                    {scoreLimit && (
-                                      <span className="block text-[8.5px] sm:text-[9.5px] font-semibold text-slate-400 mt-0.5 leading-none break-keep">
-                                        {scoreLimit}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="block text-xs sm:text-base font-black text-slate-800 mt-1.5 font-mono">
-                                    {val !== undefined && val !== null ? String(val) : '-'}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 2. Total Sum Score large horizontal highlight banner */}
-                      {totalScoreKey && (() => {
-                        const rawScoreVal = parseFloat(String(row[totalScoreKey] || '0').trim());
-                        const computedTotalScore = isNaN(rawScoreVal) ? 0 : rawScoreVal;
-                        const maxScoreNum = parseFloat(maxScore || '100') || 100;
-                        const rateNum = parseFloat(item.reflectRate || '100') || 100;
-
-                        const reflectedValue = computedTotalScore * (rateNum / 100);
-                        const reflectedMaxScore = maxScoreNum * (rateNum / 100);
-                        const calculationFormula = `원점수 ${computedTotalScore}점 × ${rateNum}%`;
-
-                        const formattedReflectedValue = Number(reflectedValue.toFixed(2)).toString();
-                        const formattedReflectedMaxScore = Number(reflectedMaxScore.toFixed(2)).toString();
-
-                        if (rateNum === 100) {
-                          return (
-                            <div className="space-y-3">
-                              <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex justify-between items-center print:bg-white print:border-slate-350">
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] bg-indigo-100 border border-indigo-200 rounded font-black px-2 py-0.5 text-indigo-900">
-                                      수행평가 반영 점수 (100% 반영)
-                                    </span>
-                                  </div>
-                                  <h4 className="text-xs font-black text-slate-800 mt-1">
-                                    {subject} {formattedRound ? `${formattedRound} ` : ''}수행 점수
-                                  </h4>
-                                </div>
-                                <div className="text-right">
-                                  <span className="text-2xl sm:text-3xl font-black text-indigo-950 font-sans tracking-tight">
-                                    {computedTotalScore}
-                                  </span>
-                                  <span className="text-xs text-slate-400 font-bold ml-1">
-                                    / {maxScoreNum} 점 만점
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div className="space-y-3">
-                            {/* Box 1: 영역 합산 점수 */}
-                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex justify-between items-center print:bg-white print:border-slate-300">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] bg-slate-200 border border-slate-300 rounded font-black px-2 py-0.5 text-slate-700">
-                                    영역 합산 원점수
-                                  </span>
-                                </div>
-                                <h4 className="text-xs font-black text-slate-800 mt-1">
-                                  {subject} {formattedRound ? `${formattedRound} ` : ''}수행 원점수
-                                </h4>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
-                                  {computedTotalScore}
-                                </span>
-                                <span className="text-xs text-slate-400 font-bold ml-1">
-                                  / {maxScoreNum} 점 만점
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Box 2: 실제 성적 반영 점수 */}
-                            <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex justify-between items-center print:bg-white print:border-slate-300">
-                              <div className="space-y-1.5">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] bg-indigo-100 border border-indigo-200 rounded font-black px-2 py-0.5 text-indigo-850">
-                                    실제 성적 반영 점수
-                                  </span>
-                                  <span className="text-[10px] font-bold text-slate-500">
-                                    (반영 비율: {rateNum}%)
-                                  </span>
-                                </div>
-                                <p className="text-[10px] text-slate-500 font-medium font-mono">
-                                  성적 반영 공식 : <span className="font-bold text-indigo-900">{calculationFormula} = {formattedReflectedValue}점 (영역 만점: {maxScoreNum}점 × {rateNum}% = {formattedReflectedMaxScore}점 만점)</span>
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-2xl sm:text-3xl font-black text-indigo-950 font-sans tracking-tight">
-                                  {formattedReflectedValue}
-                                </span>
-                                <span className="text-xs text-slate-400 font-bold ml-1">
-                                  / {formattedReflectedMaxScore} 점 만점
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* 3. Personalized Teacher's comments and Feedback markup bubble */}
-                      {hasAnyFeedback ? (
-                        <div className="space-y-3 pt-1">
-                          <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                            <MessageSquare size={13} className="text-slate-400" />
-                            선생님의 개별 맞춤 지도 피드백
+                          <h3 className="text-sm font-extrabold text-slate-800">
+                            [{tea.code}] {tea.name} 선생님
                           </h3>
+                          <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                            등록된 수행평가 영역: {evalCount}개
+                          </p>
+                        </div>
+                      </div>
 
-                          <div className="space-y-3">
-                            {feedbackKeys.map(key => {
-                              const feedbackVal = row[key];
-                              if (feedbackVal === undefined || feedbackVal === null || String(feedbackVal).trim() === '') return null;
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 mt-4 group-hover:text-indigo-800 group-hover:translate-x-1 transition duration-200">
+                        성적 확인 및 서명하기 ➔
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Visual Division: Part 1 and Part 2 */}
+          <div className="space-y-10">
+            
+            {/* ==========================================
+                [PART 1]: 영역별 구체적인 점수 및 피드백 (Excel 자료)
+               ========================================== */}
+            <div id="part1-excel-feedback-section" className="space-y-4">
+              <div className="border-l-4 border-indigo-600 pl-3.5 py-1 bg-indigo-50/30 rounded-r-2xl pr-4 flex items-center justify-between gap-3 shadow-3xs">
+                <div>
+                  <h2 className="text-xs sm:text-sm font-black text-indigo-950 flex items-center gap-1.5">
+                    <BookOpen size={15} className="text-indigo-600" />
+                    Part 1. 수행평가 영역별 상세 점수 및 피드백 (Excel 자료)
+                  </h2>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                    왜 점수가 감점되었는지, 어떤 평가를 받았는지 상세 세부 내역과 정보교과 선생님의 개별 피드백을 안내합니다.
+                  </p>
+                </div>
+                <span className="text-[9px] font-black bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded border border-indigo-200 shrink-0 select-none">문항별 상세분석용</span>
+              </div>
 
+              <div className="space-y-5">
+                {(() => {
+                  if (excelResults.length === 0) {
+                    return (
+                      <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs font-semibold shadow-xxs">
+                        <Info className="mx-auto text-slate-300 mb-1.5" size={24} />
+                        수행평가 영역별 세부 점수는 등록되지 않았습니다.
+                      </div>
+                    );
+                  }
+
+                  return excelResults.map((item, index) => {
+                    const { headers, row, evaluationTitle, subject, round, evaluationDetailName, maxScore } = item;
+                    const formattedRound = round
+                      ? (round.endsWith('차') || round.endsWith('차수') ? round : `${round}차`)
+                      : '';
+                    
+                    const feedbackKeys = findFeedbackKey(headers);
+                    const totalScoreKey = findTotalScoreKey(headers, item.rows || [row], feedbackKeys);
+                    
+                    const studentIdKey = findStudentIdKey(headers);
+                    const birthdateKey = findBirthdateKey(headers);
+                    const nameKey = findNameKey(headers);
+                    const gradeKey = findGradeKey(headers);
+                    const classKey = findClassKey(headers);
+                    const numberKey = findNumberKey(headers);
+
+                    // Score metrics (sub-scores)
+                    const scoreKeys = headers.filter(h => {
+                      if (h === studentIdKey || h === birthdateKey || h === nameKey || h === gradeKey || h === classKey || h === numberKey || feedbackKeys.includes(h)) return false;
+                      return isScoreColumn(h, item.rows || [row], h);
+                    });
+
+                    // Score keys for the list, excluding the total score key to avoid duplicate columns
+                    const subScoreKeys = scoreKeys.filter(k => k !== totalScoreKey);
+
+                    // Checks if any feedback actually exists and has been entered
+                    const hasAnyFeedback = feedbackKeys.some(key => {
+                      const feedbackVal = row[key];
+                      return feedbackVal !== undefined && feedbackVal !== null && String(feedbackVal).trim() !== '';
+                    });
+
+                    return (
+                      <div 
+                        key={item.evaluationId} 
+                        className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden print:border print:border-slate-350 print:shadow-none break-inside-avoid-page"
+                      >
+                        {/* Header Title Section for individual evaluations */}
+                        <div className="bg-slate-50 border-b border-slate-150 p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:bg-slate-100">
+                          <div className="flex items-start gap-2.5">
+                            <div className="p-2 bg-indigo-50 text-indigo-900 rounded-xl mt-0.5 print:bg-slate-200">
+                              <ClipboardCheck size={16} />
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-md uppercase print:bg-white">
+                                수행영역 {index + 1}
+                              </span>
+                              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
+                                {subject} 수행평가 : {evaluationDetailName}
+                              </h2>
+                            </div>
+                          </div>
+
+                          {maxScore && (
+                            <span className="text-[11px] bg-slate-200/60 border border-slate-300 font-bold px-3 py-1 rounded-xl text-slate-700 font-mono self-start sm:self-center">
+                              영역 만점: {maxScore}점
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Dynamic Card Body for metrics */}
+                        <div className="p-6 sm:p-7 space-y-6">
+                          
+                          {/* 1. Sub-scores visual metric cards row */}
+                          {subScoreKeys.length > 0 && (
+                            <div className="space-y-2">
+                              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                                영역별 세부 채점 내역
+                              </span>
+                              
+                              <div className="flex flex-wrap gap-2 sm:gap-2.5 w-full justify-start items-stretch">
+                                {subScoreKeys.map(key => {
+                                  const val = row[key];
+                                  
+                                  const formatKey = (val: any) => {
+                                    const str = String(val || '');
+                                    const match = str.match(/^([\s\S]+?)\s*([\(\[][^()\[\]]+[\)\]])$/);
+                                    if (match) {
+                                      return {
+                                        title: match[1].trim(),
+                                        scoreLimit: match[2].trim()
+                                      };
+                                    }
+                                    return { title: str, scoreLimit: null };
+                                  };
+
+                                  const { title, scoreLimit } = formatKey(key);
+
+                                  const itemWidthClass = 
+                                    subScoreKeys.length === 1 ? "w-full" :
+                                    subScoreKeys.length === 2 ? "w-[calc(50%-4px)] sm:w-[calc(50%-6px)]" :
+                                    subScoreKeys.length === 3 ? "w-[calc(50%-4px)] sm:w-[calc(33.33%-7px)]" :
+                                    "w-[calc(50%-4px)] sm:w-[calc(25%-8px)]";
+
+                                  return (
+                                    <div 
+                                      key={key} 
+                                      className={`${itemWidthClass} min-w-[100px] bg-slate-50/70 border border-slate-200 rounded-lg sm:rounded-xl p-2.5 sm:p-3.5 text-center transition-colors hover:border-slate-300 print:bg-white print:border-slate-200 flex flex-col justify-between shadow-xs shrink-0 grow`}
+                                    >
+                                      <div>
+                                        <span className="block text-[9.5px] sm:text-[10.5px] font-bold text-slate-500 leading-tight break-keep" title={key}>
+                                          {title}
+                                        </span>
+                                        {scoreLimit && (
+                                          <span className="block text-[8.5px] sm:text-[9.5px] font-semibold text-slate-400 mt-0.5 leading-none break-keep">
+                                            {scoreLimit}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="block text-xs sm:text-base font-black text-slate-800 mt-1.5 font-mono">
+                                        {val !== undefined && val !== null ? String(val) : '-'}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 2. Total Sum Score large horizontal highlight banner */}
+                          {totalScoreKey && (() => {
+                            const rawScoreVal = parseFloat(String(row[totalScoreKey] || '0').trim());
+                            const computedTotalScore = isNaN(rawScoreVal) ? 0 : rawScoreVal;
+                            const maxScoreNum = parseFloat(maxScore || '100') || 100;
+                            const rateNum = parseFloat(item.reflectRate || '100') || 100;
+
+                            const reflectedValue = computedTotalScore * (rateNum / 100);
+                            const reflectedMaxScore = maxScoreNum * (rateNum / 100);
+                            const calculationFormula = `원점수 ${computedTotalScore}점 × ${rateNum}%`;
+
+                            const formattedReflectedValue = Number(reflectedValue.toFixed(2)).toString();
+                            const formattedReflectedMaxScore = Number(reflectedMaxScore.toFixed(2)).toString();
+
+                            if (rateNum === 100) {
                               return (
-                                <div 
-                                  key={key} 
-                                  className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 relative overflow-hidden print:bg-white print:border-slate-250"
-                                >
-                                  <span className="text-[10px] font-black text-indigo-805 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-md inline-block print:bg-slate-100">
-                                    🎯 {key}
-                                  </span>
-                                  <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-semibold mt-3 whitespace-pre-wrap">
-                                    {String(feedbackVal)}
-                                  </p>
+                                <div className="space-y-3">
+                                  <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex justify-between items-center print:bg-white print:border-slate-350">
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[10px] bg-indigo-100 border border-indigo-200 rounded font-black px-2 py-0.5 text-indigo-900">
+                                          수행평가 반영 점수 (100% 반영)
+                                        </span>
+                                      </div>
+                                      <h4 className="text-xs font-black text-slate-800 mt-1">
+                                        {subject} {formattedRound ? `${formattedRound} ` : ''}수행 점수
+                                      </h4>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="text-2xl sm:text-3xl font-black text-indigo-950 font-sans tracking-tight">
+                                        {computedTotalScore}
+                                      </span>
+                                      <span className="text-xs text-slate-400 font-bold ml-1">
+                                        / {maxScoreNum} 점 만점
+                                      </span>
+                                    </div>
+                                  </div>
                                 </div>
                               );
-                            })}
-                          </div>
+                            }
+
+                            return (
+                              <div className="space-y-3">
+                                {/* Box 1: 영역 합산 점수 */}
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex justify-between items-center print:bg-white print:border-slate-300">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] bg-slate-200 border border-slate-300 rounded font-black px-2 py-0.5 text-slate-700">
+                                        영역 합산 원점수
+                                      </span>
+                                    </div>
+                                    <h4 className="text-xs font-black text-slate-800 mt-1">
+                                      {subject} {formattedRound ? `${formattedRound} ` : ''}수행 원점수
+                                    </h4>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
+                                      {computedTotalScore}
+                                    </span>
+                                    <span className="text-xs text-slate-400 font-bold ml-1">
+                                      / {maxScoreNum} 점 만점
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Box 2: 실제 성적 반영 점수 */}
+                                <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex justify-between items-center print:bg-white print:border-slate-300">
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[10px] bg-indigo-100 border border-indigo-200 rounded font-black px-2 py-0.5 text-indigo-850">
+                                        실제 성적 반영 점수
+                                      </span>
+                                      <span className="text-[10px] font-bold text-slate-500">
+                                        (반영 비율: {rateNum}%)
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 font-medium font-mono">
+                                      성적 반영 공식 : <span className="font-bold text-indigo-900">{calculationFormula} = {formattedReflectedValue}점 (영역 만점: {maxScoreNum}점 × {rateNum}% = {formattedReflectedMaxScore}점 만점)</span>
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="text-2xl sm:text-3xl font-black text-indigo-950 font-sans tracking-tight">
+                                      {formattedReflectedValue}
+                                    </span>
+                                    <span className="text-xs text-slate-400 font-bold ml-1">
+                                      / {formattedReflectedMaxScore} 점 만점
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* 3. Personalized Teacher's comments and Feedback markup bubble */}
+                          {hasAnyFeedback ? (
+                            <div className="space-y-3 pt-1">
+                              <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                                <MessageSquare size={13} className="text-slate-400" />
+                                선생님의 개별 맞춤 지도 피드백
+                              </h3>
+
+                              <div className="space-y-3">
+                                {feedbackKeys.map(key => {
+                                  const feedbackVal = row[key];
+                                  if (feedbackVal === undefined || feedbackVal === null || String(feedbackVal).trim() === '') return null;
+
+                                  return (
+                                    <div 
+                                      key={key} 
+                                      className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 relative overflow-hidden print:bg-white print:border-slate-250"
+                                    >
+                                      <span className="text-[10px] font-black text-indigo-805 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-md inline-block print:bg-slate-100">
+                                        🎯 {key}
+                                      </span>
+                                      <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-semibold mt-3 whitespace-pre-wrap">
+                                        {String(feedbackVal)}
+                                      </p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
+
                         </div>
-                      ) : null}
-
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-
-          {/* Cumulative Final Report Section (Moved to the end of Part 1) */}
-          {excelResults.length > 0 && (
-            <div className="bg-indigo-50/50 border border-indigo-150 rounded-2xl p-6 sm:p-8 relative overflow-hidden shadow-xs print:bg-white print:text-black print:border-2 print:border-slate-800 space-y-5">
-              <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none print:hidden">
-                <Award size={140} className="stroke-[1.5] text-indigo-500" />
-              </div>
-
-              <div className="flex items-center gap-2.5 relative z-10">
-                <div className="p-2 bg-indigo-100 text-indigo-950 rounded-xl print:bg-slate-200 print:text-black">
-                  <Award size={20} className="stroke-[2.5]" />
-                </div>
-                <div>
-                  <h2 className="text-base sm:text-lg font-black tracking-tight text-indigo-950 print:text-black leading-tight">
-                    {subjName ? `${subjName} 수행평가 총점` : '수행평가 최종 총점'}
-                  </h2>
-                </div>
-              </div>
-
-              <div className="relative z-10">
-                {/* Reflected Real Score Sum Box */}
-                <div className="bg-white border border-indigo-100/70 rounded-2xl p-5 sm:p-6 print:bg-slate-50 print:border-slate-200">
-                  <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-4">
-                    <div className="text-center sm:text-left space-y-1">
-                      <span className="text-[10.5px] font-extrabold text-indigo-850 uppercase tracking-widest block">
-                        👑 최종 반영 총점
-                      </span>
-                      <p className="text-[11px] text-slate-500 leading-normal font-semibold">
-                        각 영역별 만점과 실제 성적 반영 비율(%)을 반영한 최종 수행평가 점수입니다.
-                      </p>
-                    </div>
-                    <div className="text-center sm:text-right shrink-0 flex flex-col items-center sm:items-end gap-1.5">
-                      <div className="flex items-baseline gap-1 justify-center sm:justify-end">
-                        <span className="text-4xl sm:text-5xl font-black text-indigo-950 font-sans tracking-tight">
-                          {formattedAggregateReflectedObtained}
-                        </span>
-                        <span className="text-sm font-bold text-slate-400">
-                          / {courseMaxScore} 점 만점
-                        </span>
                       </div>
-                      {!isSubjectCompleted && (
-                        <span className="inline-flex items-center gap-1.5 text-[10.5px] font-extrabold bg-amber-50 text-amber-800 border border-amber-250/70 px-2.5 py-1 rounded-lg select-none">
-                          <span>⚠️</span> 전체 영역 입력 전
-                        </span>
-                      )}
+                    );
+                  });
+                })()}
+              </div>
+
+              {/* Cumulative Final Report Section (Moved to the end of Part 1) */}
+              {excelResults.length > 0 && (
+                <div className="bg-indigo-50/50 border border-indigo-150 rounded-2xl p-6 sm:p-8 relative overflow-hidden shadow-xs print:bg-white print:text-black print:border-2 print:border-slate-800 space-y-5">
+                  <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none print:hidden">
+                    <Award size={140} className="stroke-[1.5] text-indigo-500" />
+                  </div>
+
+                  <div className="flex items-center gap-2.5 relative z-10">
+                    <div className="p-2 bg-indigo-100 text-indigo-950 rounded-xl print:bg-slate-200 print:text-black">
+                      <Award size={20} className="stroke-[2.5]" />
+                    </div>
+                    <div>
+                      <h2 className="text-base sm:text-lg font-black tracking-tight text-indigo-950 print:text-black leading-tight">
+                        {subjName ? `${subjName} 수행평가 총점` : '수행평가 최종 총점'}
+                      </h2>
+                    </div>
+                  </div>
+
+                  <div className="relative z-10">
+                    {/* Reflected Real Score Sum Box */}
+                    <div className="bg-white border border-indigo-100/70 rounded-2xl p-5 sm:p-6 print:bg-slate-50 print:border-slate-200">
+                      <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-4">
+                        <div className="text-center sm:text-left space-y-1">
+                          <span className="text-[10.5px] font-extrabold text-indigo-850 uppercase tracking-widest block">
+                            👑 최종 반영 총점
+                          </span>
+                          <p className="text-[11px] text-slate-500 leading-normal font-semibold">
+                            각 영역별 만점과 실제 성적 반영 비율(%)을 반영한 최종 수행평가 점수입니다.
+                          </p>
+                        </div>
+                        <div className="text-center sm:text-right shrink-0 flex flex-col items-center sm:items-end gap-1.5">
+                          <div className="flex items-baseline gap-1 justify-center sm:justify-end">
+                            <span className="text-4xl sm:text-5xl font-black text-indigo-950 font-sans tracking-tight">
+                              {formattedAggregateReflectedObtained}
+                            </span>
+                            <span className="text-sm font-bold text-slate-400">
+                              / {courseMaxScore} 점 만점
+                            </span>
+                          </div>
+                          {!isSubjectCompleted && (
+                            <span className="inline-flex items-center gap-1.5 text-[10.5px] font-extrabold bg-amber-50 text-amber-800 border border-amber-250/70 px-2.5 py-1 rounded-lg select-none">
+                              <span>⚠️</span> 전체 영역 입력 전
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
+              )}
+            </div>
+
+            {/* ==========================================
+                [PART 2]: 나이스 최종 입력 점수 확인 (EXCEL 자료)
+               ========================================== */}
+            <div id="part2-pdf-neis-section" className="space-y-4">
+              <div className="border-l-4 border-rose-600 pl-3.5 py-1 bg-rose-50/30 rounded-r-2xl pr-4 flex items-center justify-between gap-3 shadow-3xs">
+                <div>
+                  <h2 className="text-xs sm:text-sm font-black text-rose-950 flex items-center gap-1.5">
+                    <FileText size={15} className="text-rose-600" />
+                    Part 2. 나이스 최종 입력 점수 확인 (EXCEL 자료)
+                  </h2>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                    나이스(NEIS) 확인용
+                  </p>
+                </div>
+                <span className="text-[9px] font-black bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded border border-rose-200 shrink-0 select-none">나이스 확정용</span>
+              </div>
+
+              <div className="space-y-5">
+                {(() => {
+                  const pdfResults = sortedResults.filter(item => item.uploadType === 'pdf' || item.uploadType === 'test_excel_sign');
+                  if (pdfResults.length === 0) {
+                    return (
+                      <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs font-semibold shadow-xxs">
+                        <Info className="mx-auto text-slate-300 mb-1.5" size={24} />
+                        나이스 확인용 엑셀 파일이 아직 등록되지 않았습니다.
+                      </div>
+                    );
+                  }
+
+                  return pdfResults.map((item) => {
+                    return (
+                      <StudentPdfViewer 
+                        key={item.evaluationId}
+                        pdfBase64={item.pdfBase64 || ''}
+                        studentId={studentId}
+                        studentName={studentName}
+                        headers={item.headers}
+                        row={item.row}
+                        subject={item.subject}
+                      />
+                    );
+                  });
+                })()}
               </div>
             </div>
-          )}
-        </div>
 
-        {/* ==========================================
-            [PART 2]: 나이스 최종 입력 점수 확인 (EXCEL 자료)
-           ========================================== */}
-        <div id="part2-pdf-neis-section" className="space-y-4">
-          <div className="border-l-4 border-rose-600 pl-3.5 py-1 bg-rose-50/30 rounded-r-2xl pr-4 flex items-center justify-between gap-3 shadow-3xs">
-            <div>
-              <h2 className="text-xs sm:text-sm font-black text-rose-950 flex items-center gap-1.5">
-                <FileText size={15} className="text-rose-600" />
-                Part 2. 나이스 최종 입력 점수 확인 (EXCEL 자료)
-              </h2>
-              <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                나이스(NEIS) 확인용
-              </p>
-            </div>
-            <span className="text-[9px] font-black bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded border border-rose-200 shrink-0 select-none">나이스 확정용</span>
           </div>
 
-          <div className="space-y-5">
-            {(() => {
-              const pdfResults = sortedResults.filter(item => item.uploadType === 'pdf' || item.uploadType === 'test_excel_sign');
-              if (pdfResults.length === 0) {
-                return (
-                  <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs font-semibold shadow-xxs">
-                    <Info className="mx-auto text-slate-300 mb-1.5" size={24} />
-                    나이스 확인용 엑셀 파일이 아직 등록되지 않았습니다.
-                  </div>
-                );
-              }
+          {/* Student Signature Block */}
+          {signatureEnabled && (
+            <div id="student-signature-block" className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4 print:border-2 print:border-slate-850">
+              <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                ✒️ 수행평가 결과 확인 학생 최종 서명
+              </h3>
+              <p className="text-[11px] text-slate-500 leading-normal">
+                본인의 수행평가 영역별 점수와 총점을 확인하였으며, 이에 서명합니다.
+              </p>
 
-              return pdfResults.map((item) => {
+              {(() => {
+                const teacherKey = tCode.trim();
+                const subjectKey = subjName.trim();
+                const cardStudentId = studentId.trim();
+
+                let savedSignature = '';
+                const foundSigKey = Object.keys(signatures).find(key => {
+                  const parts = key.split('_');
+                  if (parts.length >= 3) {
+                    const [sigTeacher, sigSubject, sigStudent] = parts;
+                    return sigTeacher.trim() === teacherKey && 
+                           sigSubject.replace(/\s+/g, '') === subjectKey.replace(/\s+/g, '') && 
+                           matchesStudentId(sigStudent, cardStudentId);
+                  }
+                  return false;
+                });
+                if (foundSigKey) {
+                  savedSignature = signatures[foundSigKey];
+                }
+
+                if (savedSignature) {
+                  return (
+                    <div className="bg-emerald-50/50 border border-emerald-250 rounded-2xl p-4 flex flex-col items-center justify-center gap-2.5">
+                      <div className="text-xs font-black text-emerald-850 flex items-center gap-1">
+                        서명 제출 완료
+                      </div>
+                      <div className="bg-white border border-slate-200 rounded-xl p-3 max-w-[220px] overflow-hidden flex items-center justify-center shadow-xs">
+                        <img src={savedSignature} alt="학생 서명" className="h-14 object-contain" referrerPolicy="no-referrer" />
+                      </div>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-[10px] text-slate-400 font-mono font-bold">서명 정보 저장</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteSignatureModal({ subject: subjName, studentId });
+                          }}
+                          className="mt-1 text-[11px] font-black text-red-500 hover:text-red-700 bg-white border border-red-200 hover:bg-red-50 rounded-lg px-2.5 py-1.5 transition cursor-pointer shadow-2xs active:scale-95"
+                        >
+                          🗑️ 삭제/재서명
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
-                  <StudentPdfViewer 
-                    key={item.evaluationId}
-                    pdfBase64={item.pdfBase64 || ''}
-                    studentId={studentId}
-                    studentName={studentName}
-                    headers={item.headers}
-                    row={item.row}
-                    subject={item.subject}
+                  <SignatureCanvas 
+                    onSave={async (dataUrl) => {
+                      if (onSaveSignature) {
+                        setIsSavingSig(true);
+                        try {
+                          await onSaveSignature(subjName, studentId, studentName, dataUrl, teacherCode);
+                          setShowSavedFeedback(true);
+                          setShowSavedFeedbackModal(true);
+                          setTimeout(() => setShowSavedFeedback(false), 4500);
+                        } finally {
+                          setIsSavingSig(false);
+                        }
+                      }
+                    }}
+                    isLoading={isSavingSig}
                   />
                 );
-              });
-            })()}
-          </div>
-        </div>
-
-      </div>
-
-      {/* Student Signature Block */}
-      {signatureEnabled && (
-        <div id="student-signature-block" className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4 print:border-2 print:border-slate-850">
-          <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-2">
-            ✒️ 수행평가 결과 확인 학생 최종 서명
-          </h3>
-          <p className="text-[11px] text-slate-500 leading-normal">
-            본인의 수행평가 영역별 점수와 총점을 확인하였으며, 이에 서명합니다.
-          </p>
-
-          {(() => {
-            const teacherKey = tCode.trim();
-            const subjectKey = subjName.trim();
-            const cardStudentId = studentId.trim();
-
-            let savedSignature = '';
-            const foundSigKey = Object.keys(signatures).find(key => {
-              const parts = key.split('_');
-              if (parts.length >= 3) {
-                const [sigTeacher, sigSubject, sigStudent] = parts;
-                return sigTeacher.trim() === teacherKey && 
-                       sigSubject.replace(/\s+/g, '') === subjectKey.replace(/\s+/g, '') && 
-                       matchesStudentId(sigStudent, cardStudentId);
-              }
-              return false;
-            });
-            if (foundSigKey) {
-              savedSignature = signatures[foundSigKey];
-            }
-
-            if (savedSignature) {
-              return (
-                <div className="bg-emerald-50/50 border border-emerald-250 rounded-2xl p-4 flex flex-col items-center justify-center gap-2.5">
-                  <div className="text-xs font-black text-emerald-850 flex items-center gap-1">
-                    서명 제출 완료
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-xl p-3 max-w-[220px] overflow-hidden flex items-center justify-center shadow-xs">
-                    <img src={savedSignature} alt="학생 서명" className="h-14 object-contain" referrerPolicy="no-referrer" />
-                  </div>
-                  <div className="flex flex-col items-center gap-1">
-                    <span className="text-[10px] text-slate-400 font-mono font-bold">서명 정보 저장</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeleteSignatureModal({ subject: subjName, studentId });
-                      }}
-                      className="mt-1 text-[11px] font-black text-red-500 hover:text-red-700 bg-white border border-red-200 hover:bg-red-50 rounded-lg px-2.5 py-1.5 transition cursor-pointer shadow-2xs active:scale-95"
-                    >
-                      🗑️ 삭제/재서명
-                    </button>
-                  </div>
-                </div>
-              );
-            }
-
-            return (
-              <SignatureCanvas 
-                onSave={async (dataUrl) => {
-                  if (onSaveSignature) {
-                    setIsSavingSig(true);
-                    try {
-                      await onSaveSignature(subjName, studentId, studentName, dataUrl, teacherCode);
-                      setShowSavedFeedback(true);
-                      setShowSavedFeedbackModal(true);
-                      setTimeout(() => setShowSavedFeedback(false), 4500);
-                    } finally {
-                      setIsSavingSig(false);
-                    }
-                  }
-                }}
-                isLoading={isSavingSig}
-              />
-            );
-          })()}
-        </div>
+              })()}
+            </div>
+          )}
+        </>
       )}
 
       {/* Safety Legal Notice trustfooter */}
