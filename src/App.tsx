@@ -161,6 +161,25 @@ export default function App() {
       setSubjectCompletionStates({});
       return;
     }
+
+    if (loggedStudent) {
+      // Students only need a one-time fetch of subject settings to minimize read operations
+      getDocs(collection(db, 'subjectSettings')).then((snap) => {
+        const scores: Record<string, string> = {};
+        const completions: Record<string, boolean> = {};
+        snap.forEach((d) => {
+          const data = d.data();
+          scores[d.id] = data.maxScore !== undefined ? String(data.maxScore) : '';
+          completions[d.id] = !!data.completed;
+        });
+        setSubjectMaxScores(scores);
+        setSubjectCompletionStates(completions);
+      }).catch((err) => {
+        console.warn("One-time subjectSettings fetch failed: ", err);
+      });
+      return;
+    }
+
     const collRef = collection(db, 'subjectSettings');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const scores: Record<string, string> = {};
@@ -185,6 +204,22 @@ export default function App() {
       setTeacherSettings({});
       return;
     }
+
+    if (loggedStudent) {
+      // Students only need a one-time fetch of teacher settings to minimize read operations
+      getDocs(collection(db, 'teacherSettings')).then((snap) => {
+        const settings: Record<string, boolean> = {};
+        snap.forEach((d) => {
+          const data = d.data();
+          settings[d.id] = !!data.signatureEnabled;
+        });
+        setTeacherSettings(settings);
+      }).catch((err) => {
+        console.warn("One-time teacherSettings fetch failed: ", err);
+      });
+      return;
+    }
+
     const collRef = collection(db, 'teacherSettings');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const settings: Record<string, boolean> = {};

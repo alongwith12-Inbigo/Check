@@ -929,6 +929,19 @@ export default function AdminDashboard({
         const defaultReflect = excelReflectRate.trim() || '100';
         const initialTitle = `${defaultSubject} (${defaultRound}차) 수행평가: ${defaultDetail}`;
 
+        const studentIdKeyForClass = findStudentIdKey(processedHeaders);
+        let cleanTgtGC = '';
+        if (studentIdKeyForClass) {
+          const uniqueClasses = new Set<string>();
+          processedRows.forEach((row: any) => {
+            const rawId = String(row[studentIdKeyForClass] || '').replace(/\D/g, '');
+            if (rawId.length >= 3) {
+              uniqueClasses.add(rawId.substring(0, 3));
+            }
+          });
+          cleanTgtGC = Array.from(uniqueClasses).sort().join(',');
+        }
+
         const newEvalMetadata: EvaluationState = {
           title: initialTitle,
           subject: defaultSubject,
@@ -939,7 +952,8 @@ export default function AdminDashboard({
           headers: processedHeaders,
           rows: processedRows,
           uploadedAt: new Date().toLocaleString('ko-KR'),
-          uploadType: 'excel'
+          uploadType: 'excel',
+          targetGradeClass: cleanTgtGC
         };
 
         const newId = await onCreateEvaluation(newEvalMetadata);
