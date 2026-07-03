@@ -154,32 +154,8 @@ export default function App() {
   const [privacyFile, setPrivacyFile] = useState<{ fileName: string; fileBase64: string } | null>(null);
   const [showPrivacyModal, setShowPrivacyModal] = useState<boolean>(false);
 
-  // Subscribe to Subject Settings in real-time from Firestore
+  // Subscribe to Subject Settings in real-time from Firestore (Permanent Global Listener)
   useEffect(() => {
-    if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
-      setSubjectMaxScores({});
-      setSubjectCompletionStates({});
-      return;
-    }
-
-    if (loggedStudent) {
-      // Students only need a one-time fetch of subject settings to minimize read operations
-      getDocs(collection(db, 'subjectSettings')).then((snap) => {
-        const scores: Record<string, string> = {};
-        const completions: Record<string, boolean> = {};
-        snap.forEach((d) => {
-          const data = d.data();
-          scores[d.id] = data.maxScore !== undefined ? String(data.maxScore) : '';
-          completions[d.id] = !!data.completed;
-        });
-        setSubjectMaxScores(scores);
-        setSubjectCompletionStates(completions);
-      }).catch((err) => {
-        console.warn("One-time subjectSettings fetch failed: ", err);
-      });
-      return;
-    }
-
     const collRef = collection(db, 'subjectSettings');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const scores: Record<string, string> = {};
@@ -196,30 +172,10 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
+  }, []);
 
-  // Subscribe to Teacher Settings in real-time from Firestore
+  // Subscribe to Teacher Settings in real-time from Firestore (Permanent Global Listener)
   useEffect(() => {
-    if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
-      setTeacherSettings({});
-      return;
-    }
-
-    if (loggedStudent) {
-      // Students only need a one-time fetch of teacher settings to minimize read operations
-      getDocs(collection(db, 'teacherSettings')).then((snap) => {
-        const settings: Record<string, boolean> = {};
-        snap.forEach((d) => {
-          const data = d.data();
-          settings[d.id] = !!data.signatureEnabled;
-        });
-        setTeacherSettings(settings);
-      }).catch((err) => {
-        console.warn("One-time teacherSettings fetch failed: ", err);
-      });
-      return;
-    }
-
     const collRef = collection(db, 'teacherSettings');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const settings: Record<string, boolean> = {};
@@ -233,7 +189,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
+  }, []);
 
   // Subscribe to Student Signatures in real-time from Firestore
   useEffect(() => {
@@ -352,34 +308,8 @@ export default function App() {
     }
   };
 
-  // 1. Subscribe to Teachers directory (Optimized: One-time fetch for students, real-time for teachers/admins)
+  // 1. Subscribe to Teachers directory (Permanent Global Listener)
   useEffect(() => {
-    if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
-      setTeachers([]);
-      return;
-    }
-
-    if (loggedStudent) {
-      // Students only need a one-time fetch of teachers
-      getDocs(collection(db, 'teachers')).then((snap) => {
-        const list: Teacher[] = [];
-        snap.forEach((d) => {
-          const data = d.data();
-          list.push({
-            code: d.id,
-            name: data.name || '',
-            password: data.password || '',
-            isPasswordChanged: data.isPasswordChanged || false,
-          });
-        });
-        list.sort((a, b) => a.code.localeCompare(b.code));
-        setTeachers(list);
-      }).catch((err) => {
-        console.warn("One-time teachers fetch failed: ", err);
-      });
-      return;
-    }
-
     const collRef = collection(db, 'teachers');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const list: Teacher[] = [];
@@ -399,7 +329,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
+  }, []);
 
   // 1.5. Subscribe to Students directory (Optimized: One-time fetch for teachers, real-time for admins only)
   useEffect(() => {
@@ -478,55 +408,10 @@ export default function App() {
     return () => unsubscribe();
   }, [isAdminLoggedIn, isAdminOpen]);
 
-  // 2. Subscribe to All Evaluations (Optimized: One-time fetch for students, targeted query real-time for teachers)
+  // 2. Subscribe to All Evaluations (Permanent Global Listener)
   useEffect(() => {
-    if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
-      setAllEvaluations([]);
-      return;
-    }
-
-    if (loggedStudent) {
-      // Students do not need a live listener on evaluations. A single fetch when they log in is more than sufficient
-      // and saves thousands of unneeded real-time document reads
-      getDocs(collection(db, 'evaluation')).then((snap) => {
-        const list: EvaluationState[] = [];
-        snap.forEach((d) => {
-          const data = d.data();
-          list.push({
-            id: d.id,
-            teacherCode: data.teacherCode || '',
-            title: data.title || '',
-            subject: data.subject || '',
-            round: data.round || '',
-            evaluationDetailName: data.evaluationDetailName || '',
-            maxScore: data.maxScore !== undefined ? String(data.maxScore) : '',
-            reflectRate: data.reflectRate !== undefined ? String(data.reflectRate) : '100',
-            headers: data.headers || [],
-            rows: data.rows || [],
-            uploadedAt: data.uploadedAt || null,
-            uploadType: data.uploadType || 'excel',
-            pdfBase64: data.pdfBase64 || '',
-            pdfFileName: data.pdfFileName || '',
-            targetGradeClass: data.targetGradeClass || '',
-          });
-        });
-        setAllEvaluations(list);
-      }).catch((err) => {
-        console.warn("One-time evaluations fetch failed: ", err);
-      });
-      return;
-    }
-
-    let q;
-    if (loggedTeacher) {
-      // Teachers only listen to their own evaluations
-      q = query(collection(db, 'evaluation'), where('teacherCode', '==', loggedTeacher.code));
-    } else {
-      // Admins listen to all evaluations
-      q = collection(db, 'evaluation');
-    }
-
-    const unsubscribe = onSnapshot(q, (snap) => {
+    const collRef = collection(db, 'evaluation');
+    const unsubscribe = onSnapshot(collRef, (snap) => {
       const list: EvaluationState[] = [];
       snap.forEach((d) => {
         const data = d.data();
@@ -554,7 +439,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
+  }, []);
 
   // Sync student's selectedTeacherCode to first teacher when list updates
   useEffect(() => {
@@ -933,16 +818,42 @@ export default function App() {
       console.error("Master roster check failed or not available:", error);
     }
 
-    // 2. Fallback: If no student document is found in 'students', scan the evaluations for lazy matching
+    // 2. Fallback: If no student document is found in 'students', scan the evaluations for lazy matching using already loaded local state to avoid server read cost
     try {
-      const evaluationsSnap = await getDocs(collection(db, 'evaluation'));
       let foundInEvaluations = false;
       let detectedStudentName = '';
       let detectedBirthdate = '';
 
-      evaluationsSnap.forEach((d) => {
+      let items: EvaluationState[] = allEvaluations;
+      if (items.length === 0) {
+        // Safe fallback in case global listener is still initializing
+        const evaluationsSnap = await getDocs(collection(db, 'evaluation'));
+        const fetchedList: EvaluationState[] = [];
+        evaluationsSnap.forEach((d) => {
+          const data = d.data();
+          fetchedList.push({
+            id: d.id,
+            teacherCode: data.teacherCode || '',
+            title: data.title || '',
+            subject: data.subject || '',
+            round: data.round || '',
+            evaluationDetailName: data.evaluationDetailName || '',
+            maxScore: data.maxScore !== undefined ? String(data.maxScore) : '',
+            reflectRate: data.reflectRate !== undefined ? String(data.reflectRate) : '100',
+            headers: data.headers || [],
+            rows: data.rows || [],
+            uploadedAt: data.uploadedAt || null,
+            uploadType: data.uploadType || 'excel',
+            pdfBase64: data.pdfBase64 || '',
+            pdfFileName: data.pdfFileName || '',
+            targetGradeClass: data.targetGradeClass || '',
+          });
+        });
+        items = fetchedList;
+      }
+
+      items.forEach((evalItem) => {
         if (foundInEvaluations) return;
-        const evalItem = d.data() as EvaluationState;
         const studentIdKey = findStudentIdKey(evalItem.headers);
         const birthdateKey = findBirthdateKey(evalItem.headers);
         if (!studentIdKey || !birthdateKey) return;
