@@ -11,7 +11,7 @@ import ResultCard from './components/ResultCard';
 import AdminDashboard from './components/AdminDashboard';
 import AdminManager from './components/AdminManager';
 import { EvaluationState, Teacher, StudentSession, RegisteredStudent, ExcelUpload, StudentSignature } from './types';
-import { doc, onSnapshot, setDoc, getDoc, getDocs, collection, deleteDoc, deleteField, writeBatch, query, where, DocumentReference } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, updateDoc, getDoc, getDocs, collection, deleteDoc, deleteField, writeBatch, query, where, DocumentReference } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { findStudentIdKey, matchesStudentId, matchesBirthdate, classifyEvaluationGradeClasses, areGradeClassArraysEqual, stripSensitiveEvaluationColumns, isValidExtractedEvaluationData } from './utils';
 import { 
@@ -784,18 +784,26 @@ export default function App() {
 
     try {
       const docRef = doc(db, 'evaluation', id);
-      const payload: Record<string, any> = {
-        ...restState,
-        id: id,
-        teacherCode: loggedTeacher?.code || '',
-      };
+      const payload: Record<string, any> = {};
+      for (const [key, value] of Object.entries(restState)) {
+        if (value !== undefined) {
+          payload[key] = value;
+        }
+      }
+      payload.id = id;
+      payload.teacherCode = loggedTeacher?.code || '';
+
       if (resolvedTargetGradeClasses && resolvedTargetGradeClasses.length > 0) {
         payload.targetGradeClasses = resolvedTargetGradeClasses;
       } else if (existing && Array.isArray(existing.targetGradeClasses)) {
         payload.targetGradeClasses = deleteField();
       }
-      await setDoc(docRef, payload, { merge: true });
-    } catch (err) {
+      await updateDoc(docRef, payload);
+    } catch (err: any) {
+      if (err?.code === 'not-found') {
+        setAllEvaluations((prev) => prev.filter((e) => e.id !== id));
+        return;
+      }
       handleFirestoreError(err, OperationType.WRITE, `evaluation/${id}`);
     }
   };
@@ -908,6 +916,10 @@ export default function App() {
     if (alreadyIdentical) return;
 
     try {
+      const evalSnap = await getDoc(doc(db, 'evaluation', cleanEvaluationId));
+      if (!evalSnap.exists()) {
+        throw new Error('삭제되었거나 존재하지 않는 평가에는 서명을 저장할 수 없습니다.');
+      }
       const docRef = doc(db, 'signatures', signatureId);
       await setDoc(docRef, {
         evaluationId: cleanEvaluationId,
@@ -951,7 +963,24 @@ export default function App() {
 
   const handleDeleteEvaluation = async (id: string) => {
     try {
-      const targetEval = allEvaluations.find(e => e.id === id);
+      let targetEval = allEvaluations.find(e => e.id === id);
+      if (!targetEval) {
+        const snap = await getDoc(doc(db, 'evaluation', id));
+        if (snap.exists()) {
+          const data = snap.data();
+          targetEval = {
+            id: snap.id,
+            teacherCode: data.teacherCode || '',
+            title: data.title || '',
+            subject: data.subject || '',
+            headers: data.headers || [],
+            rows: data.rows || [],
+            uploadedAt: data.uploadedAt || null,
+            uploadType: data.uploadType || 'excel',
+            targetGradeClass: data.targetGradeClass || '',
+          };
+        }
+      }
       const refsToDelete = new Map<string, DocumentReference>();
 
       // 1. Delete all signatures linked to this evaluationId
@@ -1003,7 +1032,7 @@ export default function App() {
         });
       }
 
-      // 3. Delete evaluation document + all associated signature documents in batches
+      // 3. Delete evaluation document + all associated signature documents in batches (permanent hard delete)
       const evalDocRef = doc(db, 'evaluation', id);
       refsToDelete.set(evalDocRef.path, evalDocRef);
 
@@ -1015,6 +1044,9 @@ export default function App() {
         chunk.forEach((ref) => batch.delete(ref));
         await batch.commit();
       }
+
+      setAllEvaluations(prev => prev.filter(e => e.id !== id));
+      setSignatures(prev => prev.filter(s => s.evaluationId !== id));
 
       if (activeEvaluationId === id) {
         setActiveEvaluationId('');
@@ -1071,7 +1103,10 @@ export default function App() {
     setTeachers(updated);
     
     try {
-      const refsToDelete: DocumentReference[] = [doc(db, 'teachers', code)];
+      const refsToDelete: DocumentReference[] = [
+        doc(db, 'teachers', code),
+        doc(db, 'teacherSettings', code),
+      ];
 
       // Delete all evaluations owned by this teacher (on-demand query)
       const evalSnap = await getDocs(query(collection(db, 'evaluation'), where('teacherCode', '==', code)));
@@ -1082,6 +1117,12 @@ export default function App() {
       // Delete all signatures owned by this teacher
       const sigSnap = await getDocs(query(collection(db, 'signatures'), where('teacherCode', '==', code)));
       sigSnap.forEach((d) => {
+        refsToDelete.push(d.ref);
+      });
+
+      // Delete all subjectSettings owned by this teacher
+      const subjSnap = await getDocs(query(collection(db, 'subjectSettings'), where('teacherCode', '==', code)));
+      subjSnap.forEach((d) => {
         refsToDelete.push(d.ref);
       });
 

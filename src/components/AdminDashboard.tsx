@@ -32,7 +32,7 @@ import {
 } from '../utils';
 import ResultPrintPortal from './ResultPrintPortal';
 import { db } from '../firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
 import { extractDataFromPdf } from '../utils/pdfExtractor';
 
 interface AdminDashboardProps {
@@ -492,12 +492,10 @@ export default function AdminDashboard({
         loggedTeacher.isPasswordChanged && (loggedTeacher.password || '') === cleanPassword;
       if (!isAlreadySame) {
         const docRef = doc(db, 'teachers', loggedTeacher.code);
-        await setDoc(docRef, {
-          code: loggedTeacher.code,
-          name: loggedTeacher.name,
+        await updateDoc(docRef, {
           password: cleanPassword,
           isPasswordChanged: true
-        }, { merge: true });
+        });
         onTeacherPasswordUpdated?.(cleanPassword);
       }
 

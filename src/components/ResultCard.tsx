@@ -20,7 +20,7 @@ import { StudentSession, EvaluationState, Teacher, StudentResultItem, Registered
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, findNameKey, findGradeKey, findClassKey, findNumberKey, findClassNumberKey, parseClassNumber, extractGradeFromTarget } from '../utils';
 import SignatureCanvas from './SignatureCanvas';
 import StudentPdfViewer from './StudentPdfViewer';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 interface ResultCardProps {
@@ -114,13 +114,10 @@ export default function ResultCard({
     setIsPasswordSubmitting(true);
     try {
       const docRef = doc(db, 'students', studentId);
-      await setDoc(docRef, {
-        studentId: studentId,
-        name: studentName,
-        birthdate: sessionData.birthdate,
+      await updateDoc(docRef, {
         password: cleanPassword,
         isPasswordChanged: true
-      }, { merge: true });
+      });
 
       setPasswordSuccess('비밀번호가 성공적으로 변경되었습니다. 다음 로그인부터는 설정한 비밀번호를 사용해 주세요.');
       setNewPassword('');
