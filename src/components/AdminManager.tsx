@@ -13,10 +13,13 @@ import {
   UserPlus,
   ArrowRight,
   GraduationCap,
-  RotateCcw
+  RotateCcw,
+  Database,
+  RefreshCw,
+  ShieldAlert
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Teacher, RegisteredStudent, ExcelUpload } from '../types';
+import { Teacher, RegisteredStudent, ExcelUpload, EvaluationState } from '../types';
 import { 
   findTeacherCodeKey, 
   findTeacherNameKey, 
@@ -25,7 +28,10 @@ import {
   findBirthdateKey,
   findGradeKey,
   findClassKey,
-  findNumberKey
+  findNumberKey,
+  classifyEvaluationGradeClasses,
+  areGradeClassArraysEqual,
+  parseManualMigrationInput
 } from '../utils';
 
 interface AdminManagerProps {
@@ -41,6 +47,10 @@ interface AdminManagerProps {
   privacyPolicy: string;
   privacyFile: { fileName: string; fileBase64: string } | null;
   onUpdatePrivacyPolicy: (content: string, fileData?: { fileName: string; fileBase64: string } | null) => Promise<void>;
+  onFetchEvaluationsForMigrationPreview?: () => Promise<EvaluationState[]>;
+  onApplyEvaluationMigration?: (
+    updates: { id: string; targetGradeClasses: string[]; existingTargetGradeClasses?: string[] }[]
+  ) => Promise<{ writtenCount: number; skippedCount: number }>;
 }
 
 export default function AdminManager({ 
@@ -55,10 +65,26 @@ export default function AdminManager({
   onSaveExcelUpload,
   privacyPolicy,
   privacyFile,
-  onUpdatePrivacyPolicy
+  onUpdatePrivacyPolicy,
+  onFetchEvaluationsForMigrationPreview,
+  onApplyEvaluationMigration
 }: AdminManagerProps) {
   // Navigation state
-  const [activeTab, setActiveTab] = useState<'teachers' | 'students' | 'privacy'>('teachers');
+  const [activeTab, setActiveTab] = useState<'teachers' | 'students' | 'privacy' | 'migration'>('teachers');
+
+  // Phase 2-A Migration Preview State (0 Firestore reads until admin clicks Load Preview)
+  const [migrationEvaluations, setMigrationEvaluations] = useState<EvaluationState[] | null>(null);
+  const [isFetchingMigration, setIsFetchingMigration] = useState(false);
+  const [isApplyingMigration, setIsApplyingMigration] = useState(false);
+  const [migrationFilter, setMigrationFilter] = useState<'all' | 'ready_exact' | 'needs_review' | 'up_to_date'>('all');
+  const [migrationSearchTerm, setMigrationSearchTerm] = useState('');
+  const [selectedMigrationIds, setSelectedMigrationIds] = useState<Record<string, boolean>>({});
+  const [manualMigrationInputs, setManualMigrationInputs] = useState<Record<string, string>>({});
+  const [migrationReport, setMigrationReport] = useState<{
+    writtenCount: number;
+    skippedCount: number;
+    executedAt: string;
+  } | null>(null);
 
   // Privacy Policy editor local states
   const [privacyEditorText, setPrivacyEditorText] = useState(privacyPolicy || '');
@@ -714,6 +740,217 @@ export default function AdminManager({
     return s.studentId.includes(term) || s.name.toLowerCase().includes(term) || s.birthdate.includes(term);
   });
 
+  // Phase 2-A Migration preview helpers (reuses loaded snapshot; zero extra reads)
+  const migrationRows = React.useMemo(() => {
+    if (!migrationEvaluations) return [];
+    return migrationEvaluations.map((ev) => {
+      const id = ev.id || '';
+      const classification = classifyEvaluationGradeClasses(ev);
+      const existingClasses = Array.isArray(ev.targetGradeClasses) ? ev.targetGradeClasses : [];
+      const hasExistingField = existingClasses.length > 0;
+      const manualRaw = manualMigrationInputs[id] ?? '';
+      const manualParsed = manualRaw.trim() !== '' ? parseManualMigrationInput(manualRaw) : null;
+
+      let category: 'ready_exact' | 'needs_review' | 'up_to_date';
+      let proposedClasses: string[] = [];
+
+      if (manualParsed && manualParsed.valid) {
+        proposedClasses = manualParsed.targetGradeClasses;
+        category = areGradeClassArraysEqual(existingClasses, proposedClasses)
+          ? 'up_to_date'
+          : classification.status === 'exact'
+            ? 'ready_exact'
+            : 'needs_review';
+      } else if (classification.status === 'exact') {
+        proposedClasses = classification.targetGradeClasses;
+        category = areGradeClassArraysEqual(existingClasses, proposedClasses)
+          ? 'up_to_date'
+          : 'ready_exact';
+      } else if (hasExistingField) {
+        // Previously manually confirmed/migrated doc (e.g. ['ALL'] or ['107']) -> already up to date unless edited
+        proposedClasses = existingClasses;
+        category = 'up_to_date';
+      } else {
+        proposedClasses = [];
+        category = 'needs_review';
+      }
+
+      const canSelect =
+        category !== 'up_to_date' &&
+        proposedClasses.length > 0 &&
+        !areGradeClassArraysEqual(existingClasses, proposedClasses);
+
+      return {
+        ev,
+        id,
+        classification,
+        existingClasses,
+        hasExistingField,
+        manualRaw,
+        manualParsed,
+        category,
+        proposedClasses,
+        canSelect,
+      };
+    });
+  }, [migrationEvaluations, manualMigrationInputs]);
+
+  const migrationSummary = React.useMemo(() => {
+    const total = migrationRows.length;
+    const readyExact = migrationRows.filter((r) => r.category === 'ready_exact').length;
+    const needsReview = migrationRows.filter((r) => r.category === 'needs_review').length;
+    const upToDate = migrationRows.filter((r) => r.category === 'up_to_date').length;
+    const selectedItems = migrationRows.filter((r) => r.canSelect && !!selectedMigrationIds[r.id]);
+    return {
+      total,
+      readyExact,
+      needsReview,
+      upToDate,
+      selectedCount: selectedItems.length,
+      selectedItems,
+    };
+  }, [migrationRows, selectedMigrationIds]);
+
+  const filteredMigrationRows = React.useMemo(() => {
+    return migrationRows.filter((row) => {
+      if (migrationFilter !== 'all' && row.category !== migrationFilter) return false;
+      if (!migrationSearchTerm.trim()) return true;
+      const q = migrationSearchTerm.trim().toLowerCase();
+      const teacherName = teachers.find((t) => t.code === row.ev.teacherCode)?.name || '';
+      return (
+        (row.ev.title || '').toLowerCase().includes(q) ||
+        (row.ev.subject || '').toLowerCase().includes(q) ||
+        (row.ev.teacherCode || '').toLowerCase().includes(q) ||
+        teacherName.toLowerCase().includes(q) ||
+        (row.ev.targetGradeClass || '').toLowerCase().includes(q)
+      );
+    });
+  }, [migrationRows, migrationFilter, migrationSearchTerm, teachers]);
+
+  const handleLoadMigrationPreview = async () => {
+    if (!onFetchEvaluationsForMigrationPreview) return;
+    setErrorMsg('');
+    setSuccessMsg('');
+    setMigrationReport(null);
+    setIsFetchingMigration(true);
+    try {
+      const list = await onFetchEvaluationsForMigrationPreview();
+      setMigrationEvaluations(list);
+
+      // Auto-select ONLY exact documents that actually need writing; never auto-select needs_review or up_to_date
+      const initialSelections: Record<string, boolean> = {};
+      list.forEach((ev) => {
+        if (!ev.id) return;
+        const cls = classifyEvaluationGradeClasses(ev);
+        const existing = Array.isArray(ev.targetGradeClasses) ? ev.targetGradeClasses : [];
+        if (cls.status === 'exact' && !areGradeClassArraysEqual(existing, cls.targetGradeClasses)) {
+          initialSelections[ev.id] = true;
+        }
+      });
+      setSelectedMigrationIds(initialSelections);
+      setManualMigrationInputs({});
+    } catch (err: any) {
+      setErrorMsg('평가 문서 미리보기를 불러오는 중 오류가 발생했습니다: ' + (err?.message || err));
+    } finally {
+      setIsFetchingMigration(false);
+    }
+  };
+
+  const handleManualInputChange = (id: string, value: string) => {
+    setManualMigrationInputs((prev) => ({ ...prev, [id]: value }));
+    const parsed = value.trim() ? parseManualMigrationInput(value) : null;
+    if (parsed && parsed.valid) {
+      setSelectedMigrationIds((prev) => ({ ...prev, [id]: true }));
+    } else {
+      setSelectedMigrationIds((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+  };
+
+  const handleTriggerExecuteMigration = () => {
+    if (!onApplyEvaluationMigration) return;
+    const { selectedItems, upToDate } = migrationSummary;
+    if (selectedItems.length === 0) {
+      setErrorMsg('마이그레이션할 확인 완료 문서가 선택되지 않았습니다. "확인 필요" 문서는 학년반을 입력하거나 ALL 지정을 완료해야 선택할 수 있습니다.');
+      return;
+    }
+
+    const exactSelectedCount = selectedItems.filter((r) => r.classification.status === 'exact').length;
+    const manualSelectedCount = selectedItems.length - exactSelectedCount;
+
+    setConfirmModal({
+      title: '2단계 targetGradeClasses 안전 마이그레이션 확인',
+      message:
+        `선택된 ${selectedItems.length}건의 평가 문서에만 targetGradeClasses 필드를 병합 저장합니다.\n\n` +
+        `• 자동 판별 문서 반영: ${exactSelectedCount}건\n` +
+        `• 관리자 수동 입력/ALL 확인 반영: ${manualSelectedCount}건\n` +
+        `• 이미 최신 상태 (쓰기 생략): ${upToDate}건\n\n` +
+        `※ 기존 필드(점수 행, PDF, 기존 대상 학년반 텍스트 등)는 수정하거나 삭제하지 않습니다.\n` +
+        `※ 학생 조회 쿼리(2-B)는 아직 변경되지 않으며 기존 화면은 그대로 유지됩니다.`,
+      actionText: `${selectedItems.length}건 안전 저장 실행`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setErrorMsg('');
+        setSuccessMsg('');
+        setIsApplyingMigration(true);
+        try {
+          const updates = selectedItems.map((item) => ({
+            id: item.id,
+            targetGradeClasses: item.proposedClasses,
+            existingTargetGradeClasses: item.existingClasses,
+          }));
+          const result = await onApplyEvaluationMigration(updates);
+
+          // Update in-memory preview snapshot without re-reading Firestore
+          const updatedMap = new Map<string, string[]>();
+          updates.forEach((u) => updatedMap.set(u.id, u.targetGradeClasses));
+
+          setMigrationEvaluations((prev) =>
+            prev
+              ? prev.map((ev) =>
+                  ev.id && updatedMap.has(ev.id)
+                    ? { ...ev, targetGradeClasses: updatedMap.get(ev.id) }
+                    : ev
+                )
+              : prev
+          );
+          setSelectedMigrationIds((prev) => {
+            const next = { ...prev };
+            updates.forEach((u) => {
+              delete next[u.id];
+            });
+            return next;
+          });
+          setManualMigrationInputs((prev) => {
+            const next = { ...prev };
+            updates.forEach((u) => {
+              delete next[u.id];
+            });
+            return next;
+          });
+
+          const executedAt = new Date().toLocaleString('ko-KR');
+          setMigrationReport({
+            writtenCount: result.writtenCount,
+            skippedCount: result.skippedCount,
+            executedAt,
+          });
+          setSuccessMsg(
+            `안전 마이그레이션 완료: ${result.writtenCount}건 저장됨` +
+              (result.skippedCount > 0 ? ` (변경 없는 ${result.skippedCount}건 쓰기 생략)` : '')
+          );
+        } catch (err: any) {
+          setErrorMsg('마이그레이션 저장 중 오류가 발생했습니다: ' + (err?.message || err));
+        } finally {
+          setIsApplyingMigration(false);
+        }
+      },
+    });
+  };
+
   return (
     <div id="admin-manager-dashboard" className="max-w-5xl mx-auto space-y-6 pb-12 px-1 sm:px-4">
       
@@ -765,6 +1002,16 @@ export default function AdminManager({
         >
           🔒 개인정보처리방침 관리
         </button>
+        <button
+          onClick={() => { setActiveTab('migration'); setErrorMsg(''); setSuccessMsg(''); }}
+          className={`flex-1 sm:flex-initial text-center px-6 py-2.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+            activeTab === 'migration'
+              ? 'bg-indigo-900 text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          🔄 2단계 데이터 점검
+        </button>
       </div>
 
       {/* Shared alerts space */}
@@ -783,7 +1030,354 @@ export default function AdminManager({
       )}
 
       {/* Conditional Rendering Panels based on Tab */}
-      {activeTab === 'privacy' ? (
+      {activeTab === 'migration' ? (
+        // Phase 2-A Safe Migration Preview & Admin Confirmation Panel
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 animate-fadeIn">
+          <div className="border-b border-slate-150 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                <Database size={18} className="text-indigo-700" />
+                <span>2단계 학년·반 필터 준비(2-A) 데이터 분류 미리보기</span>
+              </h3>
+              <p className="text-xs text-slate-500 font-semibold mt-1 leading-relaxed">
+                기존 평가 문서의 <code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-900">targetGradeClasses</code> 분류 결과를 사전 점검하고, 관리자가 확인한 문서만 안전하게 병합 저장합니다.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleLoadMigrationPreview}
+              disabled={isFetchingMigration || isApplyingMigration}
+              className="px-4 py-2.5 bg-indigo-900 hover:bg-indigo-950 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition shrink-0"
+            >
+              <RefreshCw size={14} className={isFetchingMigration ? 'animate-spin' : ''} />
+              {isFetchingMigration
+                ? '평가 문서 조회 중...'
+                : migrationEvaluations === null
+                  ? '평가 데이터 불러오기 (미리보기)'
+                  : '미리보기 다시 불러오기'}
+            </button>
+          </div>
+
+          <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 flex items-start gap-2.5 text-[11px] text-amber-950 font-semibold leading-relaxed">
+            <ShieldAlert size={16} className="text-amber-700 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-extrabold">안전 원칙 안내 (2-A 준비 단계)</p>
+              <p>• 학년·반을 정확히 판별할 수 없는 문서는 자동으로 <strong className="font-black">ALL</strong> 처리되지 않으며, <strong className="text-rose-700 font-black">'확인 필요'</strong>로 분류되어 기본 선택에서 제외됩니다.</p>
+              <p>• 마이그레이션 실행 시 미리보기에서 불러온 메모리를 재사용하므로 추가 읽기가 발생하지 않으며, 이미 최신 상태인 문서는 쓰기를 생략합니다.</p>
+              <p>• 현재 학생 조회 쿼리(2-B)는 아직 전환되지 않았으므로 기존 조회 및 성적 확인 기능에 영향을 주지 않습니다.</p>
+            </div>
+          </div>
+
+          {migrationReport && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-start gap-2.5 text-xs text-emerald-900 font-semibold">
+              <CheckCircle2 size={16} className="text-emerald-700 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-extrabold">최근 실행 결과 ({migrationReport.executedAt})</p>
+                <p className="mt-0.5">
+                  실제 저장: <strong>{migrationReport.writtenCount}건</strong> / 중복·변경 없음 생략: <strong>{migrationReport.skippedCount}건</strong>
+                </p>
+              </div>
+            </div>
+          )}
+
+          {migrationEvaluations === null ? (
+            <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center space-y-3 bg-slate-50/40">
+              <Database size={32} className="mx-auto text-slate-400" />
+              <div className="space-y-1">
+                <p className="text-sm font-extrabold text-slate-800">아직 평가 문서를 불러오지 않았습니다.</p>
+                <p className="text-xs text-slate-500 font-medium">
+                  불필요한 Firestore 읽기를 방지하기 위해 버튼을 누를 때만 1회 조회합니다. 상단의 <strong>'평가 데이터 불러오기 (미리보기)'</strong> 버튼을 클릭해 주세요.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {/* Summary Counters */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                  <span className="text-[10px] font-bold text-slate-500 block">전체 평가 문서</span>
+                  <span className="text-xl font-black text-slate-900 font-mono">{migrationSummary.total}건</span>
+                </div>
+                <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3.5">
+                  <span className="text-[10px] font-bold text-indigo-700 block">자동 판별 (반영 대기)</span>
+                  <span className="text-xl font-black text-indigo-950 font-mono">{migrationSummary.readyExact}건</span>
+                </div>
+                <div className="bg-rose-50/80 border border-rose-200 rounded-xl p-3.5">
+                  <span className="text-[10px] font-bold text-rose-700 block">확인 필요 (수동 검토)</span>
+                  <span className="text-xl font-black text-rose-900 font-mono">{migrationSummary.needsReview}건</span>
+                </div>
+                <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5">
+                  <span className="text-[10px] font-bold text-emerald-700 block">이미 반영됨 (쓰기 생략)</span>
+                  <span className="text-xl font-black text-emerald-900 font-mono">{migrationSummary.upToDate}건</span>
+                </div>
+              </div>
+
+              {/* Filter & Search & Batch Actions Toolbar */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(
+                    [
+                      { key: 'all', label: `전체 (${migrationSummary.total})` },
+                      { key: 'ready_exact', label: `자동 판별 (${migrationSummary.readyExact})` },
+                      { key: 'needs_review', label: `확인 필요 (${migrationSummary.needsReview})` },
+                      { key: 'up_to_date', label: `이미 반영됨 (${migrationSummary.upToDate})` },
+                    ] as const
+                  ).map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => setMigrationFilter(f.key)}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition cursor-pointer ${
+                        migrationFilter === f.key
+                          ? 'bg-indigo-900 text-white shadow-2xs'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400">
+                      <Search size={13} />
+                    </span>
+                    <input
+                      type="text"
+                      value={migrationSearchTerm}
+                      onChange={(e) => setMigrationSearchTerm(e.target.value)}
+                      placeholder="제목, 과목, 교사코드 검색..."
+                      className="text-xs pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500 w-full sm:w-52"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next: Record<string, boolean> = { ...selectedMigrationIds };
+                      const allExactSelected = migrationRows
+                        .filter((r) => r.category === 'ready_exact' && r.canSelect)
+                        .every((r) => next[r.id]);
+                      migrationRows
+                        .filter((r) => r.category === 'ready_exact' && r.canSelect)
+                        .forEach((r) => {
+                          if (allExactSelected) {
+                            delete next[r.id];
+                          } else {
+                            next[r.id] = true;
+                          }
+                        });
+                      setSelectedMigrationIds(next);
+                    }}
+                    className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg text-[11px] font-bold cursor-pointer whitespace-nowrap"
+                  >
+                    자동 판별 전체 선택/해제
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isApplyingMigration || migrationSummary.selectedCount === 0}
+                    onClick={handleTriggerExecuteMigration}
+                    className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-[11px] font-black cursor-pointer whitespace-nowrap shadow-xs transition"
+                  >
+                    {isApplyingMigration
+                      ? '저장 중...'
+                      : `선택된 ${migrationSummary.selectedCount}건 안전 마이그레이션`}
+                  </button>
+                </div>
+              </div>
+
+              {/* Classification Table */}
+              <div className="overflow-x-auto border border-slate-200 rounded-xl max-h-[520px]">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-700 border-b border-slate-200 sticky top-0 z-10 text-[11px]">
+                      <th className="py-2.5 px-3 text-center w-10 border-r border-slate-200">선택</th>
+                      <th className="py-2.5 px-3 font-bold border-r border-slate-200 min-w-[200px]">평가 문서 / 교사</th>
+                      <th className="py-2.5 px-3 font-semibold border-r border-slate-200 whitespace-nowrap">유형 / 행수</th>
+                      <th className="py-2.5 px-3 font-semibold border-r border-slate-200 whitespace-nowrap">기존 targetGradeClass</th>
+                      <th className="py-2.5 px-3 font-semibold border-r border-slate-200 min-w-[130px]">현재 DB 값</th>
+                      <th className="py-2.5 px-3 font-bold min-w-[260px]">판별 상태 및 targetGradeClasses 지정</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-150">
+                    {filteredMigrationRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center py-10 text-slate-400 italic">
+                          조건에 해당하는 평가 문서가 없습니다.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredMigrationRows.map((row) => {
+                        const teacherName = teachers.find((t) => t.code === row.ev.teacherCode)?.name;
+                        const isChecked = !!selectedMigrationIds[row.id];
+                        return (
+                          <tr
+                            key={row.id}
+                            className={`transition-colors ${
+                              row.category === 'needs_review'
+                                ? 'bg-rose-50/25 hover:bg-rose-50/45'
+                                : row.category === 'up_to_date'
+                                  ? 'bg-emerald-50/15 hover:bg-slate-50/50'
+                                  : 'hover:bg-indigo-50/25'
+                            }`}
+                          >
+                            <td className="py-2.5 px-3 text-center border-r border-slate-200">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                disabled={!row.canSelect}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setSelectedMigrationIds((prev) => {
+                                    const next = { ...prev };
+                                    if (checked) {
+                                      next[row.id] = true;
+                                    } else {
+                                      delete next[row.id];
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                title={
+                                  row.category === 'up_to_date'
+                                    ? '이미 최신 상태입니다 (쓰기 생략)'
+                                    : !row.canSelect
+                                      ? '대상 학년·반을 직접 입력하거나 ALL 지정 후 선택할 수 있습니다.'
+                                      : '마이그레이션 대상에 포함'
+                                }
+                              />
+                            </td>
+
+                            <td className="py-2.5 px-3 border-r border-slate-200 space-y-0.5">
+                              <p className="font-extrabold text-slate-900 text-[11.5px] leading-snug break-words">
+                                {row.ev.title || '(제목 없음)'}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+                                <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">
+                                  교사: {row.ev.teacherCode || '미지정'}{teacherName ? ` (${teacherName})` : ''}
+                                </span>
+                                {row.ev.subject && <span>과목: {row.ev.subject}</span>}
+                              </div>
+                            </td>
+
+                            <td className="py-2.5 px-3 border-r border-slate-200 whitespace-nowrap text-[11px]">
+                              <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-bold">
+                                {row.ev.uploadType || 'excel'}
+                              </span>
+                              <span className="block text-[10px] text-slate-500 font-mono mt-0.5">
+                                {Array.isArray(row.ev.rows) ? row.ev.rows.length : 0}명 행
+                              </span>
+                            </td>
+
+                            <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-[11px] text-slate-700">
+                              {row.ev.targetGradeClass ? (
+                                <span className="bg-slate-100 px-2 py-0.5 rounded font-bold">{row.ev.targetGradeClass}</span>
+                              ) : (
+                                <span className="text-slate-400 italic">없음</span>
+                              )}
+                            </td>
+
+                            <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-[11px]">
+                              {row.hasExistingField ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {row.existingClasses.map((code) => (
+                                    <span
+                                      key={code}
+                                      className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                                    >
+                                      {code}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 italic text-[10px]">미설정</span>
+                              )}
+                            </td>
+
+                            <td className="py-2.5 px-3 space-y-1.5">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {row.category === 'up_to_date' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                                    ✅ 이미 반영됨 (쓰기 생략)
+                                  </span>
+                                )}
+                                {row.category === 'ready_exact' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black">
+                                    자동 판별 ({row.classification.source === 'targetGradeClass' ? '대상 학년반' : '학생 행'})
+                                  </span>
+                                )}
+                                {row.category === 'needs_review' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black">
+                                    ⚠️ 확인 필요
+                                  </span>
+                                )}
+
+                                {row.proposedClasses.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {row.proposedClasses.map((c) => (
+                                      <span
+                                        key={c}
+                                        className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
+                                          c === 'ALL'
+                                            ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                            : 'bg-indigo-50 text-indigo-900 border-indigo-200'
+                                        }`}
+                                      >
+                                        {c}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {row.classification.status === 'needs_review' && (
+                                <div className="space-y-1.5 pt-0.5">
+                                  {row.classification.reason && (
+                                    <p className="text-[10px] text-rose-700 font-semibold leading-snug">
+                                      사유: {row.classification.reason}
+                                    </p>
+                                  )}
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <input
+                                      type="text"
+                                      value={row.manualRaw}
+                                      onChange={(e) => handleManualInputChange(row.id, e.target.value)}
+                                      placeholder="직접 입력 예: 101, 102 또는 ALL"
+                                      className="px-2.5 py-1 border border-slate-300 rounded-lg text-[11px] font-mono bg-white focus:outline-none focus:border-indigo-500 w-44"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleManualInputChange(row.id, 'ALL')}
+                                      className={`px-2 py-1 rounded-lg text-[10px] font-extrabold border cursor-pointer transition ${
+                                        row.manualRaw.trim().toUpperCase() === 'ALL'
+                                          ? 'bg-amber-500 text-white border-amber-600'
+                                          : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                                      }`}
+                                      title="전학년 공용 자료임을 관리자가 직접 확인한 경우에만 선택하세요."
+                                    >
+                                      전체 대상(ALL) 지정
+                                    </button>
+                                  </div>
+                                  {row.manualParsed && !row.manualParsed.valid && (
+                                    <p className="text-[10px] text-rose-600 font-bold">{row.manualParsed.error}</p>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : activeTab === 'privacy' ? (
         // Privacy Policy Administration Panel
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 animate-fadeIn">
           <div className="border-b border-slate-150 pb-3 flex items-center justify-between">

@@ -1,30 +1,297 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Global Safety Net: default-deny catch-all
+    // =========================================================================
+    // [레벨 A 초안] 기존 로그인(학번+생년월일 / 교사코드+비밀번호 / 관리자 비밀번호) 유지용
+    // - 미사용 컬렉션/경로 및 미사용 delete/list 권한 차단
+    // - 문서 필드명/자료형/크기 제한 적용
+    // - 한계: Firebase Auth 미사용으로 인해 읽기·쓰기·삭제의 사용자별 본인 인증은 강제 불가
+    // =========================================================================
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidDocId(id, maxLen) {
+      return id is string && id.size() >= 1 && id.size() <= maxLen;
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Validation Helpers (Create & Update 공통 사용)
+    // -------------------------------------------------------------------------
+    function isValidEvaluation(data) {
+      return data.title is string && data.title.size() <= 500
+        && data.headers is list && data.headers.size() <= 150
+        && data.rows is list && data.rows.size() <= 1500
+        && (!('id' in data) || data.id == null || (data.id is string && data.id.size() <= 128))
+        && (!('teacherCode' in data) || data.teacherCode == null || (data.teacherCode is string && data.teacherCode.size() <= 30))
+        && (!('subject' in data) || data.subject == null || (data.subject is string && data.subject.size() <= 200))
+        && (!('round' in data) || data.round == null || (data.round is string && data.round.size() <= 50))
+        && (!('evaluationDetailName' in data) || data.evaluationDetailName == null || (data.evaluationDetailName is string && data.evaluationDetailName.size() <= 300))
+        && (!('maxScore' in data) || data.maxScore == null || (data.maxScore is string && data.maxScore.size() <= 50) || data.maxScore is number)
+        && (!('reflectRate' in data) || data.reflectRate == null || (data.reflectRate is string && data.reflectRate.size() <= 50) || data.reflectRate is number)
+        && (!('uploadedAt' in data) || data.uploadedAt == null || data.uploadedAt is timestamp || (data.uploadedAt is string && data.uploadedAt.size() <= 100))
+        && (!('uploadType' in data) || data.uploadType == null || data.uploadType == '' || data.uploadType in ['excel', 'pdf', 'test_excel_sign'])
+        && (!('pdfBase64' in data) || data.pdfBase64 == null || (data.pdfBase64 is string && data.pdfBase64.size() <= 1048576))
+        && (!('pdfFileName' in data) || data.pdfFileName == null || (data.pdfFileName is string && data.pdfFileName.size() <= 300))
+        && (!('targetGradeClass' in data) || data.targetGradeClass == null || (data.targetGradeClass is string && data.targetGradeClass.size() <= 500))
+        && (!('targetGradeClasses' in data) || data.targetGradeClasses == null || (data.targetGradeClasses is list && data.targetGradeClasses.size() <= 100));
+    }
+
+    function isValidTeacher(data, teacherCode) {
+      return data.code is string && data.code == teacherCode && data.code.size() >= 1 && data.code.size() <= 30
+        && data.name is string && data.name.size() <= 100
+        && (!('password' in data) || data.password == null || (data.password is string && data.password.size() <= 100))
+        && (!('isPasswordChanged' in data) || data.isPasswordChanged == null || data.isPasswordChanged is bool);
+    }
+
+    function isValidStudent(data, studentId) {
+      return data.studentId is string && data.studentId == studentId && data.studentId.size() >= 1 && data.studentId.size() <= 30
+        && data.name is string && data.name.size() <= 100
+        && (!('birthdate' in data) || data.birthdate == null || (data.birthdate is string && data.birthdate.size() <= 30))
+        && (!('password' in data) || data.password == null || (data.password is string && data.password.size() <= 100))
+        && (!('isPasswordChanged' in data) || data.isPasswordChanged == null || data.isPasswordChanged is bool);
+    }
+
+    function isValidSubjectSettings(data) {
+      return data.teacherCode is string && data.teacherCode.size() >= 1 && data.teacherCode.size() <= 30
+        && data.subject is string && data.subject.size() <= 200
+        && (!('maxScore' in data) || data.maxScore == null || (data.maxScore is string && data.maxScore.size() <= 50) || data.maxScore is number)
+        && (!('completed' in data) || data.completed == null || data.completed is bool);
+    }
+
+    function isValidTeacherSettings(data, teacherCode) {
+      return data.teacherCode is string && data.teacherCode == teacherCode && data.teacherCode.size() >= 1 && data.teacherCode.size() <= 30
+        && data.signatureEnabled is bool;
+    }
+
+    function isValidSignature(data) {
+      return data.evaluationId is string && data.evaluationId.size() >= 1 && data.evaluationId.size() <= 128
+        && data.teacherCode is string && data.teacherCode.size() >= 1 && data.teacherCode.size() <= 30
+        && data.subject is string && data.subject.size() <= 200
+        && data.studentId is string && data.studentId.size() >= 1 && data.studentId.size() <= 30
+        && data.studentName is string && data.studentName.size() <= 100
+        && data.signatureDataUrl is string && data.signatureDataUrl.size() >= 1 && data.signatureDataUrl.size() <= 500000
+        && data.signedAt is string && data.signedAt.size() >= 1 && data.signedAt.size() <= 100;
+    }
+
+    function isValidExcelUpload(data, uploadId) {
+      return data.id is string && data.id == uploadId && data.id.size() <= 30
+        && data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 300
+        && data.uploadedAt is string && data.uploadedAt.size() >= 1 && data.uploadedAt.size() <= 100
+        && data.recordCount is number && data.recordCount >= 0 && data.recordCount <= 100000;
+    }
+
+    function isValidSystemConfig(data) {
+      return data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 300
+        && data.fileBase64 is string && data.fileBase64.size() >= 1 && data.fileBase64.size() <= 1048576
+        && data.uploadedAt is string && data.uploadedAt.size() >= 1 && data.uploadedAt.size() <= 100;
+    }
+
+    function isValidAppSettings(data) {
+      return data.content is string && data.content.size() <= 100000
+        && (!('updatedAt' in data) || data.updatedAt == null || (data.updatedAt is string && data.updatedAt.size() <= 100))
+        && (!('fileName' in data) || data.fileName == null || (data.fileName is string && data.fileName.size() <= 300))
+        && (!('fileBase64' in data) || data.fileBase64 == null || (data.fileBase64 is string && data.fileBase64.size() <= 1048576));
+    }
+
+    // -------------------------------------------------------------------------
+    // 1. 기본 전면 차단 (미사용 컬렉션·서브컬렉션·임의 경로 차단)
+    // -------------------------------------------------------------------------
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // 2. Evaluation active and teacher-specific document access rules
+    // -------------------------------------------------------------------------
+    // 2. evaluation/{evalId}
+    // -------------------------------------------------------------------------
     match /evaluation/{evalId} {
-      // Anyone can query/read any teacher's evaluations for student search and individual logins
-      allow read: if true;
-      
-      // Permit updates to evaluations with defensive bounds
-      allow write: if request.resource.data.title is string && request.resource.data.title.size() <= 500
-        && request.resource.data.headers is list && request.resource.data.headers.size() <= 150
-        && request.resource.data.rows is list && request.resource.data.rows.size() <= 1500;
+      allow get: if isValidDocId(evalId, 128);
+      allow list: if true;
+
+      allow create: if isValidDocId(evalId, 128)
+        && isValidEvaluation(incoming())
+        && incoming().keys().hasAll(['title', 'headers', 'rows'])
+        && incoming().keys().hasOnly([
+          'id', 'teacherCode', 'title', 'subject', 'round', 'evaluationDetailName',
+          'maxScore', 'reflectRate', 'headers', 'rows', 'uploadedAt', 'uploadType',
+          'pdfBase64', 'pdfFileName', 'targetGradeClass', 'targetGradeClasses'
+        ]);
+
+      allow update: if isValidDocId(evalId, 128)
+        && isValidEvaluation(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'id', 'teacherCode', 'title', 'subject', 'round', 'evaluationDetailName',
+          'maxScore', 'reflectRate', 'headers', 'rows', 'uploadedAt', 'uploadType',
+          'pdfBase64', 'pdfFileName', 'targetGradeClass', 'targetGradeClasses'
+        ]);
+
+      allow delete: if isValidDocId(evalId, 128);
     }
 
-    // 3. Teachers roster document access rule
+    // -------------------------------------------------------------------------
+    // 3. teachers/{teacherCode}
+    // -------------------------------------------------------------------------
     match /teachers/{teacherCode} {
-      // Anyone can query/read the list of registered teachers to render dropdown list in student login
-      allow read: if true;
-      
-      // Admin writes teachers roster
-      allow write: if request.resource.data.code is string && request.resource.data.code.size() <= 10
-        && request.resource.data.name is string && request.resource.data.name.size() <= 100;
+      allow get: if isValidDocId(teacherCode, 30);
+      allow list: if true;
+
+      allow create: if isValidDocId(teacherCode, 30)
+        && isValidTeacher(incoming(), teacherCode)
+        && incoming().keys().hasAll(['code', 'name'])
+        && incoming().keys().hasOnly(['code', 'name', 'password', 'isPasswordChanged']);
+
+      allow update: if isValidDocId(teacherCode, 30)
+        && isValidTeacher(incoming(), teacherCode)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['code', 'name', 'password', 'isPasswordChanged']);
+
+      allow delete: if isValidDocId(teacherCode, 30);
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. students/{studentId}
+    // -------------------------------------------------------------------------
+    match /students/{studentId} {
+      allow get: if isValidDocId(studentId, 30);
+      allow list: if true;
+
+      allow create: if isValidDocId(studentId, 30)
+        && isValidStudent(incoming(), studentId)
+        && incoming().keys().hasAll(['studentId', 'name'])
+        && incoming().keys().hasOnly(['studentId', 'name', 'birthdate', 'password', 'isPasswordChanged']);
+
+      allow update: if isValidDocId(studentId, 30)
+        && isValidStudent(incoming(), studentId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['studentId', 'name', 'birthdate', 'password', 'isPasswordChanged']);
+
+      allow delete: if isValidDocId(studentId, 30);
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. subjectSettings/{settingId} (미사용 delete 차단)
+    // -------------------------------------------------------------------------
+    match /subjectSettings/{settingId} {
+      allow get: if isValidDocId(settingId, 250);
+      allow list: if true;
+
+      allow create: if isValidDocId(settingId, 250)
+        && isValidSubjectSettings(incoming())
+        && incoming().keys().hasAll(['teacherCode', 'subject'])
+        && incoming().keys().hasOnly(['teacherCode', 'subject', 'maxScore', 'completed']);
+
+      allow update: if isValidDocId(settingId, 250)
+        && isValidSubjectSettings(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['teacherCode', 'subject', 'maxScore', 'completed']);
+
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // 6. teacherSettings/{teacherCode} (미사용 delete 차단)
+    // -------------------------------------------------------------------------
+    match /teacherSettings/{teacherCode} {
+      allow get: if isValidDocId(teacherCode, 30);
+      allow list: if true;
+
+      allow create: if isValidDocId(teacherCode, 30)
+        && isValidTeacherSettings(incoming(), teacherCode)
+        && incoming().keys().hasAll(['teacherCode', 'signatureEnabled'])
+        && incoming().keys().hasOnly(['teacherCode', 'signatureEnabled']);
+
+      allow update: if isValidDocId(teacherCode, 30)
+        && isValidTeacherSettings(incoming(), teacherCode)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['teacherCode', 'signatureEnabled']);
+
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. signatures/{signatureId}
+    // -------------------------------------------------------------------------
+    match /signatures/{signatureId} {
+      allow get: if isValidDocId(signatureId, 200);
+      allow list: if true;
+
+      allow create: if isValidDocId(signatureId, 200)
+        && isValidSignature(incoming())
+        && incoming().keys().hasAll([
+          'evaluationId', 'teacherCode', 'subject', 'studentId',
+          'studentName', 'signatureDataUrl', 'signedAt'
+        ])
+        && incoming().keys().hasOnly([
+          'evaluationId', 'teacherCode', 'subject', 'studentId',
+          'studentName', 'signatureDataUrl', 'signedAt'
+        ]);
+
+      allow update: if isValidDocId(signatureId, 200)
+        && isValidSignature(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'evaluationId', 'teacherCode', 'subject', 'studentId',
+          'studentName', 'signatureDataUrl', 'signedAt'
+        ]);
+
+      allow delete: if isValidDocId(signatureId, 200);
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. excelUploads/{uploadId} (고정 ID 2종만 허용, 미사용 delete 차단)
+    // -------------------------------------------------------------------------
+    match /excelUploads/{uploadId} {
+      allow get: if uploadId in ['students', 'teachers'];
+      allow list: if true;
+
+      allow create: if uploadId in ['students', 'teachers']
+        && isValidExcelUpload(incoming(), uploadId)
+        && incoming().keys().hasAll(['id', 'fileName', 'uploadedAt', 'recordCount'])
+        && incoming().keys().hasOnly(['id', 'fileName', 'uploadedAt', 'recordCount']);
+
+      allow update: if uploadId in ['students', 'teachers']
+        && isValidExcelUpload(incoming(), uploadId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['id', 'fileName', 'uploadedAt', 'recordCount']);
+
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. systemConfig/{configId} (excelTemplate 단일 문서만 허용, list·delete 차단)
+    // -------------------------------------------------------------------------
+    match /systemConfig/{configId} {
+      allow get: if configId == 'excelTemplate';
+      allow list: if false;
+
+      allow create: if configId == 'excelTemplate'
+        && isValidSystemConfig(incoming())
+        && incoming().keys().hasAll(['fileName', 'fileBase64', 'uploadedAt'])
+        && incoming().keys().hasOnly(['fileName', 'fileBase64', 'uploadedAt']);
+
+      allow update: if configId == 'excelTemplate'
+        && isValidSystemConfig(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['fileName', 'fileBase64', 'uploadedAt']);
+
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. appSettings/{settingId} (privacyPolicy 단일 문서만 허용, list·delete 차단)
+    // -------------------------------------------------------------------------
+    match /appSettings/{settingId} {
+      allow get: if settingId == 'privacyPolicy';
+      allow list: if false;
+
+      allow create: if settingId == 'privacyPolicy'
+        && isValidAppSettings(incoming())
+        && incoming().keys().hasAll(['content'])
+        && incoming().keys().hasOnly(['content', 'updatedAt', 'fileName', 'fileBase64']);
+
+      allow update: if settingId == 'privacyPolicy'
+        && isValidAppSettings(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['content', 'updatedAt', 'fileName', 'fileBase64']);
+
+      allow delete: if false;
     }
   }
 }

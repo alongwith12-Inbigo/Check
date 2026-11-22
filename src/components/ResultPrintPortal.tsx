@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, FileSpreadsheet, Check } from 'lucide-react';
-import { EvaluationState, Teacher, RegisteredStudent } from '../types';
+import { EvaluationState, Teacher, RegisteredStudent, StudentSignature } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, isMetadataOrNonScoreHeader, parseClassNumber, parseGradeAndClass } from '../utils';
 import { cleanAndFormatHeaderName } from '../utils/pdfExtractor';
 import { parseNcsHeaderDetails, cleanAndFormatNcsUnitName } from './StudentPdfViewer';
@@ -21,7 +21,7 @@ function getEunNeun(text: string): string {
 
 interface ResultPrintPortalProps {
   myEvaluations: EvaluationState[];
-  signatures: Record<string, string>;
+  signatures: StudentSignature[];
   loggedTeacher: Teacher;
   subjectMaxScores: Record<string, string>;
   onClose: () => void;
@@ -157,6 +157,58 @@ export default function ResultPrintPortal({
     return isNaN(rawVal) ? 0 : rawVal;
   };
 
+  // Find matching 2단계 NICE evaluations for the selected class (supports multi-semester e.g. 1학기, 2학기)
+  const matchingNiceEvals = useMemo(() => {
+    const niceEvals = evalsForSubject.filter(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
+    if (niceEvals.length === 0) return [];
+    if (!selectedClass) return niceEvals;
+
+    const parsedSel = parseGradeAndClass(selectedClass);
+    if (parsedSel) {
+      const matched = niceEvals.filter(e => {
+        const parts = String(e.targetGradeClass || '').split(',').map(p => p.trim()).filter(Boolean);
+        return parts.some(part => {
+          const parsedEv = parseGradeAndClass(part);
+          return parsedEv && parsedEv.grade === parsedSel.grade && parsedEv.classVal === parsedSel.classVal;
+        });
+      });
+      if (matched.length > 0) return matched;
+    }
+
+    // Fallback: search row values
+    const matchedByRows = niceEvals.filter(e => {
+      const sIdKey = findStudentIdKey(e.headers);
+      if (!sIdKey) return false;
+      return e.rows.some(r => {
+        const val = String(r[sIdKey] || '').trim();
+        if (!val) return false;
+        const info = extractGradeClass(val, e.targetGradeClass);
+        return info.gradeClass === selectedClass;
+      });
+    });
+
+    return matchedByRows.length > 0 ? matchedByRows : niceEvals;
+  }, [evalsForSubject, selectedClass]);
+
+  const [selectedNiceEvalId, setSelectedNiceEvalId] = useState<string>('');
+
+  useEffect(() => {
+    if (matchingNiceEvals.length > 0) {
+      if (!matchingNiceEvals.some(e => e.id === selectedNiceEvalId)) {
+        setSelectedNiceEvalId(matchingNiceEvals[0].id || '');
+      }
+    } else {
+      setSelectedNiceEvalId('');
+    }
+  }, [matchingNiceEvals, selectedNiceEvalId]);
+
+  const niceEval = useMemo(() => {
+    if (matchingNiceEvals.length === 0) return undefined;
+    return matchingNiceEvals.find(e => e.id === selectedNiceEvalId) || matchingNiceEvals[0];
+  }, [matchingNiceEvals, selectedNiceEvalId]);
+
+  const isNiceMode = !!niceEval;
+
   // Compile unique roster of students in the selected class cohort
   const [students, setStudents] = useState<{ studentId: string; studentName: string }[]>([]);
 
@@ -166,8 +218,9 @@ export default function ResultPrintPortal({
       return;
     }
 
+    const sourceEvals = niceEval ? [niceEval] : evalsForSubject;
     const studentMap = new Map<string, { studentId: string; studentName: string }>();
-    evalsForSubject.forEach(ev => {
+    sourceEvals.forEach(ev => {
       const sIdKey = findStudentIdKey(ev.headers);
       const sNameKey = ev.headers.find(h => 
         String(h).includes('이름') || 
@@ -197,7 +250,7 @@ export default function ResultPrintPortal({
       return a.studentId.localeCompare(b.studentId, undefined, { numeric: true, sensitivity: 'base' });
     });
     setStudents(sortedList);
-  }, [selectedSubject, selectedClass, myEvaluations, allStudents]);
+  }, [selectedSubject, selectedClass, niceEval, myEvaluations, allStudents]);
 
   const handlePrint = () => {
     window.print();
@@ -278,38 +331,7 @@ export default function ResultPrintPortal({
     return formattedFinalScore;
   };
 
-  // Find the evaluation for the selected class if possible, otherwise fallback to any nice eval
-  const niceEval = useMemo(() => {
-    const niceEvals = evalsForSubject.filter(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
-    if (niceEvals.length === 0) return undefined;
-    if (!selectedClass) return niceEvals[0];
 
-    // Try to find one where targetGradeClass matches selectedClass
-    const parsedSel = parseGradeAndClass(selectedClass);
-    if (parsedSel) {
-      const matched = niceEvals.find(e => {
-        const parsedEv = parseGradeAndClass(e.targetGradeClass || '');
-        return parsedEv && parsedEv.grade === parsedSel.grade && parsedEv.classVal === parsedSel.classVal;
-      });
-      if (matched) return matched;
-    }
-
-    // Fallback: search row values
-    const matchedByRows = niceEvals.find(e => {
-      const sIdKey = findStudentIdKey(e.headers);
-      if (!sIdKey) return false;
-      return e.rows.some(r => {
-        const val = String(r[sIdKey] || '').trim();
-        if (!val) return false;
-        const info = extractGradeClass(val, e.targetGradeClass);
-        return info.gradeClass === selectedClass;
-      });
-    });
-
-    return matchedByRows || niceEvals[0];
-  }, [evalsForSubject, selectedClass]);
-
-  const isNiceMode = !!niceEval;
 
   // Helper to identify overall total columns
   const isOverallTotalHeader = (h: string): boolean => {
@@ -432,6 +454,24 @@ export default function ResultPrintPortal({
                 ))}
               </select>
             </div>
+
+            {/* Specific NEIS Evaluation Selector when multiple exist (e.g. 1학기 / 2학기) */}
+            {matchingNiceEvals.length > 1 && (
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">출력 평가표 (서명 기준)</label>
+                <select 
+                  value={selectedNiceEvalId} 
+                  onChange={(e) => setSelectedNiceEvalId(e.target.value)}
+                  className="bg-white border border-indigo-300 rounded-xl px-3.5 py-2 text-xs font-bold text-indigo-950 focus:outline-none focus:ring-2 focus:ring-indigo-650 min-w-[180px]"
+                >
+                  {matchingNiceEvals.map(ev => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.evaluationDetailName || ev.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           <button
@@ -737,24 +777,17 @@ export default function ResultPrintPortal({
                         }
                       }
 
-                      // Query student signature URL from Firestore signals with robust ID matching
-                      const teacherKey = loggedTeacher.code.trim();
-                      const subjectKey = selectedSubject.trim();
+                      // Query student signature URL bound specifically to this evaluationId
                       const printStudentId = student.studentId.trim();
-
                       let studentSigUrl = '';
-                      const foundSigKey = Object.keys(signatures).find(key => {
-                        const parts = key.split('_');
-                        if (parts.length >= 3) {
-                          const [sigTeacher, sigSubject, sigStudent] = parts;
-                          return sigTeacher.trim() === teacherKey && 
-                                 sigSubject.replace(/\s+/g, '') === subjectKey.replace(/\s+/g, '') && 
-                                 matchesStudentId(sigStudent, printStudentId);
+                      if (niceEval?.id) {
+                        const matchedSig = signatures.find(sig =>
+                          sig.evaluationId === niceEval.id &&
+                          matchesStudentId(sig.studentId, printStudentId, niceEval.targetGradeClass)
+                        );
+                        if (matchedSig) {
+                          studentSigUrl = matchedSig.signatureDataUrl;
                         }
-                        return false;
-                      });
-                      if (foundSigKey) {
-                        studentSigUrl = signatures[foundSigKey];
                       }
 
                       return (

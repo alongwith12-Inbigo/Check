@@ -22,6 +22,7 @@ export interface EvaluationState {
   pdfBase64?: string;
   pdfFileName?: string;
   targetGradeClass?: string;
+  targetGradeClasses?: string[];
 }
 
 export interface Teacher {
@@ -77,3 +78,15 @@ export interface ExcelUpload {
   uploadedAt: string;
   recordCount: number;
 }
+
+export interface StudentSignature {
+  id: string;
+  evaluationId: string;
+  teacherCode: string;
+  subject: string;
+  studentId: string;
+  studentName: string;
+  signatureDataUrl: string;
+  signedAt: string;
+}
+

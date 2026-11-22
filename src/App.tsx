@@ -3,17 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Navbar from './components/Navbar';
 import LoginCard from './components/LoginCard';
 import ResultCard from './components/ResultCard';
 import AdminDashboard from './components/AdminDashboard';
 import AdminManager from './components/AdminManager';
-import { EvaluationState, Teacher, StudentSession, RegisteredStudent, ExcelUpload } from './types';
-import { doc, onSnapshot, setDoc, getDoc, getDocs, collection, deleteDoc, deleteField, writeBatch, query, where } from 'firebase/firestore';
+import { EvaluationState, Teacher, StudentSession, RegisteredStudent, ExcelUpload, StudentSignature } from './types';
+import { doc, onSnapshot, setDoc, getDoc, getDocs, collection, deleteDoc, deleteField, writeBatch, query, where, DocumentReference } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { findStudentIdKey, findBirthdateKey, matchesStudentId, matchesBirthdate } from './utils';
+import { findStudentIdKey, matchesStudentId, matchesBirthdate, classifyEvaluationGradeClasses, areGradeClassArraysEqual, stripSensitiveEvaluationColumns, isValidExtractedEvaluationData } from './utils';
 import { 
   Smile, 
   HelpCircle, 
@@ -147,74 +147,124 @@ export default function App() {
   // Teacher-level settings (e.g., signature enabled)
   const [teacherSettings, setTeacherSettings] = useState<Record<string, boolean>>({});
 
-  // Student signatures mapping. Key: `${teacherCode}_${subject}_${studentId}` -> signatureDataUrl
-  const [signatures, setSignatures] = useState<Record<string, string>>({});
+  // Student signatures bound to specific evaluationId + studentId
+  const [signatures, setSignatures] = useState<StudentSignature[]>([]);
 
   const [privacyPolicy, setPrivacyPolicy] = useState<string>('');
   const [privacyFile, setPrivacyFile] = useState<{ fileName: string; fileBase64: string } | null>(null);
   const [showPrivacyModal, setShowPrivacyModal] = useState<boolean>(false);
 
-  // Subscribe to Subject Settings in real-time from Firestore (Permanent Global Listener)
+  // Refs to prevent duplicate fetches across transitions
+  const hasLoadedPrivacyRef = useRef<boolean>(false);
+  const loadedStudentsForTeacherRef = useRef<string | null>(null);
+  const pendingTeacherEvalSelectRef = useRef<string | null>(null);
+
+  const isStudentMode = !isAdminOpen && !!loggedStudent;
+  const isTeacherMode = isAdminOpen && !!loggedTeacher && !isAdminLoggedIn;
+  const isAdminMode = isAdminOpen && isAdminLoggedIn;
+
+  // Load Subject Settings on demand (only when student or teacher is logged in)
   useEffect(() => {
-    const collRef = collection(db, 'subjectSettings');
-    const unsubscribe = onSnapshot(collRef, (snap) => {
-      const scores: Record<string, string> = {};
-      const completions: Record<string, boolean> = {};
-      snap.forEach((d) => {
-        const data = d.data();
-        scores[d.id] = data.maxScore !== undefined ? String(data.maxScore) : '';
-        completions[d.id] = !!data.completed;
+    if (!isStudentMode && !isTeacherMode) {
+      return;
+    }
+
+    let cancelled = false;
+    getDocs(collection(db, 'subjectSettings'))
+      .then((snap) => {
+        if (cancelled) return;
+        const scores: Record<string, string> = {};
+        const completions: Record<string, boolean> = {};
+        snap.forEach((d) => {
+          const data = d.data();
+          scores[d.id] = data.maxScore !== undefined ? String(data.maxScore) : '';
+          completions[d.id] = !!data.completed;
+        });
+        setSubjectMaxScores(scores);
+        setSubjectCompletionStates(completions);
+      })
+      .catch((error) => {
+        console.warn("Firestore subjectSettings fetch failed: ", error);
       });
-      setSubjectMaxScores(scores);
-      setSubjectCompletionStates(completions);
-    }, (error) => {
-      console.warn("Firestore subjectSettings subscription failed: ", error);
-    });
 
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [isStudentMode, isTeacherMode, loggedStudent?.studentId, loggedTeacher?.code]);
 
-  // Subscribe to Teacher Settings in real-time from Firestore (Permanent Global Listener)
+  // Load Teacher Settings on demand (scoped to single doc for teacher, one-time fetch for student)
   useEffect(() => {
-    const collRef = collection(db, 'teacherSettings');
-    const unsubscribe = onSnapshot(collRef, (snap) => {
-      const settings: Record<string, boolean> = {};
-      snap.forEach((d) => {
-        const data = d.data();
-        settings[d.id] = !!data.signatureEnabled;
-      });
-      setTeacherSettings(settings);
-    }, (error) => {
-      console.warn("Firestore teacherSettings subscription failed: ", error);
-    });
+    if (!isStudentMode && !isTeacherMode) {
+      return;
+    }
 
-    return () => unsubscribe();
-  }, []);
+    let cancelled = false;
+    if (isTeacherMode && loggedTeacher) {
+      getDoc(doc(db, 'teacherSettings', loggedTeacher.code))
+        .then((d) => {
+          if (cancelled) return;
+          setTeacherSettings((prev) => ({
+            ...prev,
+            [loggedTeacher.code]: d.exists() ? !!d.data().signatureEnabled : false,
+          }));
+        })
+        .catch((error) => {
+          console.warn("Firestore teacherSettings fetch failed: ", error);
+        });
+    } else if (isStudentMode) {
+      getDocs(collection(db, 'teacherSettings'))
+        .then((snap) => {
+          if (cancelled) return;
+          const settings: Record<string, boolean> = {};
+          snap.forEach((d) => {
+            const data = d.data();
+            settings[d.id] = !!data.signatureEnabled;
+          });
+          setTeacherSettings(settings);
+        })
+        .catch((error) => {
+          console.warn("Firestore teacherSettings fetch failed: ", error);
+        });
+    }
 
-  // Subscribe to Student Signatures in real-time from Firestore
+    return () => {
+      cancelled = true;
+    };
+  }, [isStudentMode, isTeacherMode, loggedStudent?.studentId, loggedTeacher?.code]);
+
+  // Subscribe to Student Signatures in real-time ONLY for logged-in student or teacher
   useEffect(() => {
-    if (!loggedStudent && !loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
-      setSignatures({});
+    if (!isStudentMode && !isTeacherMode) {
+      setSignatures([]);
       return;
     }
 
     let q;
-    if (loggedStudent) {
+    if (isStudentMode && loggedStudent) {
       // Students only listen to their own signatures to prevent PII leakage and minimize read counts
       q = query(collection(db, 'signatures'), where('studentId', '==', loggedStudent.studentId));
-    } else if (loggedTeacher) {
+    } else if (isTeacherMode && loggedTeacher) {
       // Teachers only listen to signatures for their own teacherCode
       q = query(collection(db, 'signatures'), where('teacherCode', '==', loggedTeacher.code));
     } else {
-      // Admins listen to all signatures
-      q = collection(db, 'signatures');
+      setSignatures([]);
+      return;
     }
 
     const unsubscribe = onSnapshot(q, (snap) => {
-      const sigs: Record<string, string> = {};
+      const sigs: StudentSignature[] = [];
       snap.forEach((d) => {
         const data = d.data();
-        sigs[d.id] = data.signatureDataUrl || '';
+        sigs.push({
+          id: d.id,
+          evaluationId: data.evaluationId || '',
+          teacherCode: data.teacherCode || '',
+          subject: data.subject || '',
+          studentId: data.studentId || '',
+          studentName: data.studentName || '',
+          signatureDataUrl: data.signatureDataUrl || '',
+          signedAt: data.signedAt || '',
+        });
       });
       setSignatures(sigs);
     }, (error) => {
@@ -222,35 +272,58 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [loggedStudent, loggedTeacher, isAdminLoggedIn, isAdminOpen]);
+  }, [isStudentMode, isTeacherMode, loggedStudent?.studentId, loggedTeacher?.code]);
 
-  // Subscribe to Application Level Privacy Policy Settings from Firestore
+  // Load Application Level Privacy Policy Settings only when Admin panel is authenticated (or lazily on download)
   useEffect(() => {
-    const docRef = doc(db, 'appSettings', 'privacyPolicy');
-    const unsubscribe = onSnapshot(docRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setPrivacyPolicy(data.content || '');
-        if (data.fileName && data.fileBase64) {
-          setPrivacyFile({
-            fileName: data.fileName,
-            fileBase64: data.fileBase64
-          });
+    if (!isAdminMode || hasLoadedPrivacyRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+    getDoc(doc(db, 'appSettings', 'privacyPolicy'))
+      .then((snap) => {
+        if (cancelled) return;
+        hasLoadedPrivacyRef.current = true;
+        if (snap.exists()) {
+          const data = snap.data();
+          setPrivacyPolicy(data.content || '');
+          if (data.fileName && data.fileBase64) {
+            setPrivacyFile({
+              fileName: data.fileName,
+              fileBase64: data.fileBase64
+            });
+          } else {
+            setPrivacyFile(null);
+          }
         } else {
+          setPrivacyPolicy(DEFAULT_PRIVACY_POLICY);
           setPrivacyFile(null);
         }
-      } else {
-        setPrivacyPolicy(DEFAULT_PRIVACY_POLICY);
-        setPrivacyFile(null);
-      }
-    }, (error) => {
-      console.warn("Firestore appSettings/privacyPolicy subscription failed: ", error);
-    });
+      })
+      .catch((error) => {
+        console.warn("Firestore appSettings/privacyPolicy fetch failed: ", error);
+      });
 
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdminMode]);
 
   const handleUpdatePrivacyPolicy = async (content: string, fileData?: { fileName: string; fileBase64: string } | null) => {
+    const isContentSame = hasLoadedPrivacyRef.current && content === privacyPolicy;
+    const isFileSame =
+      fileData === undefined ||
+      (fileData === null && privacyFile === null) ||
+      (!!fileData &&
+        !!privacyFile &&
+        fileData.fileName === privacyFile.fileName &&
+        fileData.fileBase64 === privacyFile.fileBase64);
+
+    if (isContentSame && isFileSame) {
+      return;
+    }
+
     try {
       const docRef = doc(db, 'appSettings', 'privacyPolicy');
       const updatePayload: any = {
@@ -267,19 +340,52 @@ export default function App() {
         }
       }
       await setDoc(docRef, updatePayload, { merge: true });
+      hasLoadedPrivacyRef.current = true;
+      setPrivacyPolicy(content);
+      if (fileData !== undefined) {
+        setPrivacyFile(fileData);
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'appSettings/privacyPolicy');
     }
   };
 
-  const handleDownloadPrivacyFile = () => {
+  const handleDownloadPrivacyFile = async () => {
     const isConfirmed = window.confirm("'개인정보처리방침' PDF 파일을 다운 받으시겠습니까?");
     if (isConfirmed) {
-      if (privacyFile && privacyFile.fileBase64 && privacyFile.fileName) {
+      let currentPrivacyFile = privacyFile;
+      if (!hasLoadedPrivacyRef.current) {
+        try {
+          const snap = await getDoc(doc(db, 'appSettings', 'privacyPolicy'));
+          hasLoadedPrivacyRef.current = true;
+          if (snap.exists()) {
+            const data = snap.data();
+            setPrivacyPolicy(data.content || '');
+            if (data.fileName && data.fileBase64) {
+              currentPrivacyFile = {
+                fileName: data.fileName,
+                fileBase64: data.fileBase64
+              };
+              setPrivacyFile(currentPrivacyFile);
+            } else {
+              currentPrivacyFile = null;
+              setPrivacyFile(null);
+            }
+          } else {
+            setPrivacyPolicy(DEFAULT_PRIVACY_POLICY);
+            currentPrivacyFile = null;
+            setPrivacyFile(null);
+          }
+        } catch (error) {
+          console.warn("Firestore appSettings/privacyPolicy fetch failed: ", error);
+        }
+      }
+
+      if (currentPrivacyFile && currentPrivacyFile.fileBase64 && currentPrivacyFile.fileName) {
         try {
           const link = document.createElement('a');
-          link.href = privacyFile.fileBase64;
-          link.download = privacyFile.fileName;
+          link.href = currentPrivacyFile.fileBase64;
+          link.download = currentPrivacyFile.fileName;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -308,39 +414,79 @@ export default function App() {
     }
   };
 
-  // 1. Subscribe to Teachers directory (Permanent Global Listener)
+  // 1. Load Teachers directory on demand (no reads on unauthenticated student landing page)
   useEffect(() => {
-    const collRef = collection(db, 'teachers');
-    const unsubscribe = onSnapshot(collRef, (snap) => {
-      const list: Teacher[] = [];
-      snap.forEach((d) => {
-        const data = d.data();
-        list.push({
-          code: d.id,
-          name: data.name || '',
-          password: data.password || '',
-          isPasswordChanged: data.isPasswordChanged || false,
-        });
-      });
-      list.sort((a, b) => a.code.localeCompare(b.code));
-      setTeachers(list);
-    }, (error) => {
-      console.warn("Firestore teachers subscription failed: ", error);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // 1.5. Subscribe to Students directory (Optimized: One-time fetch for teachers, real-time for admins only)
-  useEffect(() => {
-    if (!loggedTeacher && !isAdminLoggedIn && !isAdminOpen) {
-      setAllStudents([]);
+    if (!isStudentMode && !isAdminOpen) {
       return;
     }
 
-    if (loggedTeacher) {
+    if (isAdminMode) {
+      const collRef = collection(db, 'teachers');
+      const unsubscribe = onSnapshot(collRef, (snap) => {
+        const list: Teacher[] = [];
+        snap.forEach((d) => {
+          const data = d.data();
+          list.push({
+            code: d.id,
+            name: data.name || '',
+            password: data.password || '',
+            isPasswordChanged: data.isPasswordChanged || false,
+          });
+        });
+        list.sort((a, b) => a.code.localeCompare(b.code));
+        setTeachers(list);
+      }, (error) => {
+        console.warn("Firestore teachers subscription failed: ", error);
+      });
+
+      return () => unsubscribe();
+    }
+
+    // One-time fetch for student result screen or teacher login/dashboard
+    let cancelled = false;
+    getDocs(collection(db, 'teachers'))
+      .then((snap) => {
+        if (cancelled) return;
+        const list: Teacher[] = [];
+        snap.forEach((d) => {
+          const data = d.data();
+          list.push({
+            code: d.id,
+            name: data.name || '',
+            password: data.password || '',
+            isPasswordChanged: data.isPasswordChanged || false,
+          });
+        });
+        list.sort((a, b) => a.code.localeCompare(b.code));
+        setTeachers(list);
+      })
+      .catch((error) => {
+        console.warn("Firestore teachers fetch failed: ", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isStudentMode, isAdminOpen, isAdminMode]);
+
+  // 1.5. Students directory (real-time ONLY when AdminManager is open & authenticated; one-time fetch for logged-in teacher; 0 reads otherwise)
+  useEffect(() => {
+    if (!isAdminMode && !isTeacherMode) {
+      if (!loggedTeacher && !isAdminLoggedIn) {
+        loadedStudentsForTeacherRef.current = null;
+        setAllStudents([]);
+      }
+      return;
+    }
+
+    if (isTeacherMode && loggedTeacher) {
+      if (loadedStudentsForTeacherRef.current === loggedTeacher.code) {
+        return;
+      }
+      let cancelled = false;
       // Teachers only need a one-time fetch of students to prevent excessive read operations
       getDocs(collection(db, 'students')).then((snap) => {
+        if (cancelled) return;
         const list: RegisteredStudent[] = [];
         snap.forEach((d) => {
           const data = d.data();
@@ -353,13 +499,18 @@ export default function App() {
           });
         });
         list.sort((a, b) => a.studentId.localeCompare(b.studentId));
+        loadedStudentsForTeacherRef.current = loggedTeacher.code;
         setAllStudents(list);
       }).catch((err) => {
         console.warn("One-time students fetch failed: ", err);
       });
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
+    // Authenticated AdminManager only
+    loadedStudentsForTeacherRef.current = null;
     const collRef = collection(db, 'students');
     const unsubscribe = onSnapshot(collRef, (snap) => {
       const list: RegisteredStudent[] = [];
@@ -380,66 +531,117 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [loggedTeacher, isAdminLoggedIn, isAdminOpen]);
+  }, [isAdminMode, isTeacherMode, loggedTeacher?.code, isAdminLoggedIn]);
 
-  // 1.6. Subscribe to Excel Uploads metadata in real-time
+  // 1.6. Load Excel Uploads metadata once when AdminManager is open & authenticated
   useEffect(() => {
-    if (!isAdminLoggedIn && !isAdminOpen) {
+    if (!isAdminMode) {
       setExcelUploads([]);
       return;
     }
-    const collRef = collection(db, 'excelUploads');
-    const unsubscribe = onSnapshot(collRef, (snap) => {
-      const list: ExcelUpload[] = [];
-      snap.forEach((d) => {
-        const data = d.data();
-        list.push({
-          id: d.id,
-          fileName: data.fileName || '',
-          uploadedAt: data.uploadedAt || '',
-          recordCount: data.recordCount || 0
+    let cancelled = false;
+    getDocs(collection(db, 'excelUploads'))
+      .then((snap) => {
+        if (cancelled) return;
+        const list: ExcelUpload[] = [];
+        snap.forEach((d) => {
+          const data = d.data();
+          list.push({
+            id: d.id,
+            fileName: data.fileName || '',
+            uploadedAt: data.uploadedAt || '',
+            recordCount: data.recordCount || 0
+          });
         });
+        setExcelUploads(list);
+      })
+      .catch((error) => {
+        console.warn("Firestore excelUploads fetch failed: ", error);
       });
-      setExcelUploads(list);
-    }, (error) => {
-      console.warn("Firestore excelUploads subscription failed: ", error);
-    });
 
-    return () => unsubscribe();
-  }, [isAdminLoggedIn, isAdminOpen]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdminMode]);
 
-  // 2. Subscribe to All Evaluations (Permanent Global Listener)
+  // 2. Load Evaluations on demand (0 reads before login or in AdminManager; scoped to teacherCode for teacher; one-time fetch for logged-in student)
   useEffect(() => {
-    const collRef = collection(db, 'evaluation');
-    const unsubscribe = onSnapshot(collRef, (snap) => {
-      const list: EvaluationState[] = [];
-      snap.forEach((d) => {
-        const data = d.data();
-        list.push({
-          id: d.id,
-          teacherCode: data.teacherCode || '',
-          title: data.title || '',
-          subject: data.subject || '',
-          round: data.round || '',
-          evaluationDetailName: data.evaluationDetailName || '',
-          maxScore: data.maxScore !== undefined ? String(data.maxScore) : '',
-          reflectRate: data.reflectRate !== undefined ? String(data.reflectRate) : '100',
-          headers: data.headers || [],
-          rows: data.rows || [],
-          uploadedAt: data.uploadedAt || null,
-          uploadType: data.uploadType || 'excel',
-          pdfBase64: data.pdfBase64 || '',
-          pdfFileName: data.pdfFileName || '',
-          targetGradeClass: data.targetGradeClass || '',
+    if (isStudentMode && loggedStudent) {
+      let cancelled = false;
+      getDocs(collection(db, 'evaluation'))
+        .then((snap) => {
+          if (cancelled) return;
+          const list: EvaluationState[] = [];
+          snap.forEach((d) => {
+            const data = d.data();
+            list.push({
+              id: d.id,
+              teacherCode: data.teacherCode || '',
+              title: data.title || '',
+              subject: data.subject || '',
+              round: data.round || '',
+              evaluationDetailName: data.evaluationDetailName || '',
+              maxScore: data.maxScore !== undefined ? String(data.maxScore) : '',
+              reflectRate: data.reflectRate !== undefined ? String(data.reflectRate) : '100',
+              headers: data.headers || [],
+              rows: data.rows || [],
+              uploadedAt: data.uploadedAt || null,
+              uploadType: data.uploadType || 'excel',
+              pdfBase64: data.pdfBase64 || '',
+              pdfFileName: data.pdfFileName || '',
+              targetGradeClass: data.targetGradeClass || '',
+              targetGradeClasses: Array.isArray(data.targetGradeClasses) ? data.targetGradeClasses.map((v: any) => String(v)) : undefined,
+            });
+          });
+          setAllEvaluations(list);
+        })
+        .catch((error) => {
+          console.warn("Firestore evaluations fetch failed: ", error);
         });
-      });
-      setAllEvaluations(list);
-    }, (error) => {
-      console.warn("Firestore evaluations subscription failed: ", error);
-    });
+      return () => {
+        cancelled = true;
+      };
+    }
 
-    return () => unsubscribe();
-  }, []);
+    if (isTeacherMode && loggedTeacher) {
+      const q = query(collection(db, 'evaluation'), where('teacherCode', '==', loggedTeacher.code));
+      const unsubscribe = onSnapshot(q, (snap) => {
+        const list: EvaluationState[] = [];
+        snap.forEach((d) => {
+          const data = d.data();
+          list.push({
+            id: d.id,
+            teacherCode: data.teacherCode || '',
+            title: data.title || '',
+            subject: data.subject || '',
+            round: data.round || '',
+            evaluationDetailName: data.evaluationDetailName || '',
+            maxScore: data.maxScore !== undefined ? String(data.maxScore) : '',
+            reflectRate: data.reflectRate !== undefined ? String(data.reflectRate) : '100',
+            headers: data.headers || [],
+            rows: data.rows || [],
+            uploadedAt: data.uploadedAt || null,
+            uploadType: data.uploadType || 'excel',
+            pdfBase64: data.pdfBase64 || '',
+            pdfFileName: data.pdfFileName || '',
+            targetGradeClass: data.targetGradeClass || '',
+            targetGradeClasses: Array.isArray(data.targetGradeClasses) ? data.targetGradeClasses.map((v: any) => String(v)) : undefined,
+          });
+        });
+        setAllEvaluations(list);
+        if (pendingTeacherEvalSelectRef.current === loggedTeacher.code) {
+          pendingTeacherEvalSelectRef.current = null;
+          setActiveEvaluationId(list[0]?.id || '');
+        }
+      }, (error) => {
+        console.warn("Firestore teacher evaluations subscription failed: ", error);
+      });
+
+      return () => unsubscribe();
+    }
+
+    setAllEvaluations([]);
+  }, [isStudentMode, isTeacherMode, loggedStudent?.studentId, loggedTeacher?.code]);
 
   // Sync student's selectedTeacherCode to first teacher when list updates
   useEffect(() => {
@@ -493,13 +695,43 @@ export default function App() {
   // Core database modifiers passed down to teacher panels
   const handleCreateEvaluation = async (newState: EvaluationState): Promise<string> => {
     const newDocId = `${loggedTeacher?.code || 'temp'}_${Date.now()}`;
+    const { targetGradeClasses: providedTargetClasses, ...restState } = newState;
+    const sanitized = stripSensitiveEvaluationColumns(restState.headers || [], restState.rows || []);
+    const sanitizedState: EvaluationState = {
+      ...newState,
+      headers: sanitized.headers,
+      rows: sanitized.rows,
+    };
+    const classification = classifyEvaluationGradeClasses(sanitizedState);
+    const resolvedTargetGradeClasses =
+      Array.isArray(providedTargetClasses) && providedTargetClasses.length > 0
+        ? providedTargetClasses
+        : classification.status === 'exact'
+          ? classification.targetGradeClasses
+          : undefined;
+
     try {
       const docRef = doc(db, 'evaluation', newDocId);
-      await setDoc(docRef, {
-        ...newState,
+      const payload: Record<string, any> = {
+        ...restState,
+        headers: sanitized.headers,
+        rows: sanitized.rows,
         id: newDocId,
         teacherCode: loggedTeacher?.code || '',
-      });
+      };
+      if (resolvedTargetGradeClasses && resolvedTargetGradeClasses.length > 0) {
+        payload.targetGradeClasses = resolvedTargetGradeClasses;
+      }
+      if (payload.uploadType === 'pdf') {
+        if (
+          payload.pdfBase64 &&
+          !isValidExtractedEvaluationData(sanitized.headers, sanitized.rows)
+        ) {
+          throw new Error('PDF 성적 데이터 추출에 실패하여 개인정보 보호를 위해 업로드를 중단했습니다. 다시 업로드해 주세요.');
+        }
+        delete payload.pdfBase64;
+      }
+      await setDoc(docRef, payload);
       return newDocId;
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `evaluation/${newDocId}`);
@@ -508,13 +740,61 @@ export default function App() {
   };
 
   const handleUpdateEvaluation = async (id: string, newState: EvaluationState) => {
+    const existing = allEvaluations.find((e) => e.id === id);
+    const { targetGradeClasses: providedTargetClasses, ...restState } = newState;
+    const classification = classifyEvaluationGradeClasses(newState);
+
+    let resolvedTargetGradeClasses: string[] | undefined;
+    if (classification.status === 'exact') {
+      resolvedTargetGradeClasses = classification.targetGradeClasses;
+    } else if (
+      Array.isArray(providedTargetClasses) &&
+      providedTargetClasses.length > 0
+    ) {
+      resolvedTargetGradeClasses = providedTargetClasses;
+    } else if (
+      existing &&
+      Array.isArray(existing.targetGradeClasses) &&
+      existing.targetGradeClasses.length > 0 &&
+      (existing.targetGradeClass || '') === (newState.targetGradeClass || '') &&
+      existing.rows === newState.rows
+    ) {
+      resolvedTargetGradeClasses = existing.targetGradeClasses;
+    } else {
+      resolvedTargetGradeClasses = undefined;
+    }
+
+    if (existing) {
+      const isSame =
+        (existing.title || '') === (newState.title || '') &&
+        (existing.subject || '') === (newState.subject || '') &&
+        (existing.round || '') === (newState.round || '') &&
+        (existing.evaluationDetailName || '') === (newState.evaluationDetailName || '') &&
+        (existing.maxScore || '') === (newState.maxScore || '') &&
+        (existing.reflectRate || '') === (newState.reflectRate || '') &&
+        (existing.targetGradeClass || '') === (newState.targetGradeClass || '') &&
+        (existing.uploadType || 'excel') === (newState.uploadType || 'excel') &&
+        (existing.pdfBase64 || '') === (newState.pdfBase64 || '') &&
+        (existing.pdfFileName || '') === (newState.pdfFileName || '') &&
+        existing.headers === newState.headers &&
+        existing.rows === newState.rows &&
+        areGradeClassArraysEqual(existing.targetGradeClasses, resolvedTargetGradeClasses);
+      if (isSame) return;
+    }
+
     try {
       const docRef = doc(db, 'evaluation', id);
-      await setDoc(docRef, {
-        ...newState,
+      const payload: Record<string, any> = {
+        ...restState,
         id: id,
         teacherCode: loggedTeacher?.code || '',
-      }, { merge: true });
+      };
+      if (resolvedTargetGradeClasses && resolvedTargetGradeClasses.length > 0) {
+        payload.targetGradeClasses = resolvedTargetGradeClasses;
+      } else if (existing && Array.isArray(existing.targetGradeClasses)) {
+        payload.targetGradeClasses = deleteField();
+      }
+      await setDoc(docRef, payload, { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `evaluation/${id}`);
     }
@@ -526,6 +806,10 @@ export default function App() {
     const cleanSubject = subject.trim();
     const cleanMaxScore = maxScore.trim();
     const settingId = `${cleanTeacherCode}_${cleanSubject}`;
+
+    if ((subjectMaxScores[settingId] ?? '') === cleanMaxScore) {
+      return;
+    }
 
     // Optimistically update the state immediately for seamless UX
     setSubjectMaxScores(prev => ({
@@ -551,6 +835,10 @@ export default function App() {
     const cleanSubject = subject.trim();
     const settingId = `${cleanTeacherCode}_${cleanSubject}`;
 
+    if ((!!subjectCompletionStates[settingId]) === completed) {
+      return;
+    }
+
     // Optimistically update the state for flawless dynamic responsiveness
     setSubjectCompletionStates(prev => ({
       ...prev,
@@ -573,6 +861,10 @@ export default function App() {
     if (!loggedTeacher) return;
     const cleanTeacherCode = loggedTeacher.code.trim();
 
+    if ((!!teacherSettings[cleanTeacherCode]) === enabled) {
+      return;
+    }
+
     setTeacherSettings(prev => ({
       ...prev,
       [cleanTeacherCode]: enabled
@@ -589,21 +881,40 @@ export default function App() {
     }
   };
 
-  const handleSaveSignature = async (subject: string, studentId: string, studentName: string, signatureDataUrl: string, teacherCode?: string) => {
+  const handleSaveSignature = async (
+    evaluationId: string,
+    subject: string,
+    studentId: string,
+    studentName: string,
+    signatureDataUrl: string,
+    teacherCode?: string
+  ) => {
     const tCode = teacherCode || loggedStudent?.teacherCode || selectedTeacherCode || '';
-    if (!tCode) return;
+    if (!tCode || !evaluationId) return;
+    const cleanEvaluationId = evaluationId.trim();
     const cleanTeacherCode = tCode.trim();
     const cleanSubject = subject.replace(/\s+/g, '');
     const cleanStudentId = studentId.trim();
-    const signatureId = `${cleanTeacherCode}_${cleanSubject}_${cleanStudentId}`;
+    const cleanStudentName = studentName.trim();
+    const signatureId = `${cleanEvaluationId}_${cleanStudentId}`;
+
+    const alreadyIdentical = signatures.some(
+      (sig) =>
+        sig.evaluationId === cleanEvaluationId &&
+        sig.studentId === cleanStudentId &&
+        sig.studentName === cleanStudentName &&
+        sig.signatureDataUrl === signatureDataUrl
+    );
+    if (alreadyIdentical) return;
 
     try {
       const docRef = doc(db, 'signatures', signatureId);
       await setDoc(docRef, {
+        evaluationId: cleanEvaluationId,
         teacherCode: cleanTeacherCode,
         subject: cleanSubject,
         studentId: cleanStudentId,
-        studentName: studentName.trim(),
+        studentName: cleanStudentName,
         signatureDataUrl,
         signedAt: new Date().toISOString()
       });
@@ -612,17 +923,27 @@ export default function App() {
     }
   };
 
-  const handleDeleteSignature = async (subject: string, studentId: string, teacherCode?: string) => {
-    const tCode = teacherCode || loggedStudent?.teacherCode || selectedTeacherCode || '';
-    if (!tCode) return;
-    const cleanTeacherCode = tCode.trim();
-    const cleanSubject = subject.replace(/\s+/g, '');
+  const handleDeleteSignature = async (evaluationId: string, studentId: string) => {
+    if (!evaluationId || !studentId) return;
+    const cleanEvaluationId = evaluationId.trim();
     const cleanStudentId = studentId.trim();
-    const signatureId = `${cleanTeacherCode}_${cleanSubject}_${cleanStudentId}`;
+    const signatureId = `${cleanEvaluationId}_${cleanStudentId}`;
 
     try {
-      const docRef = doc(db, 'signatures', signatureId);
-      await deleteDoc(docRef);
+      const refsToDelete = new Map<string, DocumentReference>();
+      const primaryRef = doc(db, 'signatures', signatureId);
+      refsToDelete.set(primaryRef.path, primaryRef);
+
+      signatures.forEach((sig) => {
+        if (sig.evaluationId === cleanEvaluationId && matchesStudentId(sig.studentId, cleanStudentId)) {
+          const ref = doc(db, 'signatures', sig.id);
+          refsToDelete.set(ref.path, ref);
+        }
+      });
+
+      const batch = writeBatch(db);
+      refsToDelete.forEach((ref) => batch.delete(ref));
+      await batch.commit();
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `signatures/${signatureId}`);
     }
@@ -630,7 +951,71 @@ export default function App() {
 
   const handleDeleteEvaluation = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'evaluation', id));
+      const targetEval = allEvaluations.find(e => e.id === id);
+      const refsToDelete = new Map<string, DocumentReference>();
+
+      // 1. Delete all signatures linked to this evaluationId
+      const sigQuery = query(collection(db, 'signatures'), where('evaluationId', '==', id));
+      const sigSnap = await getDocs(sigQuery);
+      sigSnap.forEach((d) => {
+        refsToDelete.set(d.ref.path, d.ref);
+      });
+
+      // 2. Clean up any legacy signatures (saved without evaluationId) belonging to this signable evaluation
+      if (
+        targetEval?.teacherCode &&
+        (targetEval.uploadType === 'pdf' || targetEval.uploadType === 'test_excel_sign')
+      ) {
+        const cleanTeacherCode = targetEval.teacherCode.trim();
+        const cleanSubject = (targetEval.subject || '').replace(/\s+/g, '');
+        const legacyQuery = query(
+          collection(db, 'signatures'),
+          where('teacherCode', '==', cleanTeacherCode)
+        );
+        const legacySnap = await getDocs(legacyQuery);
+
+        const otherSignableExists = allEvaluations.some(
+          e =>
+            e.id !== id &&
+            e.teacherCode?.trim() === cleanTeacherCode &&
+            (e.subject || '').replace(/\s+/g, '') === cleanSubject &&
+            (e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign')
+        );
+
+        const sIdKey = findStudentIdKey(targetEval.headers || []);
+        legacySnap.forEach((d) => {
+          const data = d.data();
+          if (data.evaluationId) return;
+          const sigSubject = String(data.subject || '').replace(/\s+/g, '');
+          if (sigSubject !== cleanSubject) return;
+
+          if (!otherSignableExists) {
+            refsToDelete.set(d.ref.path, d.ref);
+          } else if (sIdKey && targetEval.rows && targetEval.rows.length > 0) {
+            const sigStudentId = String(data.studentId || '').trim();
+            const inThisEval = targetEval.rows.some(row =>
+              matchesStudentId(sigStudentId, row[sIdKey], targetEval.targetGradeClass)
+            );
+            if (inThisEval) {
+              refsToDelete.set(d.ref.path, d.ref);
+            }
+          }
+        });
+      }
+
+      // 3. Delete evaluation document + all associated signature documents in batches
+      const evalDocRef = doc(db, 'evaluation', id);
+      refsToDelete.set(evalDocRef.path, evalDocRef);
+
+      const allRefs = Array.from(refsToDelete.values());
+      const BATCH_LIMIT = 450;
+      for (let i = 0; i < allRefs.length; i += BATCH_LIMIT) {
+        const batch = writeBatch(db);
+        const chunk = allRefs.slice(i, i + BATCH_LIMIT);
+        chunk.forEach((ref) => batch.delete(ref));
+        await batch.commit();
+      }
+
       if (activeEvaluationId === id) {
         setActiveEvaluationId('');
       }
@@ -656,22 +1041,26 @@ export default function App() {
     if (changed.length === 0) return;
 
     try {
-      const batch = writeBatch(db);
-      for (const t of changed) {
-        const docRef = doc(db, 'teachers', t.code);
-        const payload: any = {
-          code: t.code,
-          name: t.name,
-          isPasswordChanged: !!t.isPasswordChanged
-        };
-        if (t.password) {
-          payload.password = t.password;
-        } else {
-          payload.password = deleteField();
+      const BATCH_LIMIT = 450;
+      for (let i = 0; i < changed.length; i += BATCH_LIMIT) {
+        const batch = writeBatch(db);
+        const chunk = changed.slice(i, i + BATCH_LIMIT);
+        for (const t of chunk) {
+          const docRef = doc(db, 'teachers', t.code);
+          const payload: any = {
+            code: t.code,
+            name: t.name,
+            isPasswordChanged: !!t.isPasswordChanged
+          };
+          if (t.password) {
+            payload.password = t.password;
+          } else {
+            payload.password = deleteField();
+          }
+          batch.set(docRef, payload, { merge: true });
         }
-        batch.set(docRef, payload, { merge: true });
+        await batch.commit();
       }
-      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'teachers');
     }
@@ -682,14 +1071,25 @@ export default function App() {
     setTeachers(updated);
     
     try {
-      await deleteDoc(doc(db, 'teachers', code));
-      
-      // Delete all evaluations owned by this teacher
-      const evalsToDelete = allEvaluations.filter(e => e.teacherCode === code);
-      for (const ev of evalsToDelete) {
-        if (ev.id) {
-          await deleteDoc(doc(db, 'evaluation', ev.id));
-        }
+      const refsToDelete: DocumentReference[] = [doc(db, 'teachers', code)];
+
+      // Delete all evaluations owned by this teacher (on-demand query)
+      const evalSnap = await getDocs(query(collection(db, 'evaluation'), where('teacherCode', '==', code)));
+      evalSnap.forEach((d) => {
+        refsToDelete.push(d.ref);
+      });
+
+      // Delete all signatures owned by this teacher
+      const sigSnap = await getDocs(query(collection(db, 'signatures'), where('teacherCode', '==', code)));
+      sigSnap.forEach((d) => {
+        refsToDelete.push(d.ref);
+      });
+
+      const BATCH_LIMIT = 450;
+      for (let i = 0; i < refsToDelete.length; i += BATCH_LIMIT) {
+        const batch = writeBatch(db);
+        refsToDelete.slice(i, i + BATCH_LIMIT).forEach((ref) => batch.delete(ref));
+        await batch.commit();
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `teachers/${code}`);
@@ -721,27 +1121,31 @@ export default function App() {
     if (changed.length === 0) return;
 
     try {
-      const batch = writeBatch(db);
-      for (const s of changed) {
-        const docRef = doc(db, 'students', s.studentId);
-        const payload: any = {
-          studentId: s.studentId,
-          name: s.name,
-          birthdate: s.birthdate
-        };
-        if (s.password) {
-          payload.password = s.password;
-        } else {
-          payload.password = deleteField();
+      const BATCH_LIMIT = 450;
+      for (let i = 0; i < changed.length; i += BATCH_LIMIT) {
+        const batch = writeBatch(db);
+        const chunk = changed.slice(i, i + BATCH_LIMIT);
+        for (const s of chunk) {
+          const docRef = doc(db, 'students', s.studentId);
+          const payload: any = {
+            studentId: s.studentId,
+            name: s.name,
+            birthdate: s.birthdate
+          };
+          if (s.password) {
+            payload.password = s.password;
+          } else {
+            payload.password = deleteField();
+          }
+          if (s.isPasswordChanged) {
+            payload.isPasswordChanged = true;
+          } else {
+            payload.isPasswordChanged = deleteField();
+          }
+          batch.set(docRef, payload, { merge: true });
         }
-        if (s.isPasswordChanged) {
-          payload.isPasswordChanged = true;
-        } else {
-          payload.isPasswordChanged = deleteField();
-        }
-        batch.set(docRef, payload, { merge: true });
+        await batch.commit();
       }
-      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'students');
     }
@@ -750,7 +1154,18 @@ export default function App() {
   const handleDeleteStudent = async (studentId: string, name: string) => {
     setAllStudents(prev => prev.filter(s => s.studentId !== studentId));
     try {
-      await deleteDoc(doc(db, 'students', studentId));
+      const refsToDelete: DocumentReference[] = [doc(db, 'students', studentId)];
+      const sigSnap = await getDocs(query(collection(db, 'signatures'), where('studentId', '==', studentId)));
+      sigSnap.forEach((d) => {
+        refsToDelete.push(d.ref);
+      });
+
+      const BATCH_LIMIT = 450;
+      for (let i = 0; i < refsToDelete.length; i += BATCH_LIMIT) {
+        const batch = writeBatch(db);
+        refsToDelete.slice(i, i + BATCH_LIMIT).forEach((ref) => batch.delete(ref));
+        await batch.commit();
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `students/${studentId}`);
     }
@@ -765,144 +1180,69 @@ export default function App() {
     const trimmedId = studentId.trim();
     const trimmedBirthOrPass = birthdateOrPassword.trim();
 
+    if (!trimmedId) {
+      return {
+        success: false,
+        error: '학번을 입력해 주세요.'
+      };
+    }
+
     try {
-      // 1. Try to fetch the student from the master roster first
+      // Only allow students registered in the 'students' master roster
       const studentDocRef = doc(db, 'students', trimmedId);
       const studentDocSnap = await getDoc(studentDocRef);
 
-      if (studentDocSnap.exists()) {
-        const studentData = studentDocSnap.data();
-        const hasCustomPassword = studentData.password && studentData.password.trim() !== '';
-
-        if (hasCustomPassword) {
-          if (studentData.password === trimmedBirthOrPass) {
-            return {
-              success: true,
-              session: {
-                studentId: trimmedId,
-                birthdate: studentData.birthdate || '',
-                studentName: studentData.name || '',
-                teacherName: '',
-                results: [],
-                teacherCode: ''
-              }
-            };
-          } else {
-            return {
-              success: false,
-              error: '비밀번호가 일치하지 않습니다. 비밀번호를 분실한 경우 학급 정보도우미를 통해 문의해주세요.'
-            };
-          }
-        } else {
-          if (matchesBirthdate(trimmedBirthOrPass, studentData.birthdate || '')) {
-            return {
-              success: true,
-              session: {
-                studentId: trimmedId,
-                birthdate: studentData.birthdate || '',
-                studentName: studentData.name || '',
-                teacherName: '',
-                results: [],
-                teacherCode: ''
-              }
-            };
-          } else {
-            return {
-              success: false,
-              error: '입력하신 학번과 생년월일이 일치하는 학생 정보를 찾을 수 없습니다.\n문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
-            };
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Master roster check failed or not available:", error);
-    }
-
-    // 2. Fallback: If no student document is found in 'students', scan the evaluations for lazy matching using already loaded local state to avoid server read cost
-    try {
-      let foundInEvaluations = false;
-      let detectedStudentName = '';
-      let detectedBirthdate = '';
-
-      let items: EvaluationState[] = allEvaluations;
-      if (items.length === 0) {
-        // Safe fallback in case global listener is still initializing
-        const evaluationsSnap = await getDocs(collection(db, 'evaluation'));
-        const fetchedList: EvaluationState[] = [];
-        evaluationsSnap.forEach((d) => {
-          const data = d.data();
-          fetchedList.push({
-            id: d.id,
-            teacherCode: data.teacherCode || '',
-            title: data.title || '',
-            subject: data.subject || '',
-            round: data.round || '',
-            evaluationDetailName: data.evaluationDetailName || '',
-            maxScore: data.maxScore !== undefined ? String(data.maxScore) : '',
-            reflectRate: data.reflectRate !== undefined ? String(data.reflectRate) : '100',
-            headers: data.headers || [],
-            rows: data.rows || [],
-            uploadedAt: data.uploadedAt || null,
-            uploadType: data.uploadType || 'excel',
-            pdfBase64: data.pdfBase64 || '',
-            pdfFileName: data.pdfFileName || '',
-            targetGradeClass: data.targetGradeClass || '',
-          });
-        });
-        items = fetchedList;
-      }
-
-      items.forEach((evalItem) => {
-        if (foundInEvaluations) return;
-        const studentIdKey = findStudentIdKey(evalItem.headers);
-        const birthdateKey = findBirthdateKey(evalItem.headers);
-        if (!studentIdKey || !birthdateKey) return;
-
-        const foundRow = evalItem.rows.find(row => 
-          matchesStudentId(trimmedId, row[studentIdKey]) && matchesBirthdate(trimmedBirthOrPass, row[birthdateKey])
-        );
-
-        if (foundRow) {
-          foundInEvaluations = true;
-          detectedStudentName = String(foundRow['이름'] || foundRow['성명'] || foundRow['학생명'] || foundRow['학생이름'] || '').trim();
-          detectedBirthdate = String(foundRow[birthdateKey] || '').trim();
-        }
-      });
-
-      if (foundInEvaluations) {
+      if (!studentDocSnap.exists()) {
         return {
-          success: true,
-          session: {
-            studentId: trimmedId,
-            birthdate: detectedBirthdate || trimmedBirthOrPass,
-            studentName: detectedStudentName || `학생 (${trimmedId})`,
-            teacherName: '',
-            results: [],
-            teacherCode: ''
-          }
+          success: false,
+          error: '입력하신 학번의 학생 정보를 찾을 수 없습니다.\n문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
         };
-      } else {
-        // If we found nothing at all, return the appropriate error message depending on whether a roster exists
-        let hasRoster = false;
-        try {
-          const rosterMetaSnap = await getDoc(doc(db, 'excelUploads', 'students'));
-          hasRoster = rosterMetaSnap.exists();
-        } catch (e) {}
+      }
 
-        if (hasRoster) {
+      const studentData = studentDocSnap.data();
+      const hasCustomPassword = studentData.password && studentData.password.trim() !== '';
+
+      if (hasCustomPassword) {
+        if (studentData.password === trimmedBirthOrPass) {
           return {
-            success: false,
-            error: '입력하신 학번의 학생 정보를 찾을 수 없습니다.\n문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
+            success: true,
+            session: {
+              studentId: trimmedId,
+              birthdate: studentData.birthdate || '',
+              studentName: studentData.name || '',
+              teacherName: '',
+              results: [],
+              teacherCode: ''
+            }
           };
         } else {
           return {
             success: false,
-            error: '입력하신 학번 또는 생년월일과 일치하는 성적 기록을 찾을 수 없습니다.\n학적 명부가 비어 있는 상태이므로, 선생님이 엑셀에 입력한 정보와 맞는지 확인하십시오.'
+            error: '비밀번호가 일치하지 않습니다. 비밀번호를 분실한 경우 학급 정보도우미를 통해 문의해주세요.'
+          };
+        }
+      } else {
+        if (matchesBirthdate(trimmedBirthOrPass, studentData.birthdate || '')) {
+          return {
+            success: true,
+            session: {
+              studentId: trimmedId,
+              birthdate: studentData.birthdate || '',
+              studentName: studentData.name || '',
+              teacherName: '',
+              results: [],
+              teacherCode: ''
+            }
+          };
+        } else {
+          return {
+            success: false,
+            error: '입력하신 학번과 생년월일이 일치하는 학생 정보를 찾을 수 없습니다.\n문제 발생 시 학급 정보도우미를 통해 문의해주세요.'
           };
         }
       }
     } catch (error) {
-      console.error("Fallback validation failed:", error);
+      console.error("Student roster login check failed:", error);
       return {
         success: false,
         error: '서버 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
@@ -916,6 +1256,7 @@ export default function App() {
 
   const handleStudentLogout = () => {
     setLoggedStudent(null);
+    setAllEvaluations([]);
   };
 
   // Staff/Teacher and Admin Login Auth Check
@@ -954,15 +1295,9 @@ export default function App() {
         return;
       }
 
+      pendingTeacherEvalSelectRef.current = matchedTeacher.code;
+      setActiveEvaluationId('');
       setLoggedTeacher(matchedTeacher);
-      
-      // Auto-select starting evaluation if one exists
-      const matchedEvals = allEvaluations.filter(e => e.teacherCode === matchedTeacher.code);
-      if (matchedEvals.length > 0) {
-        setActiveEvaluationId(matchedEvals[0].id || '');
-      } else {
-        setActiveEvaluationId('');
-      }
 
       setAuthError('');
       setInputTeacherCode('');
@@ -972,16 +1307,24 @@ export default function App() {
 
   const handleAdminLogout = () => {
     setIsAdminLoggedIn(false);
+    setAllStudents([]);
+    setExcelUploads([]);
   };
 
   const handleSaveExcelUpload = async (id: string, fileName: string, recordCount: number) => {
     try {
+      const uploadedAt = new Date().toISOString();
       const docRef = doc(db, 'excelUploads', id);
       await setDoc(docRef, {
         id,
         fileName,
-        uploadedAt: new Date().toISOString(),
+        uploadedAt,
         recordCount
+      });
+      setExcelUploads((prev) => {
+        const next = prev.filter((item) => item.id !== id);
+        next.push({ id, fileName, uploadedAt, recordCount });
+        return next;
       });
     } catch (error) {
       console.error("Failed to save excel upload metadata:", error);
@@ -989,7 +1332,95 @@ export default function App() {
   };
 
   const handleTeacherLogout = () => {
+    pendingTeacherEvalSelectRef.current = null;
+    loadedStudentsForTeacherRef.current = null;
     setLoggedTeacher(null);
+    setActiveEvaluationId('');
+    setAllEvaluations([]);
+    setAllStudents([]);
+  };
+
+  const handleTeacherPasswordUpdated = (newPassword: string) => {
+    if (!loggedTeacher) return;
+    const code = loggedTeacher.code;
+    setLoggedTeacher((prev) => (prev ? { ...prev, password: newPassword, isPasswordChanged: true } : prev));
+    setTeachers((prev) =>
+      prev.map((t) => (t.code === code ? { ...t, password: newPassword, isPasswordChanged: true } : t))
+    );
+  };
+
+  // Phase 2-A: One-time on-demand evaluation fetch for Admin Migration Preview (zero listeners)
+  const handleFetchEvaluationsForMigrationPreview = async (): Promise<EvaluationState[]> => {
+    try {
+      const snap = await getDocs(collection(db, 'evaluation'));
+      const list: EvaluationState[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        list.push({
+          id: d.id,
+          teacherCode: data.teacherCode || '',
+          title: data.title || '',
+          subject: data.subject || '',
+          round: data.round || '',
+          evaluationDetailName: data.evaluationDetailName || '',
+          maxScore: data.maxScore !== undefined ? String(data.maxScore) : '',
+          reflectRate: data.reflectRate !== undefined ? String(data.reflectRate) : '100',
+          headers: data.headers || [],
+          rows: data.rows || [],
+          uploadedAt: data.uploadedAt || null,
+          uploadType: data.uploadType || 'excel',
+          pdfBase64: data.pdfBase64 || '',
+          pdfFileName: data.pdfFileName || '',
+          targetGradeClass: data.targetGradeClass || '',
+          targetGradeClasses: Array.isArray(data.targetGradeClasses)
+            ? data.targetGradeClasses.map((v: any) => String(v))
+            : undefined,
+        });
+      });
+      return list;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.GET, 'evaluation');
+      throw err;
+    }
+  };
+
+  // Phase 2-A: Safe partial merge-only batch migration for admin-confirmed documents
+  const handleApplyEvaluationMigration = async (
+    updates: { id: string; targetGradeClasses: string[]; existingTargetGradeClasses?: string[] }[]
+  ): Promise<{ writtenCount: number; skippedCount: number }> => {
+    const toWrite = updates.filter(
+      (item) =>
+        item.id &&
+        Array.isArray(item.targetGradeClasses) &&
+        item.targetGradeClasses.length > 0 &&
+        !areGradeClassArraysEqual(item.existingTargetGradeClasses, item.targetGradeClasses)
+    );
+    const skippedCount = updates.length - toWrite.length;
+
+    if (toWrite.length === 0) {
+      return { writtenCount: 0, skippedCount };
+    }
+
+    try {
+      const BATCH_LIMIT = 450;
+      for (let i = 0; i < toWrite.length; i += BATCH_LIMIT) {
+        const batch = writeBatch(db);
+        const chunk = toWrite.slice(i, i + BATCH_LIMIT);
+        chunk.forEach((item) => {
+          const docRef = doc(db, 'evaluation', item.id);
+          batch.set(
+            docRef,
+            { targetGradeClasses: item.targetGradeClasses },
+            { merge: true }
+          );
+        });
+        await batch.commit();
+      }
+      return { writtenCount: toWrite.length, skippedCount };
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'evaluation');
+      throw err;
+    }
   };
 
   return (
@@ -1033,6 +1464,8 @@ export default function App() {
                   privacyPolicy={privacyPolicy}
                   privacyFile={privacyFile}
                   onUpdatePrivacyPolicy={handleUpdatePrivacyPolicy}
+                  onFetchEvaluationsForMigrationPreview={handleFetchEvaluationsForMigrationPreview}
+                  onApplyEvaluationMigration={handleApplyEvaluationMigration}
                 />
               </motion.div>
             ) : loggedTeacher ? (
@@ -1062,6 +1495,7 @@ export default function App() {
                   signatures={signatures}
                   onToggleSignature={handleToggleSignature}
                   allStudents={allStudents}
+                  onTeacherPasswordUpdated={handleTeacherPasswordUpdated}
                 />
               </motion.div>
             ) : (

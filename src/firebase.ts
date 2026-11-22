@@ -1,16 +1,14 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
-// Initialize Services with high-performance persistent local cache to optimize Firestore read counts
+// Use memoryLocalCache to avoid IndexedDB multi-tab lease clock-skew errors in preview/multi-tab environments
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
+  localCache: memoryLocalCache()
 }, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth();
 
@@ -54,15 +52,3 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   console.error('Firestore Error Detail: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
-
-// Validate connection on start as requested in rules guidelines
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('offline')) {
-      console.warn("Please check your Firestore internet connection status.");
-    }
-  }
-}
-testConnection();

@@ -15,7 +15,7 @@ import {
   CalendarDays,
   Key
 } from 'lucide-react';
-import { EvaluationState, Teacher, RegisteredStudent } from '../types';
+import { EvaluationState, Teacher, RegisteredStudent, StudentSignature } from '../types';
 import { 
   findStudentIdKey, 
   findBirthdateKey, 
@@ -24,7 +24,11 @@ import {
   findClassKey, 
   findNumberKey, 
   findNameKey,
-  findTotalScoreKey
+  findTotalScoreKey,
+  classifyEvaluationGradeClasses,
+  areGradeClassArraysEqual,
+  stripSensitiveEvaluationColumns,
+  isValidExtractedEvaluationData
 } from '../utils';
 import ResultPrintPortal from './ResultPrintPortal';
 import { db } from '../firebase';
@@ -46,9 +50,10 @@ interface AdminDashboardProps {
   subjectCompletionStates?: Record<string, boolean>;
   onUpdateSubjectCompletion?: (subject: string, completed: boolean) => void | Promise<void>;
   teacherSettings?: Record<string, boolean>;
-  signatures?: Record<string, string>;
+  signatures?: StudentSignature[];
   onToggleSignature?: (enabled: boolean) => void | Promise<void>;
   allStudents?: RegisteredStudent[];
+  onTeacherPasswordUpdated?: (newPassword: string) => void;
 }
 
 interface SubjectMaxScoreInputProps {
@@ -136,9 +141,10 @@ export default function AdminDashboard({
   subjectCompletionStates = {},
   onUpdateSubjectCompletion = () => {},
   teacherSettings = {},
-  signatures = {},
+  signatures = [],
   onToggleSignature = () => {},
-  allStudents = []
+  allStudents = [],
+  onTeacherPasswordUpdated
 }: AdminDashboardProps) {
   const [errorMsg, setErrorMsg] = useState('');
   const [isPrintOpen, setIsPrintOpen] = useState(false);
@@ -482,13 +488,18 @@ export default function AdminDashboard({
 
     setIsPasswordSubmitting(true);
     try {
-      const docRef = doc(db, 'teachers', loggedTeacher.code);
-      await setDoc(docRef, {
-        code: loggedTeacher.code,
-        name: loggedTeacher.name,
-        password: cleanPassword,
-        isPasswordChanged: true
-      }, { merge: true });
+      const isAlreadySame =
+        loggedTeacher.isPasswordChanged && (loggedTeacher.password || '') === cleanPassword;
+      if (!isAlreadySame) {
+        const docRef = doc(db, 'teachers', loggedTeacher.code);
+        await setDoc(docRef, {
+          code: loggedTeacher.code,
+          name: loggedTeacher.name,
+          password: cleanPassword,
+          isPasswordChanged: true
+        }, { merge: true });
+        onTeacherPasswordUpdated?.(cleanPassword);
+      }
 
       setPasswordSuccess('비밀번호가 성공적으로 변경되었습니다. 다음 로그인부터는 설정한 비밀번호를 사용해 주세요.');
       setNewPassword('');
@@ -518,6 +529,8 @@ export default function AdminDashboard({
 
     if (activeEval.uploadType === 'pdf') {
       combinedTitle = `📂 [PDF 전체점수] ${cleanSub} (${cleanRnd}차) ${cleanDet}`;
+    } else if (activeEval.uploadType === 'test_excel_sign') {
+      combinedTitle = `📂 [NEIS${cleanTgtGC ? ` ${cleanTgtGC}` : ''}] ${cleanSub} (${cleanRnd}차) ${cleanDet}`;
     } else {
       if (cleanSub && cleanRnd && cleanDet) {
         combinedTitle = `${cleanSub} (${cleanRnd}차) 수행평가: ${cleanDet}`;
@@ -532,7 +545,7 @@ export default function AdminDashboard({
       }
     }
 
-    onUpdateEvaluation(activeEvaluationId, {
+    const nextEvalCandidate: EvaluationState = {
       ...activeEval,
       subject: cleanSub,
       round: cleanRnd,
@@ -541,6 +554,32 @@ export default function AdminDashboard({
       reflectRate: cleanRef,
       title: combinedTitle,
       targetGradeClass: cleanTgtGC
+    };
+
+    const classification = classifyEvaluationGradeClasses(nextEvalCandidate);
+    const nextTargetGradeClasses =
+      classification.status === 'exact'
+        ? classification.targetGradeClasses
+        : cleanTgtGC === (activeEval.targetGradeClass || '')
+          ? activeEval.targetGradeClasses
+          : undefined;
+
+    if (
+      (activeEval.subject || '') === cleanSub &&
+      (activeEval.round || '') === cleanRnd &&
+      (activeEval.evaluationDetailName || '') === cleanDet &&
+      (activeEval.maxScore || '') === cleanMax &&
+      (activeEval.reflectRate || '') === cleanRef &&
+      (activeEval.targetGradeClass || '') === cleanTgtGC &&
+      (activeEval.title || '') === combinedTitle &&
+      areGradeClassArraysEqual(activeEval.targetGradeClasses, nextTargetGradeClasses)
+    ) {
+      return;
+    }
+
+    onUpdateEvaluation(activeEvaluationId, {
+      ...nextEvalCandidate,
+      ...(nextTargetGradeClasses ? { targetGradeClasses: nextTargetGradeClasses } : { targetGradeClasses: undefined })
     });
   };
 
@@ -598,7 +637,8 @@ export default function AdminDashboard({
             return;
           }
 
-          const studentIdKey = findStudentIdKey(cleanHeaders);
+          const { headers: sanitizedHeaders, rows: sanitizedRawRows } = stripSensitiveEvaluationColumns(cleanHeaders, rawRows);
+          const studentIdKey = findStudentIdKey(sanitizedHeaders);
 
           if (!studentIdKey) {
             setPdfErrorMsg(
@@ -608,8 +648,8 @@ export default function AdminDashboard({
           }
 
           // Clean arrays and filter out aggregate footer rows and empty rows
-          const processedHeaders = [...cleanHeaders];
-          const processedRows = rawRows.filter(row => {
+          const processedHeaders = [...sanitizedHeaders];
+          const processedRows = sanitizedRawRows.filter(row => {
             const idVal = String(row[studentIdKey] || '').trim();
             if (!idVal) return false;
             
@@ -644,7 +684,7 @@ export default function AdminDashboard({
           const defaultDetail = pdfDetailName.trim() || '수행평가 결과내역';
           const initialTitle = `📂 [최종확인] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
 
-          const newEvalMetadata: EvaluationState = {
+          const baseMetadata: EvaluationState = {
             title: initialTitle,
             subject: defaultSubject,
             round: defaultRound,
@@ -657,6 +697,11 @@ export default function AdminDashboard({
             uploadType: 'pdf',
             pdfFileName: file.name,
             targetGradeClass: cleanTgtGC
+          };
+          const classification = classifyEvaluationGradeClasses(baseMetadata);
+          const newEvalMetadata: EvaluationState = {
+            ...baseMetadata,
+            ...(classification.status === 'exact' ? { targetGradeClasses: classification.targetGradeClasses } : {})
           };
 
           const newId = await onCreateEvaluation(newEvalMetadata);
@@ -684,19 +729,36 @@ export default function AdminDashboard({
 
           let extractedHeaders: string[] = [];
           let extractedRows: any[] = [];
+          let extractionErrorMessage = '';
           try {
-            const { extractedPdf } = await extractPdfOrImage(base64Data, defaultSubject, cleanTgtGC);
+            const { extractedPdf, error } = await extractPdfOrImage(base64Data, defaultSubject, cleanTgtGC);
             if (extractedPdf && extractedPdf.rows.length > 0) {
-              extractedHeaders = extractedPdf.headers;
-              extractedRows = extractedPdf.rows;
+              const sanitizedPdf = stripSensitiveEvaluationColumns(extractedPdf.headers, extractedPdf.rows);
+              if (isValidExtractedEvaluationData(sanitizedPdf.headers, sanitizedPdf.rows)) {
+                extractedHeaders = sanitizedPdf.headers;
+                extractedRows = sanitizedPdf.rows;
+              } else {
+                extractionErrorMessage = '추출된 표에서 학번 또는 유효한 점수 열을 확인하지 못했습니다.';
+              }
             } else {
-              console.warn('Could not extract any rows immediately during PDF upload. Will retry on selection.');
+              extractionErrorMessage = error || 'PDF에서 성적 표 데이터를 추출하지 못했습니다.';
             }
           } catch (pdfErr) {
             console.error('Immediate PDF extraction failed:', pdfErr);
+            extractionErrorMessage = 'PDF 텍스트/표 분석 중 오류가 발생했습니다.';
           }
 
-          const newEvalMetadata: EvaluationState = {
+          const hasValidExtractedData = isValidExtractedEvaluationData(extractedHeaders, extractedRows);
+          if (!hasValidExtractedData) {
+            setPdfErrorMsg(
+              '⚠️ PDF 성적 데이터 추출에 실패하여 개인정보 보호를 위해 업로드를 중단했습니다.\n' +
+              `사유: ${extractionErrorMessage || '학번 및 점수 데이터 확인 불가'}\n` +
+              '안내: 전체 학급 PDF 원본은 저장하지 않습니다. 텍스트 선택이 가능한 나이스 PDF 또는 2단계 나이스 종합 EXCEL(.xlsx) 파일로 다시 업로드해 주세요.'
+            );
+            return;
+          }
+
+          const baseMetadata: EvaluationState = {
             title: initialTitle,
             subject: defaultSubject,
             round: defaultRound,
@@ -707,9 +769,13 @@ export default function AdminDashboard({
             rows: extractedRows,
             uploadedAt: new Date().toLocaleString('ko-KR'),
             uploadType: 'pdf',
-            pdfBase64: base64Data,
             pdfFileName: file.name,
             targetGradeClass: cleanTgtGC
+          };
+          const classification = classifyEvaluationGradeClasses(baseMetadata);
+          const newEvalMetadata: EvaluationState = {
+            ...baseMetadata,
+            ...(classification.status === 'exact' ? { targetGradeClasses: classification.targetGradeClasses } : {})
           };
 
           const newId = await onCreateEvaluation(newEvalMetadata);
@@ -875,19 +941,20 @@ export default function AdminDashboard({
           return;
         }
 
-        const studentIdKey = findStudentIdKey(customHeaders);
+        const { headers: sanitizedHeaders, rows: sanitizedFinalRows } = stripSensitiveEvaluationColumns(customHeaders, finalRows);
+        const studentIdKey = findStudentIdKey(sanitizedHeaders);
 
         if (!studentIdKey) {
           setExcelErrorMsg(
             `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 '학번' 또는 '반/번호' 열이 포함되어야 합니다.\n\n` + 
-            `감지된 열 목록: [${customHeaders.join(', ')}]`
+            `감지된 열 목록: [${sanitizedHeaders.join(', ')}]`
           );
           return;
         }
 
         // Clean arrays and filter out aggregate footer rows and empty rows
-        const processedHeaders = [...customHeaders];
-        const processedRows = finalRows.filter(row => {
+        const processedHeaders = [...sanitizedHeaders];
+        const processedRows = sanitizedFinalRows.filter(row => {
           const idVal = String(row[studentIdKey] || '').trim();
           if (!idVal) return false;
           
@@ -942,7 +1009,7 @@ export default function AdminDashboard({
           cleanTgtGC = Array.from(uniqueClasses).sort().join(',');
         }
 
-        const newEvalMetadata: EvaluationState = {
+        const baseMetadata: EvaluationState = {
           title: initialTitle,
           subject: defaultSubject,
           round: defaultRound,
@@ -954,6 +1021,16 @@ export default function AdminDashboard({
           uploadedAt: new Date().toLocaleString('ko-KR'),
           uploadType: 'excel',
           targetGradeClass: cleanTgtGC
+        };
+        const classification = classifyEvaluationGradeClasses(baseMetadata);
+        const newEvalMetadata: EvaluationState = {
+          ...baseMetadata,
+          ...(classification.status === 'exact'
+            ? {
+                targetGradeClass: cleanTgtGC || classification.targetGradeClasses.join(','),
+                targetGradeClasses: classification.targetGradeClasses
+              }
+            : {})
         };
 
         const newId = await onCreateEvaluation(newEvalMetadata);
@@ -1211,19 +1288,20 @@ export default function AdminDashboard({
           return;
         }
 
-        const studentIdKey = findStudentIdKey(customHeaders);
+        const { headers: sanitizedHeaders, rows: sanitizedFinalRows } = stripSensitiveEvaluationColumns(customHeaders, finalRows);
+        const studentIdKey = findStudentIdKey(sanitizedHeaders);
 
         if (!studentIdKey) {
           setTestExcelErrorMsg(
             `필수 열이 누락되어 업로드할 수 없습니다.\n학생 식별을 위해 엑셀 내에 학년/반/번호 연동용 '학번' 또는 '반/번호' 열이 포함되어야 합니다.\n\n` + 
-            `감지된 열 목록: [${customHeaders.join(', ')}]`
+            `감지된 열 목록: [${sanitizedHeaders.join(', ')}]`
           );
           return;
         }
 
         // Clean arrays and filter out aggregate footer rows and empty rows
-        const processedHeaders = [...customHeaders];
-        const processedRows = finalRows.filter(row => {
+        const processedHeaders = [...sanitizedHeaders];
+        const processedRows = sanitizedFinalRows.filter(row => {
           const idVal = String(row[studentIdKey] || '').trim();
           if (!idVal) return false;
           
@@ -1255,10 +1333,10 @@ export default function AdminDashboard({
         });
 
         const defaultRound = testExcelRound.trim() || '1';
-        const defaultDetail = testExcelDetailName.trim() || '수행평가 결과내용 [테스트]';
-        const initialTitle = `📂 [NEIS] ${defaultSubject} ${defaultDetail}`;
+        const defaultDetail = testExcelDetailName.trim() || '종합 성적결과표';
+        const initialTitle = `📂 [NEIS${cleanTgtGC ? ` ${cleanTgtGC}` : ''}] ${defaultSubject} (${defaultRound}차) ${defaultDetail}`;
 
-        const newEvalMetadata: EvaluationState = {
+        const baseMetadata: EvaluationState = {
           title: initialTitle,
           subject: defaultSubject,
           round: defaultRound,
@@ -1271,6 +1349,11 @@ export default function AdminDashboard({
           uploadType: 'test_excel_sign',
           pdfFileName: file.name,
           targetGradeClass: cleanTgtGC
+        };
+        const classification = classifyEvaluationGradeClasses(baseMetadata);
+        const newEvalMetadata: EvaluationState = {
+          ...baseMetadata,
+          ...(classification.status === 'exact' ? { targetGradeClasses: classification.targetGradeClasses } : {})
         };
 
         const newId = await onCreateEvaluation(newEvalMetadata);
@@ -1326,6 +1409,7 @@ export default function AdminDashboard({
     if (file) {
       processPdfFile(file);
     }
+    e.target.value = '';
   };
 
   const handleExcelDrag = (e: React.DragEvent) => {
@@ -1868,6 +1952,18 @@ export default function AdminDashboard({
                     </div>
                   </div>
 
+                  <div>
+                    <label htmlFor="test-excel-detail-input" className="block text-[11px] font-bold text-slate-700 mb-1">평가 시기 / 구분명 (1학기·2학기 등)</label>
+                    <input 
+                      id="test-excel-detail-input"
+                      type="text"
+                      value={testExcelDetailName}
+                      onChange={(e) => setTestExcelDetailName(e.target.value)}
+                      placeholder="예: 1학기 종합 성적결과표"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none"
+                    />
+                  </div>
+
                   <div className="bg-emerald-50/70 border border-emerald-250/30 p-2.5 rounded-lg text-[10px] text-slate-600 leading-normal">
                     <span>💡 <strong>필독:</strong> <strong>대상 학년반</strong>(예: 107)을 정확하게 입력해 주세요. 성적과 함께 최종 서명 패드가 자동 활성화됩니다.</span>
                   </div>
@@ -1907,6 +2003,13 @@ export default function AdminDashboard({
                     <span className="whitespace-pre-line">{testExcelErrorMsg}</span>
                   </div>
                 )}
+
+                {pdfErrorMsg && (
+                  <div id="pdf-error-panel" className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-semibold mt-2">
+                    <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                    <span className="whitespace-pre-line">{pdfErrorMsg}</span>
+                  </div>
+                )}
               </div>
 
             </div>
@@ -1931,9 +2034,16 @@ export default function AdminDashboard({
                       type="text"
                       value={subjectInput}
                       onChange={(e) => {
-                        const val = e.target.value;
-                        setSubjectInput(val);
-                        propagateSplitChanges(val, roundInput, detailNameInput, maxScoreInput, reflectRateInput, targetGradeClass);
+                        setSubjectInput(e.target.value);
+                      }}
+                      onBlur={(e) => {
+                        propagateSplitChanges(e.target.value, roundInput, detailNameInput, maxScoreInput, reflectRateInput, targetGradeClass);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          propagateSplitChanges((e.target as HTMLInputElement).value, roundInput, detailNameInput, maxScoreInput, reflectRateInput, targetGradeClass);
+                          (e.target as HTMLInputElement).blur();
+                        }
                       }}
                       placeholder="예: 정보 과학"
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-slate-800 bg-slate-50"
@@ -1952,7 +2062,17 @@ export default function AdminDashboard({
                         const raw = e.target.value;
                         const val = raw.replace(/차$/, '').trim();
                         setRoundInput(val);
+                      }}
+                      onBlur={(e) => {
+                        const val = e.target.value.replace(/차$/, '').trim();
                         propagateSplitChanges(subjectInput, val, detailNameInput, maxScoreInput, reflectRateInput, targetGradeClass);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = (e.target as HTMLInputElement).value.replace(/차$/, '').trim();
+                          propagateSplitChanges(subjectInput, val, detailNameInput, maxScoreInput, reflectRateInput, targetGradeClass);
+                          (e.target as HTMLInputElement).blur();
+                        }
                       }}
                       placeholder="예: 1"
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-center font-mono text-slate-800 bg-slate-50"
@@ -1968,9 +2088,16 @@ export default function AdminDashboard({
                       type="text"
                       value={detailNameInput}
                       onChange={(e) => {
-                        const val = e.target.value;
-                        setDetailNameInput(val);
-                        propagateSplitChanges(subjectInput, roundInput, val, maxScoreInput, reflectRateInput, targetGradeClass);
+                        setDetailNameInput(e.target.value);
+                      }}
+                      onBlur={(e) => {
+                        propagateSplitChanges(subjectInput, roundInput, e.target.value, maxScoreInput, reflectRateInput, targetGradeClass);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          propagateSplitChanges(subjectInput, roundInput, (e.target as HTMLInputElement).value, maxScoreInput, reflectRateInput, targetGradeClass);
+                          (e.target as HTMLInputElement).blur();
+                        }
                       }}
                       placeholder="예: 알고리즘 설계"
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-slate-800 bg-slate-50"
@@ -1987,9 +2114,16 @@ export default function AdminDashboard({
                         type="text"
                         value={targetGradeClass}
                         onChange={(e) => {
-                          const val = e.target.value;
-                          setTargetGradeClass(val);
-                          propagateSplitChanges(subjectInput, roundInput, detailNameInput, maxScoreInput, reflectRateInput, val);
+                          setTargetGradeClass(e.target.value);
+                        }}
+                        onBlur={(e) => {
+                          propagateSplitChanges(subjectInput, roundInput, detailNameInput, maxScoreInput, reflectRateInput, e.target.value);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            propagateSplitChanges(subjectInput, roundInput, detailNameInput, maxScoreInput, reflectRateInput, (e.target as HTMLInputElement).value);
+                            (e.target as HTMLInputElement).blur();
+                          }
                         }}
                         placeholder="예: 101, 102"
                         className="w-full px-3 py-2 border border-indigo-200 rounded-xl text-xs focus:outline-none font-bold text-center text-slate-800 bg-indigo-50/40"
@@ -2008,7 +2142,17 @@ export default function AdminDashboard({
                           onChange={(e) => {
                             const val = e.target.value.replace(/\D/g, '');
                             setMaxScoreInput(val);
+                          }}
+                          onBlur={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
                             propagateSplitChanges(subjectInput, roundInput, detailNameInput, val, reflectRateInput, targetGradeClass);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const val = (e.target as HTMLInputElement).value.replace(/\D/g, '');
+                              propagateSplitChanges(subjectInput, roundInput, detailNameInput, val, reflectRateInput, targetGradeClass);
+                              (e.target as HTMLInputElement).blur();
+                            }
                           }}
                           placeholder="예: 20"
                           className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none font-semibold text-center font-mono text-indigo-950 bg-indigo-50/40 border-indigo-250"
@@ -2026,7 +2170,17 @@ export default function AdminDashboard({
                           onChange={(e) => {
                             const val = e.target.value.replace(/\D/g, '');
                             setReflectRateInput(val);
+                          }}
+                          onBlur={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
                             propagateSplitChanges(subjectInput, roundInput, detailNameInput, maxScoreInput, val, targetGradeClass);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const val = (e.target as HTMLInputElement).value.replace(/\D/g, '');
+                              propagateSplitChanges(subjectInput, roundInput, detailNameInput, maxScoreInput, val, targetGradeClass);
+                              (e.target as HTMLInputElement).blur();
+                            }
                           }}
                           placeholder="예: 30"
                           className="w-full px-3 py-2 border border-indigo-200 rounded-xl text-xs focus:outline-none font-bold text-center font-mono text-indigo-950 bg-indigo-50/55"
@@ -2097,7 +2251,7 @@ export default function AdminDashboard({
                     </div>
 
                     {activeEval.uploadType === 'pdf' ? (
-                      <div className="border border-slate-200/80 rounded-xl p-4 bg-slate-50 flex items-center justify-between">
+                      <div className="border border-slate-200/80 rounded-xl p-4 bg-slate-50 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
                           <div className="p-3 bg-red-100 text-red-700 rounded-xl">
                             <BookOpen size={24} />
@@ -2106,15 +2260,29 @@ export default function AdminDashboard({
                             <p className="text-xs font-black text-slate-800 truncate max-w-[200px] sm:max-w-xs" title={activeEval.pdfFileName}>
                               {activeEval.pdfFileName || '성적_결과통지표.pdf'}
                             </p>
-                            <p className="text-[10px] text-slate-450 font-mono">대상 학년반: {activeEval.targetGradeClass || '미지정'}</p>
+                            <p className="text-[10px] text-slate-450 font-mono">
+                              대상 학년반: {activeEval.targetGradeClass || '미지정'}
+                              {!activeEval.pdfBase64 ? ' · 원본 미보관 (추출 데이터만 저장)' : ''}
+                            </p>
                           </div>
                         </div>
-                        <button
-                          onClick={downloadActiveEvalPdf}
-                          className="px-3.5 py-1.5 bg-indigo-900 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                        >
-                          📥 파일 다운로드
-                        </button>
+                        {activeEval.pdfBase64 ? (
+                          <button
+                            onClick={downloadActiveEvalPdf}
+                            className="px-3.5 py-1.5 bg-indigo-900 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                          >
+                            📥 파일 다운로드
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            title="성적 데이터가 정상 추출되어 개인정보 노출 최소화를 위해 원본 PDF는 저장되지 않았습니다."
+                            className="px-3.5 py-1.5 bg-slate-200 text-slate-500 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-not-allowed select-none shrink-0"
+                          >
+                            원본 미보관
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <div className="border border-emerald-250 rounded-xl p-4 bg-emerald-50/20 flex items-center justify-between">
@@ -2399,7 +2567,7 @@ export default function AdminDashboard({
             </div>
             <p className="text-xs text-slate-600 font-semibold leading-relaxed whitespace-pre-line">
               정말로 해당 수행평가 파일을 삭제하시겠습니까?{"\n"}
-              삭제 이후에는 학생의 성적 확인 및 서명 조회가 불가능합니다.
+              삭제 이후에는 해당 평가의 성적 확인이 불가능하며, 이 평가에 등록된 학생 서명 정보도 함께 자동 삭제됩니다.
             </p>
             <div className="bg-slate-50 border border-slate-150 p-3 rounded-xl space-y-1">
               <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-tight">삭제할 파일 제목</span>

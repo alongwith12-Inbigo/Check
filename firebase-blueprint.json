@@ -32,6 +32,10 @@
         "uploadedAt": {
           "type": "string",
           "description": "Upload timestamp string"
+        },
+        "targetGradeClasses": {
+          "type": "array",
+          "description": "Normalized 3-digit grade/class codes or ['ALL'] for Phase 2 filtering"
         }
       },
       "required": ["title", "headers", "rows"]
@@ -90,9 +94,13 @@
     },
     "StudentSignature": {
       "title": "StudentSignature",
-      "description": "Signature submitted by student",
+      "description": "Signature submitted by student for a specific evaluation",
       "type": "object",
       "properties": {
+        "evaluationId": {
+          "type": "string",
+          "description": "Evaluation document ID this signature belongs to"
+        },
         "teacherCode": {
           "type": "string",
           "description": "Teacher code"
@@ -118,7 +126,7 @@
           "description": "Signed timestamp"
         }
       },
-      "required": ["teacherCode", "subject", "studentId", "studentName", "signatureDataUrl", "signedAt"]
+      "required": ["evaluationId", "teacherCode", "subject", "studentId", "studentName", "signatureDataUrl", "signedAt"]
     },
     "RegisteredStudent": {
       "title": "RegisteredStudent",

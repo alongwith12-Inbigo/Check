@@ -420,3 +420,577 @@ export function isMetadataOrNonScoreHeader(header: string): boolean {
   return false;
 }
 
+export interface GradeClassClassification {
+  status: 'exact' | 'needs_review';
+  targetGradeClasses: string[];
+  reason?: string;
+  source: 'targetGradeClass' | 'rows' | 'both' | 'unresolved';
+}
+
+export function normalizeGradeClassCode(grade: number, classVal: number): string | null {
+  if (!Number.isInteger(grade) || !Number.isInteger(classVal)) return null;
+  if (grade < 1 || grade > 9 || classVal < 1 || classVal > 99) return null;
+  return `${grade}${String(classVal).padStart(2, '0')}`;
+}
+
+export function parseSingleGradeClassToken(token: string): string | null {
+  const clean = String(token || '').trim();
+  if (!clean) return null;
+
+  // 1. "1학년 8반", "1학년8반"
+  const korMatch = clean.match(/^(\d+)\s*학년\s*(\d+)\s*반$/);
+  if (korMatch) {
+    return normalizeGradeClassCode(parseInt(korMatch[1], 10), parseInt(korMatch[2], 10));
+  }
+
+  // 2. "1-8", "1/8", "1-08", "1-8반"
+  const sepMatch = clean.match(/^(\d+)\s*[-/]\s*(\d+)\s*(?:반)?$/);
+  if (sepMatch) {
+    return normalizeGradeClassCode(parseInt(sepMatch[1], 10), parseInt(sepMatch[2], 10));
+  }
+
+  // 3. Exact 3-digit code e.g. "108", "108반"
+  const codeMatch = clean.match(/^(\d{3})\s*(?:반)?$/);
+  if (codeMatch) {
+    const code = codeMatch[1];
+    return normalizeGradeClassCode(parseInt(code[0], 10), parseInt(code.substring(1), 10));
+  }
+
+  return null;
+}
+
+export function parseTargetGradeClassList(raw?: string): { codes: string[]; hasInvalidToken: boolean } {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) {
+    return { codes: [], hasInvalidToken: false };
+  }
+
+  const rawSegments = trimmed
+    .split(/[,;\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const codes = new Set<string>();
+  let hasInvalidToken = false;
+
+  for (const segment of rawSegments) {
+    // Allow space-separated 3-digit codes like "101 102"
+    if (/^\d{3}(\s+\d{3})+$/.test(segment)) {
+      const subTokens = segment.split(/\s+/);
+      for (const sub of subTokens) {
+        const parsed = parseSingleGradeClassToken(sub);
+        if (parsed) {
+          codes.add(parsed);
+        } else {
+          hasInvalidToken = true;
+        }
+      }
+      continue;
+    }
+
+    const parsed = parseSingleGradeClassToken(segment);
+    if (parsed) {
+      codes.add(parsed);
+    } else {
+      hasInvalidToken = true;
+    }
+  }
+
+  return {
+    codes: Array.from(codes).sort(),
+    hasInvalidToken,
+  };
+}
+
+function extractRowGradeClassCode(
+  row: Record<string, any>,
+  keys: {
+    studentIdKey?: string;
+    gradeKey?: string;
+    classKey?: string;
+    classNumberKey?: string;
+  },
+  singleFallbackCode: string | null
+): string | null {
+  if (!row || typeof row !== 'object') return null;
+
+  const { studentIdKey, gradeKey, classKey, classNumberKey } = keys;
+
+  // Read explicit grade column if available
+  let explicitGrade: number | null = null;
+  if (gradeKey && row[gradeKey] !== undefined && row[gradeKey] !== null && String(row[gradeKey]).trim() !== '') {
+    const gDigits = String(row[gradeKey]).replace(/\D/g, '');
+    if (gDigits) {
+      const g = parseInt(gDigits, 10);
+      if (g >= 1 && g <= 9) explicitGrade = g;
+    }
+  }
+
+  // 1. Explicit grade + class columns
+  if (explicitGrade !== null && classKey && row[classKey] !== undefined && row[classKey] !== null) {
+    const cDigits = String(row[classKey]).replace(/\D/g, '');
+    if (cDigits) {
+      const normalized = normalizeGradeClassCode(explicitGrade, parseInt(cDigits, 10));
+      if (normalized) return normalized;
+    }
+  }
+
+  // 2. Explicit grade + class/number column
+  if (explicitGrade !== null && classNumberKey && row[classNumberKey] !== undefined && row[classNumberKey] !== null) {
+    const parsedCN = parseClassNumber(row[classNumberKey]);
+    if (parsedCN) {
+      const normalized = normalizeGradeClassCode(explicitGrade, parseInt(parsedCN.classVal, 10));
+      if (normalized) return normalized;
+    }
+  }
+
+  // 3. Student ID column
+  if (studentIdKey && row[studentIdKey] !== undefined && row[studentIdKey] !== null) {
+    const rawId = String(row[studentIdKey]).trim();
+    if (rawId) {
+      const chunks = rawId.match(/\d+/g);
+      const allDigits = rawId.replace(/\D/g, '');
+
+      if (chunks && chunks.length === 3) {
+        // e.g. "1-8-1" or "1학년 8반 1번"
+        const normalized = normalizeGradeClassCode(parseInt(chunks[0], 10), parseInt(chunks[1], 10));
+        if (normalized) return normalized;
+      } else if (chunks && chunks.length === 1) {
+        if (allDigits.length === 5) {
+          // Standard 5-digit student ID e.g. "10801"
+          const normalized = normalizeGradeClassCode(parseInt(allDigits[0], 10), parseInt(allDigits.substring(1, 3), 10));
+          if (normalized) return normalized;
+        } else if (allDigits.length > 0 && allDigits.length <= 2 && singleFallbackCode) {
+          // 1- or 2-digit number with explicit single targetGradeClass
+          return singleFallbackCode;
+        } else if (allDigits.length === 3 && singleFallbackCode) {
+          // e.g. "801" matching singleFallbackCode "108"
+          const clsFrom3 = parseInt(allDigits[0], 10);
+          const fallbackCls = parseInt(singleFallbackCode.substring(1, 3), 10);
+          if (clsFrom3 === fallbackCls) {
+            return singleFallbackCode;
+          }
+        }
+      } else if (chunks && chunks.length === 2) {
+        // e.g. "8/1" or "8-1" (class & number only, no grade)
+        const parsedCls = parseInt(chunks[0], 10);
+        if (explicitGrade !== null) {
+          const normalized = normalizeGradeClassCode(explicitGrade, parsedCls);
+          if (normalized) return normalized;
+        } else if (singleFallbackCode) {
+          const fallbackCls = parseInt(singleFallbackCode.substring(1, 3), 10);
+          if (parsedCls === fallbackCls) {
+            return singleFallbackCode;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+export function classifyEvaluationGradeClasses(evalItem: {
+  uploadType?: 'excel' | 'pdf' | 'test_excel_sign';
+  targetGradeClass?: string;
+  headers?: string[];
+  rows?: Record<string, any>[];
+}): GradeClassClassification {
+  const uploadType = evalItem.uploadType || 'excel';
+  const headers = Array.isArray(evalItem.headers) ? evalItem.headers : [];
+  const rows = Array.isArray(evalItem.rows) ? evalItem.rows : [];
+  const parsedTarget = parseTargetGradeClassList(evalItem.targetGradeClass);
+  const singleFallbackCode =
+    !parsedTarget.hasInvalidToken && parsedTarget.codes.length === 1 ? parsedTarget.codes[0] : null;
+
+  const studentIdKey = findStudentIdKey(headers);
+  const gradeKey = findGradeKey(headers);
+  const classKey = findClassKey(headers);
+  const classNumberKey = findClassNumberKey(headers);
+
+  if (uploadType === 'pdf' || uploadType === 'test_excel_sign') {
+    if (parsedTarget.hasInvalidToken || parsedTarget.codes.length === 0) {
+      return {
+        status: 'needs_review',
+        targetGradeClasses: [],
+        reason: String(evalItem.targetGradeClass || '').trim()
+          ? `대상 학년반 표기("${evalItem.targetGradeClass}")를 정확한 3자리 학년·반 코드로 판별할 수 없습니다.`
+          : '대상 학년반(targetGradeClass)이 비어 있어 자동 판별할 수 없습니다.',
+        source: 'unresolved',
+      };
+    }
+
+    // Cross-check extracted rows if present to detect mismatches
+    if (rows.length > 0 && (studentIdKey || (gradeKey && (classKey || classNumberKey)))) {
+      const targetSet = new Set(parsedTarget.codes);
+      const mismatchedClasses = new Set<string>();
+      for (const row of rows) {
+        const code = extractRowGradeClassCode(
+          row,
+          { studentIdKey, gradeKey, classKey, classNumberKey },
+          singleFallbackCode
+        );
+        if (code && !targetSet.has(code)) {
+          mismatchedClasses.add(code);
+        }
+      }
+      if (mismatchedClasses.size > 0) {
+        return {
+          status: 'needs_review',
+          targetGradeClasses: [],
+          reason: `입력된 대상 학년반(${parsedTarget.codes.join(', ')}) 외의 학번(${Array.from(mismatchedClasses).sort().join(', ')})이 학생 행에서 감지되었습니다.`,
+          source: 'unresolved',
+        };
+      }
+    }
+
+    return {
+      status: 'exact',
+      targetGradeClasses: parsedTarget.codes,
+      source: 'targetGradeClass',
+    };
+  }
+
+  // Excel uploadType
+  if (parsedTarget.hasInvalidToken) {
+    return {
+      status: 'needs_review',
+      targetGradeClasses: [],
+      reason: `대상 학년반 표기("${evalItem.targetGradeClass}")를 정확한 학년·반 코드로 판별할 수 없습니다.`,
+      source: 'unresolved',
+    };
+  }
+
+  if (rows.length === 0) {
+    if (parsedTarget.codes.length > 0) {
+      return {
+        status: 'exact',
+        targetGradeClasses: parsedTarget.codes,
+        source: 'targetGradeClass',
+      };
+    }
+    return {
+      status: 'needs_review',
+      targetGradeClasses: [],
+      reason: '학생 데이터 행이 비어 있고 대상 학년반도 지정되지 않았습니다.',
+      source: 'unresolved',
+    };
+  }
+
+  const rowClasses = new Set<string>();
+  let unresolvedCount = 0;
+
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const hasAnyValue = Object.values(row).some(
+      (v) => v !== undefined && v !== null && String(v).trim() !== ''
+    );
+    if (!hasAnyValue) continue;
+
+    const code = extractRowGradeClassCode(
+      row,
+      { studentIdKey, gradeKey, classKey, classNumberKey },
+      singleFallbackCode
+    );
+    if (code) {
+      rowClasses.add(code);
+    } else {
+      unresolvedCount++;
+    }
+  }
+
+  if (unresolvedCount > 0) {
+    return {
+      status: 'needs_review',
+      targetGradeClasses: [],
+      reason: `전체 ${rows.length}개 행 중 ${unresolvedCount}개 행의 학년·반을 정확히 판별할 수 없습니다(예: 학년 없는 반/번호 표기 등).`,
+      source: 'unresolved',
+    };
+  }
+
+  if (rowClasses.size === 0) {
+    return {
+      status: 'needs_review',
+      targetGradeClasses: [],
+      reason: '학생 행에서 유효한 학년·반 코드를 추출할 수 없습니다.',
+      source: 'unresolved',
+    };
+  }
+
+  return {
+    status: 'exact',
+    targetGradeClasses: Array.from(rowClasses).sort(),
+    source: singleFallbackCode ? 'both' : 'rows',
+  };
+}
+
+export function normalizeGradeClassArray(arr?: string[]): string[] {
+  if (!Array.isArray(arr)) return [];
+  const cleaned = arr
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(cleaned)).sort();
+}
+
+export function areGradeClassArraysEqual(a?: string[], b?: string[]): boolean {
+  const normA = normalizeGradeClassArray(a);
+  const normB = normalizeGradeClassArray(b);
+  if (normA.length !== normB.length) return false;
+  return normA.every((val, idx) => val === normB[idx]);
+}
+
+export function parseManualMigrationInput(rawInput: string): {
+  valid: boolean;
+  targetGradeClasses: string[];
+  error?: string;
+} {
+  const trimmed = String(rawInput || '').trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      targetGradeClasses: [],
+      error: '대상 학년반 코드(예: 101, 102) 또는 ALL을 입력해 주세요.',
+    };
+  }
+
+  if (trimmed.toUpperCase() === 'ALL') {
+    return {
+      valid: true,
+      targetGradeClasses: ['ALL'],
+    };
+  }
+
+  const parsed = parseTargetGradeClassList(trimmed);
+  if (parsed.hasInvalidToken || parsed.codes.length === 0) {
+    return {
+      valid: false,
+      targetGradeClasses: [],
+      error: '유효하지 않은 형식이 포함되어 있습니다. 3자리 코드(예: 101, 102) 또는 1-1 형태로 입력해 주세요.',
+    };
+  }
+
+  return {
+    valid: true,
+    targetGradeClasses: parsed.codes,
+  };
+}
+
+/**
+ * Safely determines whether an evaluation spreadsheet/PDF column header represents
+ * unnecessary personal data (birthdate, password, resident ID, contact info, address)
+ * while strictly preserving student IDs, names, class/number columns, scores, NCS units, and feedback.
+ */
+export function isSensitiveEvaluationColumn(header: string): boolean {
+  const raw = String(header || '').trim();
+  if (!raw) return false;
+
+  // Never strip NCS bracketed competency unit columns (e.g. "[능력단위1: ...] ...")
+  if (/^\[[^\]]+\]/.test(raw)) {
+    return false;
+  }
+
+  // Strip parenthetical hints (e.g. "생년월일(8자리)") before checking exact/base labels
+  const baseNormalized = raw
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/[\s_-]+/g, '')
+    .toLowerCase();
+
+  if (!baseNormalized) return false;
+
+  // Never strip essential student identification, name, class/number, or feedback columns
+  if (
+    baseNormalized === '학번' ||
+    baseNormalized.includes('학번') ||
+    baseNormalized.includes('학적번호') ||
+    baseNormalized.includes('학생번호') ||
+    baseNormalized.includes('studentid') ||
+    baseNormalized === '번호' ||
+    baseNormalized === '연번' ||
+    baseNormalized === '순번' ||
+    baseNormalized === '반' ||
+    baseNormalized === '학년' ||
+    baseNormalized === '학급' ||
+    baseNormalized === '반번호' ||
+    baseNormalized === '반/번호' ||
+    findNameKey([raw]) ||
+    findGradeKey([raw]) ||
+    findClassKey([raw]) ||
+    findNumberKey([raw]) ||
+    findClassNumberKey([raw]) ||
+    findFeedbackKey([raw]).length > 0
+  ) {
+    return false;
+  }
+
+  // Never strip columns clearly labeled with score/evaluation metrics
+  const compactRaw = raw.replace(/\s+/g, '').toLowerCase();
+  if (
+    /\(\s*[\d.]+\s*점\s*\)/.test(compactRaw) ||
+    /\[\s*[\d.]+\s*점\s*\]/.test(compactRaw) ||
+    compactRaw.includes('만점') ||
+    compactRaw.includes('배점') ||
+    compactRaw.includes('점수') ||
+    compactRaw.includes('총점') ||
+    compactRaw.includes('합계') ||
+    compactRaw.includes('성적')
+  ) {
+    return false;
+  }
+
+  // 1. Birthdate columns
+  if (
+    baseNormalized === '생년월일' ||
+    baseNormalized.includes('생년월일') ||
+    baseNormalized === '생년' ||
+    baseNormalized === '생일' ||
+    baseNormalized === '생일날짜' ||
+    baseNormalized === '생년월' ||
+    baseNormalized === '년월일' ||
+    baseNormalized === 'birth' ||
+    baseNormalized === 'birthdate' ||
+    baseNormalized === 'birthday' ||
+    baseNormalized === 'dob'
+  ) {
+    return true;
+  }
+
+  // 2. Password columns
+  if (
+    baseNormalized.includes('비밀번호') ||
+    baseNormalized.includes('패스워드') ||
+    baseNormalized === '암호' ||
+    baseNormalized === '비밀' ||
+    baseNormalized === 'password' ||
+    baseNormalized === 'passwd' ||
+    baseNormalized === 'pw'
+  ) {
+    return true;
+  }
+
+  // 3. Resident Registration Number (주민등록번호) columns
+  if (
+    baseNormalized.includes('주민등록') ||
+    baseNormalized.includes('주민번호') ||
+    baseNormalized.includes('외국인등록번호') ||
+    baseNormalized === 'ssn' ||
+    baseNormalized === 'rrn' ||
+    baseNormalized === 'residentid'
+  ) {
+    return true;
+  }
+
+  // 4. Contact / phone / email / home address columns
+  if (
+    baseNormalized.includes('연락처') ||
+    baseNormalized.includes('전화번호') ||
+    baseNormalized.includes('휴대폰') ||
+    baseNormalized.includes('휴대전화') ||
+    baseNormalized.includes('핸드폰') ||
+    baseNormalized.includes('폰번호') ||
+    baseNormalized.includes('비상연락') ||
+    baseNormalized.includes('집전화') ||
+    baseNormalized.includes('이메일') ||
+    baseNormalized.includes('메일주소') ||
+    baseNormalized === 'email' ||
+    baseNormalized === 'phone' ||
+    baseNormalized === 'mobile' ||
+    baseNormalized === 'tel' ||
+    baseNormalized === 'cellphone' ||
+    baseNormalized === 'contact' ||
+    baseNormalized === '집주소' ||
+    baseNormalized === '현주소' ||
+    baseNormalized === '거주지' ||
+    baseNormalized === '도로명주소' ||
+    baseNormalized === '상세주소'
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function stripSensitiveEvaluationColumns(
+  headers: string[],
+  rows: Record<string, any>[]
+): {
+  headers: string[];
+  rows: Record<string, any>[];
+  removedHeaders: string[];
+} {
+  const safeHeaders = Array.isArray(headers) ? headers : [];
+  const safeRows = Array.isArray(rows) ? rows : [];
+
+  const removedHeaders: string[] = [];
+  const removedHeaderSet = new Set<string>();
+  const filteredHeaders: string[] = [];
+
+  for (const h of safeHeaders) {
+    if (isSensitiveEvaluationColumn(h)) {
+      removedHeaders.push(h);
+      removedHeaderSet.add(h);
+    } else {
+      filteredHeaders.push(h);
+    }
+  }
+
+  const sanitizedRows = safeRows.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    const cleanedRow: Record<string, any> = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (removedHeaderSet.has(key) || isSensitiveEvaluationColumn(key)) {
+        if (!removedHeaderSet.has(key)) {
+          removedHeaders.push(key);
+          removedHeaderSet.add(key);
+        }
+        continue;
+      }
+      cleanedRow[key] = value;
+    }
+    return cleanedRow;
+  });
+
+  return {
+    headers: filteredHeaders,
+    rows: sanitizedRows,
+    removedHeaders,
+  };
+}
+
+/**
+ * Validates that extracted evaluation headers and rows contain the minimum fields
+ * needed for student score lookup (a student identifier column, at least one
+ * non-metadata score/evaluation column, and at least one row with both a student ID
+ * and a non-empty score value).
+ */
+export function isValidExtractedEvaluationData(
+  headers: string[],
+  rows: Record<string, any>[]
+): boolean {
+  if (!Array.isArray(headers) || headers.length < 2) return false;
+  if (!Array.isArray(rows) || rows.length === 0) return false;
+
+  const cleanHeaders = headers.filter((h) => typeof h === 'string' && h.trim() !== '');
+  if (cleanHeaders.length < 2) return false;
+
+  const studentIdKey = findStudentIdKey(cleanHeaders);
+  if (!studentIdKey) return false;
+
+  const scoreHeaders = cleanHeaders.filter((h) => !isMetadataOrNonScoreHeader(h));
+  if (scoreHeaders.length === 0) return false;
+
+  return rows.some((row) => {
+    if (!row || typeof row !== 'object') return false;
+    const rawStudentId = row[studentIdKey];
+    if (rawStudentId === undefined || rawStudentId === null || String(rawStudentId).trim() === '') {
+      return false;
+    }
+    return scoreHeaders.some((sh) => {
+      const val = row[sh];
+      return val !== undefined && val !== null && String(val).trim() !== '';
+    });
+  });
+}
+
+
+

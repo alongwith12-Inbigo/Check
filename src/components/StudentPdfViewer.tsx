@@ -10,6 +10,8 @@ interface StudentPdfViewerProps {
   row?: any;
   key?: string;
   subject?: string;
+  evaluationDetailName?: string;
+  round?: string;
 }
 
 export interface ExtractedScore {
@@ -434,7 +436,9 @@ export default function StudentPdfViewer({
   studentName,
   headers,
   row,
-  subject
+  subject,
+  evaluationDetailName,
+  round
 }: StudentPdfViewerProps) {
   // Compute score details synchronously if valid headers and row are supplied as props
   const parsedDataFromProps = useMemo(() => {
@@ -622,6 +626,15 @@ export default function StudentPdfViewer({
     }
 
     let active = true;
+
+    if (!pdfBase64 || pdfBase64.trim() === '') {
+      setLoading(false);
+      setExtractedData(null);
+      setError(
+        `학번 [${studentId}]에 해당하는 개별 성적 데이터를 찾을 수 없습니다.\n\n교과 담당 선생님께 해당 평가 명단에 본인의 학번(${studentId})이 포함되어 있는지 확인해 주세요.`
+      );
+      return;
+    }
 
     async function parseAndExtractPdf() {
       setLoading(true);
@@ -1004,11 +1017,16 @@ export default function StudentPdfViewer({
       
       {/* 1. Header Information Alert */}
       <div className="flex border-b border-rose-100 pb-3 flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-1.5 text-rose-950 font-black">
-          <FileText size={16} className="text-rose-600" />
+        <div className="flex items-center gap-1.5 text-rose-950 font-black flex-wrap">
+          <FileText size={16} className="text-rose-600 shrink-0" />
           <span className="text-xs">
             {pdfBase64 ? '나이스 출력 수행평가 점수 (PDF 자동 분석)' : '나이스 확인용 수행평가 점수'}
           </span>
+          {evaluationDetailName && (
+            <span className="text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-900 px-2 py-0.5 rounded-md font-extrabold">
+              {subject ? `${subject} · ` : ''}{evaluationDetailName}
+            </span>
+          )}
         </div>
         
         {activeData && (

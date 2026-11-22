@@ -16,7 +16,7 @@ import {
   Lock,
   CheckCircle
 } from 'lucide-react';
-import { StudentSession, EvaluationState, Teacher, StudentResultItem, RegisteredStudent } from '../types';
+import { StudentSession, EvaluationState, Teacher, StudentResultItem, RegisteredStudent, StudentSignature } from '../types';
 import { findStudentIdKey, findBirthdateKey, findFeedbackKey, isScoreColumn, matchesStudentId, findTotalScoreKey, findNameKey, findGradeKey, findClassKey, findNumberKey, findClassNumberKey, parseClassNumber, extractGradeFromTarget } from '../utils';
 import SignatureCanvas from './SignatureCanvas';
 import StudentPdfViewer from './StudentPdfViewer';
@@ -28,10 +28,10 @@ interface ResultCardProps {
   onBack: () => void;
   subjectMaxScores?: Record<string, string>;
   subjectCompletionStates?: Record<string, boolean>;
-  signatures?: Record<string, string>;
+  signatures?: StudentSignature[];
   teacherSettings?: Record<string, boolean>;
-  onSaveSignature?: (subject: string, studentId: string, studentName: string, signatureDataUrl: string, teacherCode: string) => void | Promise<void>;
-  onDeleteSignature?: (subject: string, studentId: string, teacherCode: string) => void | Promise<void>;
+  onSaveSignature?: (evaluationId: string, subject: string, studentId: string, studentName: string, signatureDataUrl: string, teacherCode: string) => void | Promise<void>;
+  onDeleteSignature?: (evaluationId: string, studentId: string) => void | Promise<void>;
   allEvaluations: EvaluationState[];
   teachers: Teacher[];
   allStudents?: RegisteredStudent[];
@@ -42,7 +42,7 @@ export default function ResultCard({
   onBack, 
   subjectMaxScores = {},
   subjectCompletionStates = {},
-  signatures = {},
+  signatures = [],
   teacherSettings = {},
   onSaveSignature,
   onDeleteSignature,
@@ -51,12 +51,14 @@ export default function ResultCard({
   allStudents = []
 }: ResultCardProps) {
   const { studentId } = sessionData;
-  const [isSavingSig, setIsSavingSig] = useState(false);
+  const [isSavingSigId, setIsSavingSigId] = useState<string | null>(null);
   const [showSavedFeedback, setShowSavedFeedback] = useState(false);
   const [showSavedFeedbackModal, setShowSavedFeedbackModal] = useState(false);
 
   // Dynamic overlay state to replace iframe-unsafe window.confirm
   const [deleteSignatureModal, setDeleteSignatureModal] = useState<{
+    evaluationId: string;
+    evaluationTitle: string;
     subject: string;
     studentId: string;
   } | null>(null);
@@ -156,10 +158,12 @@ export default function ResultCard({
     });
   };
 
-  const matchedTeachers = teachers.filter(t => {
-    const teacherEvals = allEvaluations.filter(e => e.teacherCode === t.code);
-    return teacherEvals.some(ev => getTeacherGradeClassMatch(ev, studentGradeClass));
-  });
+  const matchedTeachers = React.useMemo(() => {
+    return teachers.filter(t => {
+      const teacherEvals = allEvaluations.filter(e => e.teacherCode === t.code);
+      return teacherEvals.some(ev => getTeacherGradeClassMatch(ev, studentGradeClass));
+    });
+  }, [teachers, allEvaluations, studentGradeClass]);
 
   // State to hold the chosen teacher code (initially empty to let student choose from subject list first)
   const [selectedTeacherCode, setSelectedTeacherCode] = useState<string>('');
@@ -244,8 +248,6 @@ export default function ResultCard({
       });
     }
   });
-
-  const signatureEnabled = results.some(r => r.uploadType === 'pdf' || r.uploadType === 'test_excel_sign');
 
   const handlePrint = () => {
     window.print();
@@ -451,22 +453,17 @@ export default function ResultCard({
                   const subjectName = subjects[0] || '미지정 과목';
                   const evalCount = teacherEvals.length;
 
-                  const isSigRequired = teacherEvals.some(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
-
-                  const teacherKey = tea.code.trim();
-                  const subjectKey = subjectName.trim();
+                  const signableEvals = teacherEvals.filter(e => e.uploadType === 'pdf' || e.uploadType === 'test_excel_sign');
+                  const isSigRequired = signableEvals.length > 0;
                   const cardStudentId = studentId.trim();
 
-                  const isSigSubmitted = Object.keys(signatures).some(key => {
-                    const parts = key.split('_');
-                    if (parts.length >= 3) {
-                      const [sigTeacher, sigSubject, sigStudent] = parts;
-                      return sigTeacher.trim() === teacherKey && 
-                             sigSubject.replace(/\s+/g, '') === subjectKey.replace(/\s+/g, '') && 
-                             matchesStudentId(sigStudent, cardStudentId);
-                    }
-                    return false;
-                  });
+                  const signedCount = signableEvals.filter(ev =>
+                    signatures.some(sig =>
+                      sig.evaluationId === ev.id &&
+                      matchesStudentId(sig.studentId, cardStudentId, ev.targetGradeClass)
+                    )
+                  ).length;
+                  const isSigSubmitted = isSigRequired && signedCount === signableEvals.length;
 
                   return (
                     <button
@@ -487,7 +484,7 @@ export default function ResultCard({
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-250 rounded-lg text-[10px] font-bold animate-pulse">
-                                ✍︎ 서명 필요
+                                ✍︎ 서명 필요{signableEvals.length > 1 && signedCount > 0 ? ` (${signedCount}/${signableEvals.length})` : ''}
                               </span>
                             )
                           ) : (
@@ -881,16 +878,93 @@ export default function ResultCard({
                   }
 
                   return pdfResults.map((item) => {
+                    const matchedSig = signatures.find(sig =>
+                      sig.evaluationId === item.evaluationId &&
+                      matchesStudentId(sig.studentId, studentId, item.targetGradeClass)
+                    );
+                    const savedSignature = matchedSig?.signatureDataUrl || '';
+                    const itemSubject = item.subject || subjName;
+                    const itemTeacherCode = item.teacherCode || teacherCode;
+                    const isSavingThis = isSavingSigId === item.evaluationId;
+
                     return (
-                      <StudentPdfViewer 
-                        key={item.evaluationId}
-                        pdfBase64={item.pdfBase64 || ''}
-                        studentId={studentId}
-                        studentName={studentName}
-                        headers={item.headers}
-                        row={item.row}
-                        subject={item.subject}
-                      />
+                      <div key={item.evaluationId} className="space-y-4">
+                        <StudentPdfViewer 
+                          pdfBase64={item.pdfBase64 || ''}
+                          studentId={studentId}
+                          studentName={studentName}
+                          headers={item.headers}
+                          row={item.row}
+                          subject={item.subject}
+                          evaluationDetailName={item.evaluationDetailName}
+                          round={item.round}
+                        />
+
+                        {/* Per-Evaluation Student Signature Block */}
+                        <div
+                          id={`student-signature-block-${item.evaluationId}`}
+                          className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4 print:border-2 print:border-slate-850"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                            <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5">
+                              ✒️ 수행평가 결과 확인 학생 최종 서명
+                            </h3>
+                            {item.evaluationDetailName && (
+                              <span className="text-[10px] font-extrabold text-indigo-900 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-md">
+                                {itemSubject} · {item.evaluationDetailName}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-normal">
+                            본인의 수행평가 영역별 점수와 총점을 확인하였으며, 이에 서명합니다.
+                          </p>
+
+                          {savedSignature ? (
+                            <div className="bg-emerald-50/50 border border-emerald-250 rounded-2xl p-4 flex flex-col items-center justify-center gap-2.5">
+                              <div className="text-xs font-black text-emerald-850 flex items-center gap-1">
+                                서명 제출 완료
+                              </div>
+                              <div className="bg-white border border-slate-200 rounded-xl p-3 max-w-[220px] overflow-hidden flex items-center justify-center shadow-xs">
+                                <img src={savedSignature} alt="학생 서명" className="h-14 object-contain" referrerPolicy="no-referrer" />
+                              </div>
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] text-slate-400 font-mono font-bold">서명 정보 저장</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDeleteSignatureModal({
+                                      evaluationId: item.evaluationId,
+                                      evaluationTitle: item.evaluationDetailName || item.evaluationTitle || '수행평가 결과',
+                                      subject: itemSubject,
+                                      studentId
+                                    });
+                                  }}
+                                  className="mt-1 text-[11px] font-black text-red-500 hover:text-red-700 bg-white border border-red-200 hover:bg-red-50 rounded-lg px-2.5 py-1.5 transition cursor-pointer shadow-2xs active:scale-95"
+                                >
+                                  🗑️ 삭제/재서명
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <SignatureCanvas 
+                              onSave={async (dataUrl) => {
+                                if (onSaveSignature) {
+                                  setIsSavingSigId(item.evaluationId);
+                                  try {
+                                    await onSaveSignature(item.evaluationId, itemSubject, studentId, studentName, dataUrl, itemTeacherCode);
+                                    setShowSavedFeedback(true);
+                                    setShowSavedFeedbackModal(true);
+                                    setTimeout(() => setShowSavedFeedback(false), 4500);
+                                  } finally {
+                                    setIsSavingSigId(null);
+                                  }
+                                }
+                              }}
+                              isLoading={isSavingThis}
+                            />
+                          )}
+                        </div>
+                      </div>
                     );
                   });
                 })()}
@@ -898,83 +972,6 @@ export default function ResultCard({
             </div>
 
           </div>
-
-          {/* Student Signature Block */}
-          {signatureEnabled && (
-            <div id="student-signature-block" className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4 print:border-2 print:border-slate-850">
-              <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-2">
-                ✒️ 수행평가 결과 확인 학생 최종 서명
-              </h3>
-              <p className="text-[11px] text-slate-500 leading-normal">
-                본인의 수행평가 영역별 점수와 총점을 확인하였으며, 이에 서명합니다.
-              </p>
-
-              {(() => {
-                const teacherKey = tCode.trim();
-                const subjectKey = subjName.trim();
-                const cardStudentId = studentId.trim();
-
-                let savedSignature = '';
-                const foundSigKey = Object.keys(signatures).find(key => {
-                  const parts = key.split('_');
-                  if (parts.length >= 3) {
-                    const [sigTeacher, sigSubject, sigStudent] = parts;
-                    return sigTeacher.trim() === teacherKey && 
-                           sigSubject.replace(/\s+/g, '') === subjectKey.replace(/\s+/g, '') && 
-                           matchesStudentId(sigStudent, cardStudentId);
-                  }
-                  return false;
-                });
-                if (foundSigKey) {
-                  savedSignature = signatures[foundSigKey];
-                }
-
-                if (savedSignature) {
-                  return (
-                    <div className="bg-emerald-50/50 border border-emerald-250 rounded-2xl p-4 flex flex-col items-center justify-center gap-2.5">
-                      <div className="text-xs font-black text-emerald-850 flex items-center gap-1">
-                        서명 제출 완료
-                      </div>
-                      <div className="bg-white border border-slate-200 rounded-xl p-3 max-w-[220px] overflow-hidden flex items-center justify-center shadow-xs">
-                        <img src={savedSignature} alt="학생 서명" className="h-14 object-contain" referrerPolicy="no-referrer" />
-                      </div>
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="text-[10px] text-slate-400 font-mono font-bold">서명 정보 저장</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDeleteSignatureModal({ subject: subjName, studentId });
-                          }}
-                          className="mt-1 text-[11px] font-black text-red-500 hover:text-red-700 bg-white border border-red-200 hover:bg-red-50 rounded-lg px-2.5 py-1.5 transition cursor-pointer shadow-2xs active:scale-95"
-                        >
-                          🗑️ 삭제/재서명
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <SignatureCanvas 
-                    onSave={async (dataUrl) => {
-                      if (onSaveSignature) {
-                        setIsSavingSig(true);
-                        try {
-                          await onSaveSignature(subjName, studentId, studentName, dataUrl, teacherCode);
-                          setShowSavedFeedback(true);
-                          setShowSavedFeedbackModal(true);
-                          setTimeout(() => setShowSavedFeedback(false), 4500);
-                        } finally {
-                          setIsSavingSig(false);
-                        }
-                      }
-                    }}
-                    isLoading={isSavingSig}
-                  />
-                );
-              })()}
-            </div>
-          )}
         </>
       )}
 
@@ -1094,9 +1091,11 @@ export default function ResultCard({
               제출한 서명을 삭제하고 다시 작성하시겠습니까? {"\n"}
               이 작업은 취소할 수 없으며 즉시 삭제됩니다.
             </p>
-            <div className="bg-slate-50 border border-slate-150 p-3 rounded-xl">
-              <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-tight">교과목</span>
-              <span className="text-xs font-black text-slate-800 block truncate">{deleteSignatureModal.subject}</span>
+            <div className="bg-slate-50 border border-slate-150 p-3 rounded-xl space-y-1">
+              <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-tight">교과목 / 평가</span>
+              <span className="text-xs font-black text-slate-800 block truncate">
+                {deleteSignatureModal.subject} · {deleteSignatureModal.evaluationTitle}
+              </span>
             </div>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
@@ -1109,10 +1108,10 @@ export default function ResultCard({
               <button
                 type="button"
                 onClick={async () => {
-                  const { subject, studentId } = deleteSignatureModal;
+                  const { evaluationId, studentId } = deleteSignatureModal;
                   setDeleteSignatureModal(null);
                   if (onDeleteSignature) {
-                    await onDeleteSignature(subject, studentId, teacherCode);
+                    await onDeleteSignature(evaluationId, studentId);
                   }
                 }}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-700 border border-rose-500 text-white font-extrabold rounded-xl text-xs transition duration-150 cursor-pointer shadow-xs hover:scale-[1.02]"
